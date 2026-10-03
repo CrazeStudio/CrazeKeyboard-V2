@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CrazeKeyboard</string>
+    <string name="developer_mode">Developer Mode</string>
+    <string name="keyboard_settings">Keyboard Settings</string>
+    <string name="subtype_en_us">English (US)</string>
+    <string name="type_beyond_limits">Type Beyond Limits</string>
+</resources>

@@ -1,0 +1,6 @@
+{
+  "name": "CrazeKeyboard",
+  "description": "High-performance technical keyboard with mechanical haptics, multi-model AI (Gemini & Llama), and real-time web search grounding.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
