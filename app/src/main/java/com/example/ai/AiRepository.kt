@@ -119,18 +119,11 @@ object AiRepository {
 
     fun resolveApiKey(userKey: String? = null): String {
         if (!userKey.isNullOrBlank()) return userKey.trim()
-        val buildKey = try { BuildConfig.OPENROUTER_API_KEY } catch (e: Exception) { "" }
-        if (buildKey.isNotBlank() && buildKey != "YOUR_OPENROUTER_API_KEY_HERE") {
-            return buildKey.trim()
-        }
         return ""
     }
 
-    fun resolveGeminiKey(): String {
-        val buildKey = try { BuildConfig.GEMINI_API_KEY } catch (e: Exception) { "" }
-        if (buildKey.isNotBlank() && buildKey != "YOUR_GEMINI_API_KEY_HERE") {
-            return buildKey.trim()
-        }
+    fun resolveGeminiKey(userKey: String? = null): String {
+        if (!userKey.isNullOrBlank()) return userKey.trim()
         return ""
     }
 

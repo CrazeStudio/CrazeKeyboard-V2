@@ -152,10 +152,10 @@ class KeyboardPreferences(context: Context) {
         private set
 
     var hotbarTools by mutableStateOf(
-        prefs.getString("hotbar_tools", "AI,CLIPBOARD,CURSOR_NAV,FONTS,LANGUAGE")
+        prefs.getString("hotbar_tools", "CLIPBOARD,CURSOR_NAV,FONTS,LANGUAGE,THEME,SETTINGS")
             ?.split(",")
             ?.filter { it.isNotBlank() }
-            ?: listOf("AI", "CLIPBOARD", "CURSOR_NAV", "FONTS", "LANGUAGE")
+            ?: listOf("CLIPBOARD", "CURSOR_NAV", "FONTS", "LANGUAGE", "THEME", "SETTINGS")
     )
         private set
 
@@ -281,10 +281,10 @@ class KeyboardPreferences(context: Context) {
             ?.split(",")
             ?.filter { it.isNotBlank() }
             ?: listOf("👍", "❤️", "😊", "🔥", "✨", "🎉", "🚀", "💻", "⚡", "🙌", "👏", "💡", "🤖", "✅", "😍", "🤣", "🎂", "🥳", "☕", "🍕")
-        hotbarTools = prefs.getString("hotbar_tools", "AI,CLIPBOARD,CURSOR_NAV,FONTS,LANGUAGE")
+        hotbarTools = prefs.getString("hotbar_tools", "CLIPBOARD,CURSOR_NAV,FONTS,LANGUAGE,THEME,SETTINGS")
             ?.split(",")
             ?.filter { it.isNotBlank() }
-            ?: listOf("AI", "CLIPBOARD", "CURSOR_NAV", "FONTS", "LANGUAGE")
+            ?: listOf("CLIPBOARD", "CURSOR_NAV", "FONTS", "LANGUAGE", "THEME", "SETTINGS")
     }
 
     fun restoreToDefaults() {

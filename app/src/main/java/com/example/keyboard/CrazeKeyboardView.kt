@@ -423,7 +423,7 @@ fun CrazeKeyboardView(
                                 activePanel = ActivePanel.KEYBOARD
                             },
                             onReset = {
-                                preferences.updateHotbarTools(listOf("AI", "TRANSLATE", "CLIPBOARD", "CURSOR_NAV", "FONTS", "LANGUAGE"))
+                                preferences.updateHotbarTools(KeyboardToolsCatalog.defaultHotbarIds)
                             },
                             onClose = { activePanel = ActivePanel.KEYBOARD }
                         )
