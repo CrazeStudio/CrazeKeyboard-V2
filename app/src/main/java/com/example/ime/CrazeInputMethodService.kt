@@ -60,6 +60,11 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
     private var isSelectModeActive by mutableStateOf(false)
     private var currentImeAction by mutableStateOf(EditorInfo.IME_ACTION_NONE)
     private var inlineSuggestionViews by mutableStateOf<List<View>>(emptyList())
+    private var isPasswordField by mutableStateOf(false)
+    private var isEmailField by mutableStateOf(false)
+    private var isUriField by mutableStateOf(false)
+    private var isNumericField by mutableStateOf(false)
+    private var isMultilineField by mutableStateOf(false)
 
     private var cachedComposeView: ComposeView? = null
 
@@ -115,6 +120,11 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
                     isSelectModeActive = isSelectModeActive,
                     imeAction = currentImeAction,
                     inlineSuggestionViews = inlineSuggestionViews,
+                    isPasswordField = isPasswordField,
+                    isEmailField = isEmailField,
+                    isUriField = isUriField,
+                    isNumericField = isNumericField,
+                    isMultilineField = isMultilineField,
                     listener = this@CrazeInputMethodService
                 )
             }
@@ -151,10 +161,50 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
         return super.onEvaluateInputViewShown()
     }
 
+    private fun evaluateEditorInfo(info: EditorInfo?) {
+        if (info == null) {
+            isPasswordField = false
+            isEmailField = false
+            isUriField = false
+            isNumericField = false
+            isMultilineField = false
+            currentImeAction = EditorInfo.IME_ACTION_NONE
+            return
+        }
+
+        currentImeAction = info.imeOptions and EditorInfo.IME_MASK_ACTION
+        val inputType = info.inputType
+        val inputClass = inputType and android.text.InputType.TYPE_MASK_CLASS
+        val variation = inputType and android.text.InputType.TYPE_MASK_VARIATION
+
+        isPasswordField = (inputClass == android.text.InputType.TYPE_CLASS_TEXT && (
+            variation == android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD ||
+            variation == android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
+            variation == android.text.InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
+        )) || (inputClass == android.text.InputType.TYPE_CLASS_NUMBER && (
+            variation == android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+        ))
+
+        isEmailField = inputClass == android.text.InputType.TYPE_CLASS_TEXT && (
+            variation == android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS ||
+            variation == android.text.InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS
+        )
+
+        isUriField = inputClass == android.text.InputType.TYPE_CLASS_TEXT && (
+            variation == android.text.InputType.TYPE_TEXT_VARIATION_URI
+        )
+
+        isNumericField = inputClass == android.text.InputType.TYPE_CLASS_NUMBER ||
+            inputClass == android.text.InputType.TYPE_CLASS_PHONE ||
+            inputClass == android.text.InputType.TYPE_CLASS_DATETIME
+
+        isMultilineField = (inputType and android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE) != 0
+    }
+
     override fun onStartInput(info: EditorInfo?, restarting: Boolean) {
         super.onStartInput(info, restarting)
         SoundFeedbackHelper.getInstance(this).refreshVolume()
-        currentImeAction = info?.imeOptions ?: EditorInfo.IME_ACTION_NONE
+        evaluateEditorInfo(info)
         updateCurrentWordPrefix()
     }
 
@@ -168,7 +218,7 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
         super.onStartInputView(info, restarting)
         suggestionEngine.ensureLoaded()
         imeLifecycleOwner.onStart()
-        currentImeAction = info?.imeOptions ?: EditorInfo.IME_ACTION_NONE
+        evaluateEditorInfo(info)
         inlineSuggestionViews = emptyList()
         updateCurrentWordPrefix()
     }
@@ -296,11 +346,13 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
         }
 
         val editorInfo = currentInputEditorInfo
-        val capsMode = if (editorInfo != null) {
+        val capsMode = if (editorInfo != null && !isEmailField && !isUriField && !isPasswordField) {
             ic.getCursorCapsMode(editorInfo.inputType)
         } else 0
 
-        val newIsSentenceStart = if (capsMode != 0) {
+        val newIsSentenceStart = if (isEmailField || isUriField || isPasswordField) {
+            false
+        } else if (capsMode != 0) {
             true
         } else {
             newIsActualSentenceStart

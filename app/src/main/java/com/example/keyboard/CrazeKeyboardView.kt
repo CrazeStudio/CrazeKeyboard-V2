@@ -14,10 +14,22 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,7 +43,6 @@ import com.example.ai.ChatMessage
 import com.example.ai.SearchSource
 import com.example.ai.SearchResultItem
 import com.example.clipboard.ClipboardDao
-import com.example.clipboard.ClipboardItemEntity
 import com.example.clipboard.ClipboardPanel
 import com.example.core.HapticFeedbackHelper
 import com.example.core.SoundFeedbackHelper
@@ -58,6 +69,11 @@ fun CrazeKeyboardView(
     isSelectModeActive: Boolean = false,
     imeAction: Int = EditorInfo.IME_ACTION_NONE,
     inlineSuggestionViews: List<View> = emptyList(),
+    isPasswordField: Boolean = false,
+    isEmailField: Boolean = false,
+    isUriField: Boolean = false,
+    isNumericField: Boolean = false,
+    isMultilineField: Boolean = false,
     listener: KeyboardActionListener,
     modifier: Modifier = Modifier
 ) {
@@ -67,9 +83,17 @@ fun CrazeKeyboardView(
     val modifierState = remember { ModifierState() }
     val coroutineScope = rememberCoroutineScope()
 
-    var keyboardMode by remember { mutableStateOf(KeyboardMode.ALPHA) }
-    var shiftState by remember {
-        mutableStateOf(if (preferences.isAutoCapEnabled && isSentenceStart) ShiftState.SHIFTED else ShiftState.OFF)
+    var keyboardMode by remember(isNumericField) {
+        mutableStateOf(if (isNumericField) KeyboardMode.NUMBERS else KeyboardMode.ALPHA)
+    }
+    var shiftState by remember(isSentenceStart, isEmailField, isUriField, isPasswordField) {
+        mutableStateOf(
+            if (preferences.isAutoCapEnabled && isSentenceStart && !isEmailField && !isUriField && !isPasswordField) {
+                ShiftState.SHIFTED
+            } else {
+                ShiftState.OFF
+            }
+        )
     }
     var lastShiftTapTime by remember { mutableStateOf(0L) }
     var lastSpaceTapTime by remember { mutableStateOf(0L) }
@@ -88,10 +112,8 @@ fun CrazeKeyboardView(
     var aiQuickSearchResults by remember { mutableStateOf<List<SearchResultItem>>(emptyList()) }
 
     // State for Panels
-    var isAiPanelOpen by remember { mutableStateOf(false) }
     var isLiveTranslateActive by remember { mutableStateOf(false) }
     var isMediaSearchMode by remember { mutableStateOf(false) }
-    
     var localSearchQuery by remember { mutableStateOf("") }
 
     // Theme resolution (optimized with remember)
@@ -112,8 +134,9 @@ fun CrazeKeyboardView(
     var autoCorrectNotice by remember { mutableStateOf<Pair<String, String>?>(null) }
     var lastAutoCorrectRecord by remember { mutableStateOf<Triple<String, String, Int>?>(null) }
 
-    LaunchedEffect(currentWordPrefix, preferences.isSuggestionsEnabled) {
-        if (preferences.isSuggestionsEnabled && currentWordPrefix.isNotEmpty()) {
+    // Offline fast suggestions
+    LaunchedEffect(currentWordPrefix, preferences.isSuggestionsEnabled, isPasswordField) {
+        if (!isPasswordField && preferences.isSuggestionsEnabled && currentWordPrefix.isNotEmpty()) {
             val (newSuggestions, newEmojis) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
                 val sug = suggestionEngine.getSuggestionsSync(currentWordPrefix)
                 val emojis = if (preferences.isLocalAiEmojiEnabled) {
@@ -130,12 +153,13 @@ fun CrazeKeyboardView(
     }
 
     // Auto-Correct Logic
-    LaunchedEffect(currentWordPrefix) {
-        if (preferences.isAutoCorrectEnabled && currentWordPrefix.endsWith(" ")) {
+    LaunchedEffect(currentWordPrefix, isPasswordField) {
+        if (!isPasswordField && preferences.isAutoCorrectEnabled && currentWordPrefix.endsWith(" ")) {
             val wordToCorrect = currentWordPrefix.trim()
             val correction = suggestionEngine.findAutoCorrection(wordToCorrect, preferences.autoCorrectLevel)
             if (correction != null && correction.lowercase() != wordToCorrect.lowercase()) {
-                listener.onReplaceCurrentWord(correction + " ")
+                val transformed = KeyboardFontManager.transform(correction, preferences.currentFontStyle)
+                listener.onReplaceCurrentWord("$transformed ")
                 autoCorrectNotice = wordToCorrect to correction
                 lastAutoCorrectRecord = Triple(wordToCorrect, correction, correction.length + 1)
             }
@@ -172,160 +196,109 @@ fun CrazeKeyboardView(
         }
 
         if (preferences.layoutMode == com.example.settings.KeyboardLayoutMode.ONE_HANDED_LEFT) {
-            Box(modifier = Modifier.fillMaxWidth(0.25f).align(Alignment.BottomEnd).height(200.dp).clickable { preferences.updateLayoutMode(com.example.settings.KeyboardLayoutMode.DEFAULT) }, contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier.fillMaxWidth(0.25f).align(Alignment.BottomEnd).height(200.dp).clickable {
+                    preferences.updateLayoutMode(com.example.settings.KeyboardLayoutMode.DEFAULT)
+                },
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(painter = painterResource(id = R.drawable.ic_arrow_forward), contentDescription = "Expand", tint = currentTheme.textColor, modifier = Modifier.size(32.dp))
             }
         } else if (preferences.layoutMode == com.example.settings.KeyboardLayoutMode.ONE_HANDED_RIGHT) {
-            Box(modifier = Modifier.fillMaxWidth(0.25f).align(Alignment.BottomStart).height(200.dp).clickable { preferences.updateLayoutMode(com.example.settings.KeyboardLayoutMode.DEFAULT) }, contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier.fillMaxWidth(0.25f).align(Alignment.BottomStart).height(200.dp).clickable {
+                    preferences.updateLayoutMode(com.example.settings.KeyboardLayoutMode.DEFAULT)
+                },
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(painter = painterResource(id = R.drawable.ic_arrow_back), contentDescription = "Expand", tint = currentTheme.textColor, modifier = Modifier.size(32.dp))
             }
         }
 
         Column(modifier = layoutModifier.background(currentTheme.backgroundColor).navigationBarsPadding().padding(bottom = 4.dp)) {
-    // Toolbar Section with isolated clipboard suggestion logic
-    ClipboardToolbarSection(
-        activePanel = activePanel,
-        isAiPanelOpen = isAiPanelOpen,
-        isLiveTranslateActive = isLiveTranslateActive,
-        isMediaSearchMode = isMediaSearchMode,
-        currentWordPrefix = currentWordPrefix,
-        currentTheme = currentTheme,
-        suggestions = suggestions,
-        aiContextualEmojis = aiContextualEmojis,
-        preferences = preferences,
-        autoCorrectNotice = autoCorrectNotice,
-        inlineSuggestionViews = inlineSuggestionViews,
-        isActualSentenceStart = isActualSentenceStart,
-        clipboardDao = clipboardDao,
-        onUndoAutoCorrect = {
-            triggerTapFeedback()
-            lastAutoCorrectRecord?.let { (original, _, len) ->
-                repeat(len) { listener.onBackspace() }
-                listener.onText(KeyboardFontManager.transform(original, preferences.currentFontStyle))
-            }
-            autoCorrectNotice = null
-        },
-        onReplaceCurrentWord = { listener.onReplaceCurrentWord(it) },
-        onText = { listener.onText(it) },
-        onSettingsRequested = { listener.onSettingsRequested() },
-        onMediaPanelOpen = { mediaInitialTab = it; activePanel = ActivePanel.MEDIA },
-        onClipboardPanelOpen = { activePanel = ActivePanel.CLIPBOARD },
-        onToolsMenuOpen = { activePanel = ActivePanel.TOOLS_MENU },
-        onToggleDevMode = { preferences.toggleDeveloperMode() },
-        onTranslatePanelOpen = { activePanel = ActivePanel.TRANSLATE },
-        onFontsPanelOpen = { activePanel = ActivePanel.FONTS },
-        onLanguagePickerPanelOpen = { activePanel = ActivePanel.LANGUAGE_PICKER },
-        onCursorNavPanelOpen = { activePanel = ActivePanel.CURSOR_NAV },
-        onAiChatPanelOpen = { 
-            activePanel = ActivePanel.SWIFT_AI
-            snapshotContextText = listener.getCurrentContextText()
-            localSearchQuery = ""
-        },
-        onToggleSound = { preferences.setSound(!preferences.isSoundEnabled) },
-        onToggleNumberRow = { preferences.setNumberRow(!preferences.isNumberRowEnabled) },
-        onVoiceInput = { listener.onVoiceRequested() },
-        onCycleTheme = { 
-            val themes = listOf("light", "dark", "blue", "green", "pink", "amoled")
-            val currentIdx = themes.indexOf(preferences.themeId)
-            val nextIdx = (currentIdx + 1) % themes.size
-            preferences.setTheme(themes[nextIdx])
-        },
-        onLiveTranslateToggle = { isLiveTranslateActive = it },
-        onMediaSearchClose = { isMediaSearchMode = false },
-        onTriggerFeedback = { triggerTapFeedback() },
-        onSuggestionLearn = { coroutineScope.launch { suggestionEngine.learnWord(it) } },
-        localSearchQuery = localSearchQuery,
-        onClearSearchQuery = { localSearchQuery = "" }
-    )
+            // Stable 48.dp Fixed-Height Toolbar Section
+            ClipboardToolbarSection(
+                activePanel = activePanel,
+                isAiPanelOpen = false,
+                isLiveTranslateActive = isLiveTranslateActive,
+                isMediaSearchMode = isMediaSearchMode,
+                currentWordPrefix = currentWordPrefix,
+                currentTheme = currentTheme,
+                suggestions = if (isPasswordField) emptyList() else suggestions,
+                aiContextualEmojis = aiContextualEmojis,
+                preferences = preferences,
+                autoCorrectNotice = autoCorrectNotice,
+                inlineSuggestionViews = inlineSuggestionViews,
+                isActualSentenceStart = isActualSentenceStart,
+                clipboardDao = clipboardDao,
+                onUndoAutoCorrect = {
+                    triggerTapFeedback()
+                    lastAutoCorrectRecord?.let { (original, _, len) ->
+                        repeat(len) { listener.onBackspace() }
+                        listener.onText(KeyboardFontManager.transform(original, preferences.currentFontStyle))
+                    }
+                    autoCorrectNotice = null
+                },
+                onReplaceCurrentWord = { listener.onReplaceCurrentWord(it) },
+                onText = { listener.onText(it) },
+                onSettingsRequested = { listener.onSettingsRequested() },
+                onMediaPanelOpen = { mediaInitialTab = it; activePanel = ActivePanel.MEDIA },
+                onClipboardPanelOpen = { activePanel = ActivePanel.CLIPBOARD },
+                onToolsMenuOpen = { activePanel = ActivePanel.TOOLS_MENU },
+                onToggleDevMode = { preferences.toggleDeveloperMode() },
+                onTranslatePanelOpen = { activePanel = ActivePanel.TRANSLATE },
+                onFontsPanelOpen = { activePanel = ActivePanel.FONTS },
+                onLanguagePickerPanelOpen = { activePanel = ActivePanel.LANGUAGE_PICKER },
+                onCursorNavPanelOpen = { activePanel = ActivePanel.CURSOR_NAV },
+                onAiChatPanelOpen = {
+                    activePanel = ActivePanel.SWIFT_AI
+                    snapshotContextText = listener.getCurrentContextText()
+                    localSearchQuery = ""
+                },
+                onToggleSound = { preferences.setSound(!preferences.isSoundEnabled) },
+                onToggleNumberRow = { preferences.setNumberRow(!preferences.isNumberRowEnabled) },
+                onVoiceInput = { listener.onVoiceRequested() },
+                onCycleTheme = {
+                    val themes = listOf("light", "dark", "blue", "green", "pink", "amoled")
+                    val currentIdx = themes.indexOf(preferences.themeId)
+                    val nextIdx = (currentIdx + 1) % themes.size
+                    preferences.setTheme(themes[nextIdx])
+                },
+                onLiveTranslateToggle = { isLiveTranslateActive = it },
+                onMediaSearchClose = { isMediaSearchMode = false },
+                onTriggerFeedback = { triggerTapFeedback() },
+                onSuggestionLearn = { coroutineScope.launch { suggestionEngine.learnWord(it) } },
+                localSearchQuery = localSearchQuery,
+                onClearSearchQuery = { localSearchQuery = "" }
+            )
 
             // Developer Toolbar
-            AnimatedVisibility(visible = preferences.isDeveloperModeEnabled && activePanel == ActivePanel.KEYBOARD, enter = expandVertically(), exit = shrinkVertically()) {
+            AnimatedVisibility(
+                visible = preferences.isDeveloperModeEnabled && activePanel == ActivePanel.KEYBOARD,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
                 DeveloperToolbar(
-                    modifierState = modifierState, theme = currentTheme,
+                    modifierState = modifierState,
+                    theme = currentTheme,
                     onDevKeyClick = { devKey ->
                         triggerTapFeedback()
                         if (devKey.type == DevKeyType.CTRL) modifierState.toggleCtrl()
                         else if (devKey.type == DevKeyType.ALT) modifierState.toggleAlt()
-                        else { listener.onDevKey(devKey, modifierState); modifierState.resetTransientModifiers() }
+                        else {
+                            listener.onDevKey(devKey, modifierState)
+                            modifierState.resetTransientModifiers()
+                        }
                     }
                 )
             }
 
-            // AI Panel overlay - shown above the keyboard so the user can type!
-            AnimatedVisibility(
-                visible = activePanel == ActivePanel.SWIFT_AI,
-                enter = expandVertically(),
-                exit = shrinkVertically()
-            ) {
-                Box(modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp)) {
-                    SwiftKeyAiPanel(
-                        theme = currentTheme,
-                        preferences = preferences,
-                        contextText = snapshotContextText,
-                        currentQuery = localSearchQuery,
-                        activeTab = swiftAiTab,
-                        chatMessages = aiChatMessages,
-                        onTabChange = { swiftAiTab = it },
-                        onClearQuery = { 
-                            localSearchQuery = ""
-                        },
-                        onSendChatMessage = { query ->
-                            val userMsg = ChatMessage(isUser = true, text = query)
-                            aiChatMessages = aiChatMessages + userMsg
-                            aiIsProcessing = true
-                            localSearchQuery = "" // Clear after sending
-                            coroutineScope.launch {
-                                val (response, searchResults) = com.example.ai.AiRepository.sendChatWithSearch(
-                                    conversation = aiChatMessages,
-                                    searchSource = aiSearchSource,
-                                    contextText = snapshotContextText
-                                )
-                                aiChatMessages = aiChatMessages + ChatMessage(isUser = false, text = response, searchResults = searchResults)
-                                aiIsProcessing = false
-                            }
-                        },
-                        onClearChat = { aiChatMessages = emptyList() },
-                        onSendQuickQuery = { query ->
-                            aiIsProcessing = true
-                            aiResultText = null
-                            localSearchQuery = "" // Clear after sending
-                            coroutineScope.launch {
-                                val (response, searchResults) = com.example.ai.AiRepository.askWithSearch(
-                                    query = query,
-                                    searchSource = aiSearchSource,
-                                    contextText = snapshotContextText
-                                )
-                                aiResultText = response
-                                aiQuickSearchResults = searchResults
-                                aiIsProcessing = false
-                            }
-                        },
-                        onRewriteTone = { tone ->
-                            aiIsProcessing = true
-                            aiResultText = null
-                            coroutineScope.launch {
-                                val response = com.example.ai.AiRepository.rewriteTone(
-                                    text = snapshotContextText,
-                                    tone = tone
-                                )
-                                aiResultText = response
-                                aiIsProcessing = false
-                            }
-                        },
-                        onReplaceText = { listener.onReplaceContextText(it) },
-                        onInsertText = { listener.onText(it) },
-                        isProcessing = aiIsProcessing,
-                        aiResultText = aiResultText,
-                        searchSource = aiSearchSource,
-                        onSearchSourceChange = { aiSearchSource = it },
-                        quickSearchResults = aiQuickSearchResults,
-                        onClose = { activePanel = ActivePanel.KEYBOARD }
-                    )
-                }
+            // Fixed-Height Main Panel Section — NEVER jumps vertically!
+            val effectiveRows = if (preferences.isNumberRowEnabled && keyboardMode == KeyboardMode.ALPHA) 4.85f else 4.0f
+            val panelHeight = remember(preferences.keyHeightDp, effectiveRows) {
+                (preferences.keyHeightDp * effectiveRows + 12).dp
             }
 
-            // Main Panel Section
-            val panelHeight = if (preferences.isNumberRowEnabled && keyboardMode == KeyboardMode.ALPHA) (preferences.keyHeightDp * 4.9f + 16).dp else (preferences.keyHeightDp * 4f + 16).dp
             Box(modifier = Modifier.fillMaxWidth().height(panelHeight)) {
                 AnimatedContent(
                     targetState = activePanel,
@@ -334,20 +307,43 @@ fun CrazeKeyboardView(
                 ) { targetPanel ->
                     when (targetPanel) {
                         ActivePanel.MEDIA -> MediaPanel(
-                            theme = currentTheme, preferences = preferences, initialTab = mediaInitialTab,
-                            onEmojiSelected = { triggerTapFeedback(); preferences.addRecentEmoji(it); listener.onText(it) },
-                            onGifSelected = { triggerTapFeedback(); listener.onMedia(it.url) },
-                            onOpenSearch = { isMediaSearchMode = true; activePanel = ActivePanel.KEYBOARD },
-                            onBackspace = { triggerTapFeedback(); listener.onBackspace() },
+                            theme = currentTheme,
+                            preferences = preferences,
+                            initialTab = mediaInitialTab,
+                            onEmojiSelected = {
+                                triggerTapFeedback()
+                                preferences.addRecentEmoji(it)
+                                listener.onText(it)
+                            },
+                            onGifSelected = {
+                                triggerTapFeedback()
+                                listener.onMedia(it.url)
+                            },
+                            onOpenSearch = {
+                                isMediaSearchMode = true
+                                activePanel = ActivePanel.KEYBOARD
+                            },
+                            onBackspace = {
+                                triggerTapFeedback()
+                                listener.onBackspace()
+                            },
                             onClose = { activePanel = ActivePanel.KEYBOARD }
                         )
+
                         ActivePanel.CLIPBOARD -> ClipboardPanel(
-                            clipboardDao = clipboardDao, theme = currentTheme,
-                            onPasteText = { triggerTapFeedback(); listener.onText(it); activePanel = ActivePanel.KEYBOARD },
+                            clipboardDao = clipboardDao,
+                            theme = currentTheme,
+                            onPasteText = {
+                                triggerTapFeedback()
+                                listener.onText(it)
+                                activePanel = ActivePanel.KEYBOARD
+                            },
                             onCloseClipboard = { activePanel = ActivePanel.KEYBOARD }
                         )
+
                         ActivePanel.TOOLS_MENU -> ToolsMenuPanel(
-                            theme = currentTheme, preferences = preferences,
+                            theme = currentTheme,
+                            preferences = preferences,
                             onToolSelected = { toolId ->
                                 triggerTapFeedback()
                                 when (toolId) {
@@ -355,9 +351,12 @@ fun CrazeKeyboardView(
                                     "FONTS" -> activePanel = ActivePanel.FONTS
                                     "LANGUAGE" -> activePanel = ActivePanel.LANGUAGE_PICKER
                                     "CURSOR_NAV" -> activePanel = ActivePanel.CURSOR_NAV
-                                    "AI" -> activePanel = ActivePanel.SWIFT_AI
+                                    "AI" -> {
+                                        snapshotContextText = listener.getCurrentContextText()
+                                        activePanel = ActivePanel.SWIFT_AI
+                                    }
                                     "CLIPBOARD" -> activePanel = ActivePanel.CLIPBOARD
-                                    "GIF" -> { mediaInitialTab = MediaTab.GIF; activePanel = ActivePanel.MEDIA }
+                                    "GIF" -> { mediaInitialTab = MediaTab.EMOJI; activePanel = ActivePanel.MEDIA }
                                     "THEME" -> {
                                         val themes = listOf("light", "dark", "blue", "green", "pink", "amoled")
                                         val currentIdx = themes.indexOf(preferences.themeId)
@@ -374,58 +373,147 @@ fun CrazeKeyboardView(
                             onOpenCustomize = { activePanel = ActivePanel.CUSTOMIZE_HOTBAR },
                             onClose = { activePanel = ActivePanel.KEYBOARD }
                         )
+
                         ActivePanel.TRANSLATE -> TranslatePanel(
                             theme = currentTheme,
                             sourceLanguageCode = sourceLang,
                             targetLanguageCode = targetLang,
                             onSourceLanguageChange = { sourceLang = it },
                             onTargetLanguageChange = { targetLang = it },
-                            onInsertTranslatedText = { triggerTapFeedback(); listener.onText(it) },
-                            onStartLiveTranslate = { isLiveTranslateActive = true; activePanel = ActivePanel.KEYBOARD },
+                            onInsertTranslatedText = {
+                                triggerTapFeedback()
+                                listener.onText(it)
+                            },
+                            onStartLiveTranslate = {
+                                isLiveTranslateActive = true
+                                activePanel = ActivePanel.KEYBOARD
+                            },
                             onClose = { activePanel = ActivePanel.KEYBOARD }
                         )
+
                         ActivePanel.FONTS -> FontsPanel(
                             theme = currentTheme,
                             currentStyleId = preferences.currentFontStyle,
                             onStyleSelected = { preferences.setFontStyle(it) },
                             onClose = { activePanel = ActivePanel.KEYBOARD }
                         )
+
                         ActivePanel.LANGUAGE_PICKER -> LanguagePickerPanel(
                             theme = currentTheme,
                             currentLanguageCode = preferences.currentLanguage,
-                            onLanguageSelected = { preferences.setLanguage(it); activePanel = ActivePanel.KEYBOARD },
+                            onLanguageSelected = {
+                                preferences.setLanguage(it)
+                                activePanel = ActivePanel.KEYBOARD
+                            },
                             onClose = { activePanel = ActivePanel.KEYBOARD }
                         )
+
                         ActivePanel.CURSOR_NAV -> CursorNavPanel(
                             theme = currentTheme,
                             isSelectMode = isSelectModeActive,
                             onAction = { listener.onSpecialKey(it) },
                             onClose = { activePanel = ActivePanel.KEYBOARD }
                         )
+
                         ActivePanel.CUSTOMIZE_HOTBAR -> CustomizeHotbarPanel(
                             theme = currentTheme,
                             initialHotbarTools = preferences.hotbarTools,
-                            onSave = { preferences.updateHotbarTools(it); activePanel = ActivePanel.KEYBOARD },
-                            onReset = { preferences.updateHotbarTools(listOf("AI", "TRANSLATE", "GIF", "CLIPBOARD", "CURSOR_NAV", "FONTS", "LANGUAGE")) },
+                            onSave = {
+                                preferences.updateHotbarTools(it)
+                                activePanel = ActivePanel.KEYBOARD
+                            },
+                            onReset = {
+                                preferences.updateHotbarTools(listOf("AI", "TRANSLATE", "CLIPBOARD", "CURSOR_NAV", "FONTS", "LANGUAGE"))
+                            },
                             onClose = { activePanel = ActivePanel.KEYBOARD }
                         )
+
+                        ActivePanel.SWIFT_AI -> SwiftKeyAiPanel(
+                            theme = currentTheme,
+                            preferences = preferences,
+                            contextText = snapshotContextText,
+                            currentQuery = localSearchQuery,
+                            activeTab = swiftAiTab,
+                            chatMessages = aiChatMessages,
+                            onTabChange = { swiftAiTab = it },
+                            onClearQuery = { localSearchQuery = "" },
+                            onSendChatMessage = { query ->
+                                val userMsg = ChatMessage(isUser = true, text = query)
+                                aiChatMessages = aiChatMessages + userMsg
+                                aiIsProcessing = true
+                                localSearchQuery = ""
+                                coroutineScope.launch {
+                                    val (response, searchResults) = com.example.ai.AiRepository.sendChatWithSearch(
+                                        conversation = aiChatMessages,
+                                        searchSource = aiSearchSource,
+                                        contextText = snapshotContextText
+                                    )
+                                    aiChatMessages = aiChatMessages + ChatMessage(isUser = false, text = response, searchResults = searchResults)
+                                    aiIsProcessing = false
+                                }
+                            },
+                            onClearChat = { aiChatMessages = emptyList() },
+                            onSendQuickQuery = { query ->
+                                aiIsProcessing = true
+                                aiResultText = null
+                                localSearchQuery = ""
+                                coroutineScope.launch {
+                                    val (response, searchResults) = com.example.ai.AiRepository.askWithSearch(
+                                        query = query,
+                                        searchSource = aiSearchSource,
+                                        contextText = snapshotContextText
+                                    )
+                                    aiResultText = response
+                                    aiQuickSearchResults = searchResults
+                                    aiIsProcessing = false
+                                }
+                            },
+                            onRewriteTone = { tone ->
+                                aiIsProcessing = true
+                                aiResultText = null
+                                coroutineScope.launch {
+                                    val response = com.example.ai.AiRepository.rewriteTone(
+                                        text = snapshotContextText,
+                                        tone = tone
+                                    )
+                                    aiResultText = response
+                                    aiIsProcessing = false
+                                }
+                            },
+                            onReplaceText = { listener.onReplaceContextText(it) },
+                            onInsertText = { listener.onText(it) },
+                            isProcessing = aiIsProcessing,
+                            aiResultText = aiResultText,
+                            searchSource = aiSearchSource,
+                            onSearchSourceChange = { aiSearchSource = it },
+                            quickSearchResults = aiQuickSearchResults,
+                            onClose = { activePanel = ActivePanel.KEYBOARD }
+                        )
+
                         ActivePanel.AI_CHAT -> AiChatPanel(
                             theme = currentTheme,
                             initialContext = currentWordPrefix,
                             onBack = { activePanel = ActivePanel.KEYBOARD },
-                            onInsert = { triggerTapFeedback(); listener.onText(it) }
+                            onInsert = {
+                                triggerTapFeedback()
+                                listener.onText(it)
+                            }
                         )
-                        ActivePanel.SWIFT_AI, ActivePanel.KEYBOARD -> KeyboardGrid(
-                            context = context, theme = currentTheme, preferences = preferences,
+
+                        ActivePanel.KEYBOARD -> KeyboardGrid(
+                            context = context,
+                            theme = currentTheme,
+                            preferences = preferences,
                             suggestionEngine = suggestionEngine,
-                            keyboardMode = keyboardMode, shiftState = shiftState, imeAction = imeAction,
+                            keyboardMode = keyboardMode,
+                            shiftState = shiftState,
+                            imeAction = imeAction,
                             onKeyTap = { key ->
-                                triggerTapFeedbackWithRole(if (key.type == KeyType.CHARACTER) com.example.core.KeyHapticRole.STANDARD else com.example.core.KeyHapticRole.MODIFIER)
                                 when (key.type) {
                                     KeyType.CHARACTER -> {
                                         val text = if (shiftState != ShiftState.OFF) key.primaryText.uppercase() else key.primaryText
                                         val transformed = KeyboardFontManager.transform(text, preferences.currentFontStyle)
-                                        if (activePanel == ActivePanel.SWIFT_AI || isMediaSearchMode) {
+                                        if (isMediaSearchMode) {
                                             localSearchQuery += text
                                         } else {
                                             listener.onText(transformed)
@@ -433,7 +521,7 @@ fun CrazeKeyboardView(
                                         if (shiftState == ShiftState.SHIFTED) shiftState = ShiftState.OFF
                                     }
                                     KeyType.BACKSPACE -> {
-                                        if (activePanel == ActivePanel.SWIFT_AI || isMediaSearchMode) {
+                                        if (isMediaSearchMode) {
                                             if (localSearchQuery.isNotEmpty()) {
                                                 localSearchQuery = localSearchQuery.dropLast(1)
                                             }
@@ -442,9 +530,7 @@ fun CrazeKeyboardView(
                                         }
                                     }
                                     KeyType.ENTER -> {
-                                        if (activePanel == ActivePanel.SWIFT_AI || isMediaSearchMode) {
-                                            // Handled by Send buttons
-                                        } else {
+                                        if (!isMediaSearchMode) {
                                             listener.onEnter()
                                         }
                                     }
@@ -460,71 +546,61 @@ fun CrazeKeyboardView(
                                     }
                                     KeyType.SPACE -> {
                                         val now = System.currentTimeMillis()
-                                        if (activePanel == ActivePanel.SWIFT_AI || isMediaSearchMode) {
+                                        if (isMediaSearchMode) {
                                             localSearchQuery += " "
                                         } else {
                                             if (now - lastSpaceTapTime < 300 && preferences.isDoubleSpacePeriodEnabled) {
-                                                listener.onBackspace(); listener.onText(". ")
+                                                listener.onBackspace()
+                                                listener.onText(". ")
                                             } else {
                                                 listener.onText(" ")
                                             }
                                         }
                                         lastSpaceTapTime = now
                                     }
-                                    KeyType.MODE_CHANGE -> keyboardMode = if (keyboardMode == KeyboardMode.ALPHA) KeyboardMode.NUMBERS else KeyboardMode.ALPHA
-                                    KeyType.EMOJI -> { mediaInitialTab = MediaTab.EMOJI; activePanel = ActivePanel.MEDIA }
+                                    KeyType.MODE_CHANGE -> {
+                                        keyboardMode = when (keyboardMode) {
+                                            KeyboardMode.ALPHA -> KeyboardMode.NUMBERS
+                                            KeyboardMode.NUMBERS -> KeyboardMode.ALPHA
+                                            KeyboardMode.SYMBOLS -> KeyboardMode.NUMBERS
+                                        }
+                                    }
+                                    KeyType.EMOJI -> {
+                                        mediaInitialTab = MediaTab.EMOJI
+                                        activePanel = ActivePanel.MEDIA
+                                    }
                                     else -> {}
                                 }
                             },
                             onKeyLongPress = { key ->
-                                hapticHelper.performLongPressHaptic(preferences.isHapticsEnabled, currentView)
                                 val insert = key.longPressOptions.firstOrNull() ?: key.alternateText
                                 if (insert.isNotEmpty()) {
-                                    if (activePanel == ActivePanel.SWIFT_AI || isMediaSearchMode) {
-                                        localSearchQuery += insert
-                                    } else {
-                                        listener.onText(KeyboardFontManager.transform(insert, preferences.currentFontStyle))
-                                    }
+                                    val transformed = KeyboardFontManager.transform(insert, preferences.currentFontStyle)
+                                    listener.onText(transformed)
                                 }
                             },
-                            onKeyInsertText = { 
-                                if (activePanel == ActivePanel.SWIFT_AI || isMediaSearchMode) {
-                                    localSearchQuery += it
-                                } else {
-                                    listener.onText(KeyboardFontManager.transform(it, preferences.currentFontStyle))
-                                }
+                            onKeyInsertText = { text ->
+                                val transformed = KeyboardFontManager.transform(text, preferences.currentFontStyle)
+                                listener.onText(transformed)
                             },
                             onMoveCursor = { listener.onMoveCursor(it) },
                             onSpecialKey = { listener.onSpecialKey(it) },
-                            onDeleteWord = { 
-                                if (activePanel == ActivePanel.SWIFT_AI || isMediaSearchMode) {
-                                    localSearchQuery = localSearchQuery.trimEnd().dropLastWhile { !it.isWhitespace() }.trimEnd()
-                                } else {
-                                    listener.onDeleteWord()
-                                }
-                            },
-                            onBackspace = { 
-                                if (activePanel == ActivePanel.SWIFT_AI || isMediaSearchMode) {
-                                    if (localSearchQuery.isNotEmpty()) {
-                                        localSearchQuery = localSearchQuery.dropLast(1)
-                                    }
-                                } else {
-                                    listener.onBackspace()
-                                }
-                            },
+                            onDeleteWord = { listener.onDeleteWord() },
+                            onBackspace = { listener.onBackspace() },
                             onGlideWord = { word ->
                                 triggerTapFeedback()
-                                val wordToInsert = if (shiftState != ShiftState.OFF) word.uppercase() else if (isSentenceStart) word.replaceFirstChar { it.uppercase() } else word
-                                if (activePanel == ActivePanel.SWIFT_AI || isMediaSearchMode) {
-                                    localSearchQuery += (if (localSearchQuery.isNotEmpty()) " " else "") + wordToInsert
-                                } else {
-                                    listener.onText(KeyboardFontManager.transform(wordToInsert, preferences.currentFontStyle) + " ")
-                                }
+                                val wordToInsert = if (shiftState != ShiftState.OFF) {
+                                    word.uppercase()
+                                } else if (isSentenceStart) {
+                                    word.replaceFirstChar { it.uppercase() }
+                                } else word
+
+                                val transformed = KeyboardFontManager.transform(wordToInsert, preferences.currentFontStyle)
+                                listener.onText("$transformed ")
                                 if (shiftState == ShiftState.SHIFTED) shiftState = ShiftState.OFF
                                 coroutineScope.launch { suggestionEngine.learnWord(word) }
                             }
                         )
-                        else -> Box(Modifier.fillMaxSize()) // Fallback for other panels
                     }
                 }
             }
@@ -571,28 +647,32 @@ private fun ClipboardToolbarSection(
     localSearchQuery: String,
     onClearSearchQuery: () -> Unit
 ) {
-    // Collect clipboard state locally to this component to avoid recomposing the whole keyboard
     val latestClipItem by clipboardDao.getLatestItem().collectAsStateWithLifecycle(initialValue = null)
     var consumedClipId by remember { mutableStateOf(0L) }
-    
+
     val clipboardSuggestion = remember(latestClipItem, consumedClipId) {
         val clip = latestClipItem
-        if (clip != null && clip.id != consumedClipId && clip.text.isNotBlank() && 
-            (System.currentTimeMillis() - clip.timestamp < 300_000L)) {
+        if (clip != null && clip.id != consumedClipId && clip.text.isNotBlank() &&
+            (System.currentTimeMillis() - clip.timestamp < 300_000L)
+        ) {
             clip.text
         } else {
             null
         }
     }
 
-    if (isAiPanelOpen) {
-        // AI Panel logic if needed
-    } else if (isLiveTranslateActive) {
+    if (isLiveTranslateActive) {
         TranslateToolbar(
-            theme = currentTheme, sourceLanguageCode = "en", targetLanguageCode = "es",
-            sourceText = currentWordPrefix, translatedText = "",
+            theme = currentTheme,
+            sourceLanguageCode = "en",
+            targetLanguageCode = "es",
+            sourceText = currentWordPrefix,
+            translatedText = "",
             onSwapLanguages = {},
-            onCommitTranslated = { onTriggerFeedback(); onReplaceCurrentWord("$it ") },
+            onCommitTranslated = {
+                onTriggerFeedback()
+                onReplaceCurrentWord("$it ")
+            },
             onOpenTranslatePanel = onTranslatePanelOpen,
             onClose = { onLiveTranslateToggle(false) }
         )
@@ -602,7 +682,7 @@ private fun ClipboardToolbarSection(
             query = localSearchQuery,
             tab = MediaTab.EMOJI,
             onClose = onMediaSearchClose,
-            onEmojiSelected = { 
+            onEmojiSelected = {
                 onTriggerFeedback()
                 preferences.addRecentEmoji(it)
                 onText(it)
@@ -612,7 +692,8 @@ private fun ClipboardToolbarSection(
         )
     } else {
         KeyboardToolbar(
-            theme = currentTheme, suggestions = suggestions,
+            theme = currentTheme,
+            suggestions = suggestions,
             aiContextualEmojis = aiContextualEmojis,
             hotbarToolIds = preferences.hotbarTools,
             isDevModeActive = preferences.isDeveloperModeEnabled,
@@ -621,17 +702,17 @@ private fun ClipboardToolbarSection(
             inlineViews = inlineSuggestionViews,
             isSentenceStart = isActualSentenceStart,
             onUndoAutoCorrect = onUndoAutoCorrect,
-            onPasteClipboardSuggestion = { 
+            onPasteClipboardSuggestion = {
                 onTriggerFeedback()
                 latestClipItem?.let { consumedClipId = it.id }
                 onText(it)
             },
-            onSuggestionClick = { 
+            onSuggestionClick = {
                 onTriggerFeedback()
                 onReplaceCurrentWord("${KeyboardFontManager.transform(it, preferences.currentFontStyle)} ")
                 onSuggestionLearn(it)
             },
-            onEmojiClick = { 
+            onEmojiClick = {
                 onTriggerFeedback()
                 preferences.addRecentEmoji(it)
                 onText(it)
@@ -649,7 +730,7 @@ private fun ClipboardToolbarSection(
                     ToolbarAction.OPEN_LANGUAGE -> onLanguagePickerPanelOpen()
                     ToolbarAction.OPEN_CURSOR_NAV -> onCursorNavPanelOpen()
                     ToolbarAction.OPEN_AI -> onAiChatPanelOpen()
-                    ToolbarAction.OPEN_GIF -> onMediaPanelOpen(MediaTab.GIF)
+                    ToolbarAction.OPEN_GIF -> onMediaPanelOpen(MediaTab.EMOJI)
                     ToolbarAction.TOGGLE_SOUND -> onToggleSound()
                     ToolbarAction.TOGGLE_NUMBER_ROW -> onToggleNumberRow()
                     ToolbarAction.VOICE_INPUT -> onVoiceInput()
