@@ -20,7 +20,6 @@ android {
     targetSdk = 36
     versionCode = 1
     versionName = "1.0"
-
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
@@ -53,14 +52,17 @@ android {
       signingConfig = signingConfigs.getByName("debugConfig")
     }
   }
+
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
   }
+
   buildFeatures {
     compose = true
     buildConfig = true
   }
+
   testOptions { unitTests { isIncludeAndroidResources = true } }
   dependenciesInfo {
     includeInApk = false
@@ -68,7 +70,6 @@ android {
   }
 }
 
-// Configure the Secrets Gradle Plugin to use .env and .env.example files
 secrets {
   propertiesFileName = ".env"
   defaultPropertiesFileName = ".env.example"
@@ -103,10 +104,10 @@ dependencies {
   implementation(libs.logging.interceptor)
   implementation(libs.moshi.kotlin)
   implementation(libs.okhttp)
-    implementation("io.coil-kt:coil-compose:2.6.0")
+  implementation("io.coil-kt:coil-compose:2.6.0")
   implementation("io.coil-kt:coil-gif:2.6.0")
-    implementation("io.coil-kt:coil-svg:2.6.0")
-implementation(libs.retrofit)
+  implementation("io.coil-kt:coil-svg:2.6.0")
+  implementation(libs.retrofit)
   testImplementation(libs.androidx.compose.ui.test)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)
@@ -127,9 +128,9 @@ implementation(libs.retrofit)
   "ksp"(libs.moshi.kotlin.codegen)
 }
 
-// Automatically clear other APKs from download directories and upload the new APK
+// Keep exactly one APK distribution directory: /download.
 tasks.register("uploadApkToDownload") {
-  description = "Clears previous APKs in download directories and uploads the latest built APK"
+  description = "Copies the latest APK to the single download directory and removes duplicate APKs elsewhere."
   group = "distribution"
 
   val rootDirPath = rootProject.projectDir.absolutePath
@@ -137,14 +138,8 @@ tasks.register("uploadApkToDownload") {
 
   doLast {
     val rootDir = File(rootDirPath)
-    val targetDirs = listOf(
-      File(rootDir, "download"),
-      File(rootDir, "Download"),
-      File(rootDir, "downloads")
-    )
-    targetDirs.forEach { dir ->
-      if (!dir.exists()) dir.mkdirs()
-    }
+    val downloadDir = File(rootDir, "download")
+    if (!downloadDir.exists()) downloadDir.mkdirs()
 
     val outputDirs = listOf(
       File(appBuildDirPath, "outputs/apk"),
@@ -156,21 +151,15 @@ tasks.register("uploadApkToDownload") {
     }.maxByOrNull { it.lastModified() }
 
     if (builtApk != null && builtApk.exists()) {
-      targetDirs.forEach { dir ->
-        dir.listFiles()?.forEach { file ->
-          if (file.isFile && file.extension == "apk" && file.name != "CrazeKeyboard.apk") {
-            file.delete()
-          }
-        }
-        val dest = File(dir, "CrazeKeyboard.apk")
-        builtApk.copyTo(dest, overwrite = true)
+      downloadDir.listFiles()?.forEach { file ->
+        if (file.isFile && file.extension == "apk" && file.name != "CrazeKeyboard.apk") file.delete()
       }
+      builtApk.copyTo(File(downloadDir, "CrazeKeyboard.apk"), overwrite = true)
+
       rootDir.listFiles()?.forEach { file ->
-        if (file.isFile && file.extension == "apk") {
-          file.delete()
-        }
+        if (file.isFile && file.extension == "apk") file.delete()
       }
-      println("Generated latest CrazeKeyboard.apk in download directories and cleaned all other APKs.")
+      println("Generated latest CrazeKeyboard.apk in /download only.")
     }
   }
 }
