@@ -78,26 +78,26 @@ public final class PointerTracker {
     }
 
     /**
-     * AOSP LatinIME Rollover typing:
-     * When a new pointer touches down, commit any prior uncommitted pointer immediately
-     * so sequential rapid keystrokes (like S + M) are never dropped.
+     * AOSP LatinIME rollover typing: when a new pointer touches down, commit any prior
+     * uncommitted pointer immediately so rapid S + M sequences cannot lose the first key.
      */
     public void onDown(final int pointerId, final int x, final int y, final long eventTime, final int keyCode, final String keyText) {
         for (final PointerState state : mPointers.values()) {
             if (!state.isCommitted && !state.isLongPressFired && !state.isDragHandled) {
                 state.isCommitted = true;
-                if (mHandler != null) {
-                    mHandler.onUpKey(state.keyCode, state.keyText, mIsShifted);
-                }
+                if (mHandler != null) mHandler.onUpKey(state.keyCode, state.keyText, mIsShifted);
             }
         }
 
         final PointerState newState = new PointerState(pointerId, x, y, eventTime, keyCode, keyText);
         mPointers.put(pointerId, newState);
+        if (mHandler != null) mHandler.onDownKey(keyCode, keyText, mIsShifted);
+    }
 
-        if (mHandler != null) {
-            mHandler.onDownKey(keyCode, keyText, mIsShifted);
-        }
+    /** Marks a pointer as already committed after a DOWN-time key dispatch. */
+    public void markCommitted(final int pointerId) {
+        final PointerState state = mPointers.get(pointerId);
+        if (state != null) state.isCommitted = true;
     }
 
     public void onMove(final int pointerId, final int x, final int y) {
@@ -107,7 +107,6 @@ public final class PointerTracker {
         state.currentX = x;
         state.currentY = y;
 
-        // Spacebar sliding cursor control
         if (state.keyCode == ' ' && !state.isCommitted) {
             final float deltaFromLast = x - state.lastSwipeX;
             final float stepThresholdPx = 28f;
@@ -125,8 +124,7 @@ public final class PointerTracker {
             return;
         }
 
-        // Backspace swipe to delete word
-        if (state.keyCode == -4 && !state.isDragHandled) { // CODE_DELETE
+        if (state.keyCode == -4 && !state.isDragHandled) {
             final int deltaX = x - state.downX;
             if (deltaX < -50) {
                 state.isDragHandled = true;
@@ -144,9 +142,7 @@ public final class PointerTracker {
 
         if (!state.isCommitted && !state.isLongPressFired && !state.isDragHandled) {
             state.isCommitted = true;
-            if (mHandler != null) {
-                mHandler.onUpKey(state.keyCode, state.keyText, mIsShifted);
-            }
+            if (mHandler != null) mHandler.onUpKey(state.keyCode, state.keyText, mIsShifted);
         }
     }
 
@@ -160,9 +156,7 @@ public final class PointerTracker {
 
     public ArrayList<Integer> getActiveKeyCodes() {
         final ArrayList<Integer> list = new ArrayList<>(mPointers.size());
-        for (final PointerState state : mPointers.values()) {
-            list.add(state.keyCode);
-        }
+        for (final PointerState state : mPointers.values()) list.add(state.keyCode);
         return list;
     }
 }
