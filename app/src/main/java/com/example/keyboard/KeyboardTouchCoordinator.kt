@@ -10,7 +10,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
-/** Lightweight, allocation-conscious pointer state for the keyboard input hot path. */
+/** Full gesture state is only allocated for keys that actually need gestures. */
 private class PointerTrack(
     val pointerId: PointerId,
     val initialKeyPos: KeyPosition,
@@ -38,12 +38,13 @@ data class ActivePopupInfo(
 )
 
 /**
- * Performance-first touch dispatcher.
+ * Performance-first keyboard dispatcher.
  *
- * The dispatcher deliberately keeps all pointer state local and commits simple character keys
- * immediately on DOWN when they have no long-press alternatives. This removes an avoidable
- * frame/event round trip from the normal typing path while retaining deferred handling for keys
- * that genuinely need a long-press gesture.
+ * Normal character taps are deliberately handled as a tiny fast path:
+ * pointer down -> key commit. They do not allocate a gesture job, alternate-character list,
+ * popup state, or full PointerTrack. The pointer id is retained only long enough to clear the
+ * pressed visual state on pointer up. Keys which need long-press/repeat/swipe behavior use the
+ * full gesture path.
  */
 class KeyboardTouchCoordinator(
     private val scope: CoroutineScope,
@@ -62,6 +63,7 @@ class KeyboardTouchCoordinator(
     private val isShifted: () -> Boolean
 ) {
     private val activePointers = HashMap<PointerId, PointerTrack>(4)
+    private val fastTapPointers = HashMap<PointerId, KeyPosition>(4)
     private val pressedPositionsCache = HashSet<KeyPosition>(4)
 
     var pressedKeyPositions: Set<KeyPosition> = emptySet()
@@ -90,6 +92,7 @@ class KeyboardTouchCoordinator(
                 latest = track
             }
         }
+        for (keyPos in fastTapPointers.values) pressedPositionsCache.add(keyPos)
         pressedKeyPositions = if (pressedPositionsCache.isEmpty()) emptySet() else pressedPositionsCache.toSet()
         previewKeyPosition = if (isPopupPreviewEnabled()) latest?.initialKeyPos else null
         onStateChangedListener?.invoke()
@@ -99,6 +102,18 @@ class KeyboardTouchCoordinator(
         val geometry = getGeometry() ?: return
         val keyPos = geometry.findKeyAtOffset(change.position) ?: return
         val key = keyPos.key
+
+        // HOT PATH: ordinary character taps are committed immediately. Do not construct
+        // alternate lists or coroutine jobs for the common case.
+        if (key.type == KeyType.CHARACTER &&
+            key.longPressOptions.isEmpty() && key.alternateText.isEmpty()
+        ) {
+            fastTapPointers[change.id] = keyPos
+            onKeyTap(key)
+            notifyStateChanged()
+            return
+        }
+
         val now = System.currentTimeMillis()
         val shifted = isShifted()
         val alternateOptions = buildAlternateOptions(key, shifted)
@@ -141,8 +156,6 @@ class KeyboardTouchCoordinator(
                 }
             }
             KeyType.CHARACTER -> {
-                // Simple character taps have no reason to wait for ACTION_UP. This is the
-                // normal typing hot path and is the main fix for sub-frame rapid key drops.
                 if (alternateOptions.isEmpty()) {
                     track.committed = true
                     onKeyTap(key)
@@ -150,9 +163,7 @@ class KeyboardTouchCoordinator(
                     scheduleLongPress(track, key, alternateOptions, isLeftEdge, isRightEdge, defaultIdx, shifted)
                 }
             }
-            else -> {
-                scheduleLongPress(track, key, alternateOptions, isLeftEdge, isRightEdge, defaultIdx, shifted)
-            }
+            else -> scheduleLongPress(track, key, alternateOptions, isLeftEdge, isRightEdge, defaultIdx, shifted)
         }
 
         notifyStateChanged()
@@ -187,6 +198,10 @@ class KeyboardTouchCoordinator(
     }
 
     fun onPointerMove(change: PointerInputChange) {
+        // Fast taps have already been committed. Their move events must not run geometry,
+        // glide, popup, or suggestion work.
+        if (fastTapPointers.containsKey(change.id)) return
+
         val track = activePointers[change.id] ?: return
         val currentPos = change.position
         track.currentPosition = currentPos
@@ -247,6 +262,13 @@ class KeyboardTouchCoordinator(
     }
 
     fun onPointerUp(change: PointerInputChange) {
+        // Fast character taps only need to clear their visual pressed state. Text was already
+        // committed on DOWN, so never enqueue a second commit on UP.
+        if (fastTapPointers.remove(change.id) != null) {
+            notifyStateChanged()
+            return
+        }
+
         val track = activePointers.remove(change.id) ?: return
         track.longPressJob?.cancel()
         track.repeatJob?.cancel()
@@ -263,12 +285,13 @@ class KeyboardTouchCoordinator(
     }
 
     fun onCancel() {
-        if (activePointers.isEmpty() && activePopup == null && previewKeyPosition == null) return
+        if (activePointers.isEmpty() && fastTapPointers.isEmpty() && activePopup == null && previewKeyPosition == null) return
         for (track in activePointers.values) {
             track.longPressJob?.cancel()
             track.repeatJob?.cancel()
         }
         activePointers.clear()
+        fastTapPointers.clear()
         activePopup = null
         previewKeyPosition = null
         pressedKeyPositions = emptySet()
