@@ -3,6 +3,7 @@ package com.example.keyboard
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerInputChange
+import com.android.inputmethod.keyboard.internal.PointerTracker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -40,11 +41,9 @@ data class ActivePopupInfo(
 /**
  * Performance-first keyboard dispatcher.
  *
- * Normal character taps are deliberately handled as a tiny fast path:
- * pointer down -> key commit. They do not allocate a gesture job, alternate-character list,
- * popup state, or full PointerTrack. The pointer id is retained only long enough to clear the
- * pressed visual state on pointer up. Keys which need long-press/repeat/swipe behavior use the
- * full gesture path.
+ * Ordinary character taps use the actual AOSP PointerTracker for rollover/multitouch state.
+ * Gesture-heavy keys retain the Craze-specific popup/repeat/swipe path. This keeps the visual
+ * Compose layer while making the hottest character-input path use one authoritative pointer core.
  */
 class KeyboardTouchCoordinator(
     private val scope: CoroutineScope,
@@ -63,7 +62,8 @@ class KeyboardTouchCoordinator(
     private val isShifted: () -> Boolean
 ) {
     private val activePointers = HashMap<PointerId, PointerTrack>(4)
-    private val fastTapPointers = HashMap<PointerId, KeyPosition>(4)
+    private val aospTapPositions = HashMap<PointerId, KeyPosition>(4)
+    private val aospPointerTracker = PointerTracker()
     private val pressedPositionsCache = HashSet<KeyPosition>(4)
 
     var pressedKeyPositions: Set<KeyPosition> = emptySet()
@@ -74,6 +74,24 @@ class KeyboardTouchCoordinator(
         private set
 
     private var onStateChangedListener: (() -> Unit)? = null
+
+    init {
+        aospPointerTracker.setKeyEventHandler(object : PointerTracker.KeyEventHandler {
+            override fun onDownKey(code: Int, text: String, isShift: Boolean) {
+                if (text.isNotEmpty()) onKeyTap(KeyModel(primaryText = text, shiftedText = if (isShift) text.uppercase() else text))
+            }
+
+            override fun onUpKey(code: Int, text: String, isShift: Boolean) {
+                // AOSP rollover commits an older pointer here when a new pointer goes down.
+                if (text.isNotEmpty()) onKeyTap(KeyModel(primaryText = text, shiftedText = if (isShift) text.uppercase() else text))
+            }
+
+            override fun onLongPress(code: Int, text: String) = Unit
+            override fun onSwipeDelete() = onDeleteWord()
+            override fun onMoveCursor(steps: Int) = onMoveCursor(steps)
+            override fun onHapticFeedback() = onSelectionTick()
+        })
+    }
 
     fun setOnStateChangedListener(listener: () -> Unit) {
         onStateChangedListener = listener
@@ -88,11 +106,9 @@ class KeyboardTouchCoordinator(
                 track.initialKeyPos.key.type == KeyType.CHARACTER &&
                 track.initialKeyPos.key.primaryText.isNotEmpty() &&
                 (latest == null || track.downTimeMs > latest.downTimeMs)
-            ) {
-                latest = track
-            }
+            ) latest = track
         }
-        for (keyPos in fastTapPointers.values) pressedPositionsCache.add(keyPos)
+        for (keyPos in aospTapPositions.values) pressedPositionsCache.add(keyPos)
         pressedKeyPositions = if (pressedPositionsCache.isEmpty()) emptySet() else pressedPositionsCache.toSet()
         previewKeyPosition = if (isPopupPreviewEnabled()) latest?.initialKeyPos else null
         onStateChangedListener?.invoke()
@@ -103,13 +119,22 @@ class KeyboardTouchCoordinator(
         val keyPos = geometry.findKeyAtOffset(change.position) ?: return
         val key = keyPos.key
 
-        // HOT PATH: ordinary character taps are committed immediately. Do not construct
-        // alternate lists or coroutine jobs for the common case.
-        if (key.type == KeyType.CHARACTER &&
-            key.longPressOptions.isEmpty() && key.alternateText.isEmpty()
-        ) {
-            fastTapPointers[change.id] = keyPos
-            onKeyTap(key)
+        // The real AOSP pointer tracker owns the normal character path. This is deliberately
+        // separate from long-press keys so popup behavior cannot add latency to ordinary typing.
+        if (key.type == KeyType.CHARACTER && key.longPressOptions.isEmpty() && key.alternateText.isEmpty()) {
+            val pointerId = change.id.value.toInt()
+            aospTapPositions[change.id] = keyPos
+            aospPointerTracker.setShifted(isShifted())
+            aospPointerTracker.onDown(
+                pointerId,
+                change.position.x.toInt(),
+                change.position.y.toInt(),
+                System.currentTimeMillis(),
+                key.primaryText.firstOrNull()?.code ?: 0,
+                key.primaryText
+            )
+            // Commit on DOWN for single-key latency while still retaining AOSP rollover state.
+            aospPointerTracker.markCommitted(pointerId)
             notifyStateChanged()
             return
         }
@@ -125,23 +150,11 @@ class KeyboardTouchCoordinator(
             else -> alternateOptions.size / 2
         }
 
-        val track = PointerTrack(
-            pointerId = change.id,
-            initialKeyPos = keyPos,
-            currentKeyPos = keyPos,
-            downPosition = change.position,
-            currentPosition = change.position,
-            downTimeMs = now,
-            popupOptions = alternateOptions,
-            selectedOptionIndex = defaultIdx
-        )
+        val track = PointerTrack(change.id, keyPos, keyPos, change.position, change.position, now, popupOptions = alternateOptions, selectedOptionIndex = defaultIdx)
         activePointers[change.id] = track
 
         when (key.type) {
-            KeyType.SHIFT -> {
-                track.committed = true
-                onKeyTap(key)
-            }
+            KeyType.SHIFT -> { track.committed = true; onKeyTap(key) }
             KeyType.BACKSPACE -> {
                 track.committed = true
                 onBackspace()
@@ -159,25 +172,14 @@ class KeyboardTouchCoordinator(
                 if (alternateOptions.isEmpty()) {
                     track.committed = true
                     onKeyTap(key)
-                } else {
-                    scheduleLongPress(track, key, alternateOptions, isLeftEdge, isRightEdge, defaultIdx, shifted)
-                }
+                } else scheduleLongPress(track, key, alternateOptions, isLeftEdge, isRightEdge, defaultIdx, shifted)
             }
             else -> scheduleLongPress(track, key, alternateOptions, isLeftEdge, isRightEdge, defaultIdx, shifted)
         }
-
         notifyStateChanged()
     }
 
-    private fun scheduleLongPress(
-        track: PointerTrack,
-        key: KeyModel,
-        alternateOptions: List<String>,
-        isLeftEdge: Boolean,
-        isRightEdge: Boolean,
-        defaultIdx: Int,
-        shifted: Boolean
-    ) {
+    private fun scheduleLongPress(track: PointerTrack, key: KeyModel, alternateOptions: List<String>, isLeftEdge: Boolean, isRightEdge: Boolean, defaultIdx: Int, shifted: Boolean) {
         val delayMs = getLongPressDelayMs().coerceAtLeast(120).toLong()
         track.longPressJob = scope.launch {
             delay(delayMs)
@@ -189,8 +191,7 @@ class KeyboardTouchCoordinator(
                 activePopup = ActivePopupInfo(track.initialKeyPos, alternateOptions, defaultIdx, isLeftEdge, isRightEdge)
                 notifyStateChanged()
             } else if (key.alternateText.isNotEmpty()) {
-                val text = if (shifted) key.alternateText.uppercase() else key.alternateText
-                onKeyInsertText(text)
+                onKeyInsertText(if (shifted) key.alternateText.uppercase() else key.alternateText)
                 track.committed = true
                 notifyStateChanged()
             }
@@ -198,10 +199,7 @@ class KeyboardTouchCoordinator(
     }
 
     fun onPointerMove(change: PointerInputChange) {
-        // Fast taps have already been committed. Their move events must not run geometry,
-        // glide, popup, or suggestion work.
-        if (fastTapPointers.containsKey(change.id)) return
-
+        if (aospTapPositions.containsKey(change.id)) return
         val track = activePointers[change.id] ?: return
         val currentPos = change.position
         track.currentPosition = currentPos
@@ -240,21 +238,15 @@ class KeyboardTouchCoordinator(
             return
         }
 
-        if (track.initialKeyPos.key.type == KeyType.BACKSPACE && isBackspaceSwipeEnabled()) {
-            if (currentPos.x - track.downPosition.x < -50f && !track.dragHandled) {
-                track.dragHandled = true
-                track.repeatJob?.cancel()
-                onDeleteWord()
-            }
+        if (track.initialKeyPos.key.type == KeyType.BACKSPACE && isBackspaceSwipeEnabled() && currentPos.x - track.downPosition.x < -50f && !track.dragHandled) {
+            track.dragHandled = true
+            track.repeatJob?.cancel()
+            onDeleteWord()
             return
         }
 
-        if ((currentPos - track.downPosition).getDistance() > 30f && !track.longPressFired) {
-            track.longPressJob?.cancel()
-        }
-
-        val geometry = getGeometry()
-        val newKeyPos = geometry?.findKeyAtOffset(currentPos)
+        if ((currentPos - track.downPosition).getDistance() > 30f && !track.longPressFired) track.longPressJob?.cancel()
+        val newKeyPos = getGeometry()?.findKeyAtOffset(currentPos)
         if (newKeyPos != null && newKeyPos != track.currentKeyPos) {
             track.currentKeyPos = newKeyPos
             notifyStateChanged()
@@ -262,9 +254,8 @@ class KeyboardTouchCoordinator(
     }
 
     fun onPointerUp(change: PointerInputChange) {
-        // Fast character taps only need to clear their visual pressed state. Text was already
-        // committed on DOWN, so never enqueue a second commit on UP.
-        if (fastTapPointers.remove(change.id) != null) {
+        if (aospTapPositions.remove(change.id) != null) {
+            aospPointerTracker.onUp(change.id.value.toInt())
             notifyStateChanged()
             return
         }
@@ -272,26 +263,20 @@ class KeyboardTouchCoordinator(
         val track = activePointers.remove(change.id) ?: return
         track.longPressJob?.cancel()
         track.repeatJob?.cancel()
-
         if (track.popupShowing) {
-            val text = track.popupOptions.getOrNull(track.selectedOptionIndex)
-                ?: track.initialKeyPos.key.alternateText.ifEmpty { track.initialKeyPos.key.primaryText }
+            val text = track.popupOptions.getOrNull(track.selectedOptionIndex) ?: track.initialKeyPos.key.alternateText.ifEmpty { track.initialKeyPos.key.primaryText }
             if (text.isNotEmpty()) onKeyInsertText(text)
             activePopup = null
-        } else if (!track.committed && !track.longPressFired && !track.dragHandled) {
-            onKeyTap(track.initialKeyPos.key)
-        }
+        } else if (!track.committed && !track.longPressFired && !track.dragHandled) onKeyTap(track.initialKeyPos.key)
         notifyStateChanged()
     }
 
     fun onCancel() {
-        if (activePointers.isEmpty() && fastTapPointers.isEmpty() && activePopup == null && previewKeyPosition == null) return
-        for (track in activePointers.values) {
-            track.longPressJob?.cancel()
-            track.repeatJob?.cancel()
-        }
+        if (activePointers.isEmpty() && aospTapPositions.isEmpty() && activePopup == null && previewKeyPosition == null) return
+        for (track in activePointers.values) { track.longPressJob?.cancel(); track.repeatJob?.cancel() }
         activePointers.clear()
-        fastTapPointers.clear()
+        aospTapPositions.clear()
+        aospPointerTracker.onCancel()
         activePopup = null
         previewKeyPosition = null
         pressedKeyPositions = emptySet()
@@ -300,14 +285,9 @@ class KeyboardTouchCoordinator(
     }
 
     private fun buildAlternateOptions(key: KeyModel, shifted: Boolean): List<String> {
-        val raw = if (key.longPressOptions.isNotEmpty()) {
-            key.longPressOptions.filter { it.lowercase() != key.primaryText.lowercase() }
-        } else if (key.alternateText.isNotEmpty()) {
-            listOf(key.alternateText)
-        } else emptyList()
-        val options = if (key.alternateText.isNotEmpty() && !raw.contains(key.alternateText)) {
-            listOf(key.alternateText) + raw
-        } else raw
+        val raw = if (key.longPressOptions.isNotEmpty()) key.longPressOptions.filter { it.lowercase() != key.primaryText.lowercase() }
+        else if (key.alternateText.isNotEmpty()) listOf(key.alternateText) else emptyList()
+        val options = if (key.alternateText.isNotEmpty() && !raw.contains(key.alternateText)) listOf(key.alternateText) + raw else raw
         return if (shifted) options.map { if (it.length == 1 && it[0].isLetter()) it.uppercase() else it } else options
     }
 
