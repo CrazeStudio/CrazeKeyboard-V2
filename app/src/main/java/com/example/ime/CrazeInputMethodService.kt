@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.inputmethodservice.InputMethodService
 import android.os.Build
+import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import androidx.compose.runtime.getValue
@@ -19,10 +20,13 @@ import androidx.core.view.inputmethod.InputContentInfoCompat
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.android.inputmethod.latin.RichInputConnection
+import com.android.inputmethod.latin.inputlogic.InputLogic
 import com.example.MainActivity
 import com.example.core.AppDatabase
 import com.example.core.SoundFeedbackHelper
 import com.example.developer.DevKeyItem
+import com.example.developer.DevKeyType
 import com.example.developer.ModifierState
 import com.example.keyboard.CrazeKeyboardView
 import com.example.keyboard.CursorAction
@@ -45,12 +49,21 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
     private val suggestionEngine: SuggestionEngine by lazy { SuggestionEngine(applicationContext, database.personalDictionaryDao()) }
     private val richImm: RichInputConnection by lazy { RichInputConnection(this) }
     private val inputLogic: InputLogic by lazy {
-        InputLogic(richImm, preferences, suggestionEngine, serviceScope) { wordPrefix, sentenceStart, acNotice ->
-            currentWordPrefix = wordPrefix
-            isSentenceStart = sentenceStart
-            isActualSentenceStart = sentenceStart
-            autoCorrectNotice = acNotice
-        }
+        val logic = InputLogic(richImm)
+        logic.setDoubleSpacePeriodEnabled(preferences.isDoubleSpacePeriodEnabled)
+        logic.setListener(object : InputLogic.Listener {
+            override fun onWordComposed(word: String) {
+                this@CrazeInputMethodService.currentWordPrefix = word
+            }
+            override fun onAutoCorrectChanged(original: String?, correction: String?) {
+                this@CrazeInputMethodService.autoCorrectNotice = if (original != null && correction != null) Pair(original, correction) else null
+            }
+            override fun onCapsModeChanged(sentenceStart: Boolean) {
+                this@CrazeInputMethodService.isSentenceStart = sentenceStart
+                this@CrazeInputMethodService.isActualSentenceStart = sentenceStart
+            }
+        })
+        logic
     }
 
     private var currentWordPrefix by mutableStateOf("")
@@ -180,7 +193,8 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
         currentWordPrefix = inputLogic.currentWordPrefix
         isSentenceStart = inputLogic.isSentenceStart
         isActualSentenceStart = inputLogic.isSentenceStart
-        autoCorrectNotice = inputLogic.autoCorrectNotice
+        val notice = inputLogic.autoCorrectNotice
+        autoCorrectNotice = if (notice != null && notice.first != null && notice.second != null) Pair(notice.first, notice.second) else null
     }
 
     override fun onUpdateSelection(oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int, candidatesStart: Int, candidatesEnd: Int) {
@@ -220,11 +234,101 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
     override fun onDeleteWord() { inputLogic.onDeleteWord(); syncEditorFields() }
     override fun onEnter() { inputLogic.onEnter(); syncEditorFields() }
     override fun onMoveCursor(offset: Int) { inputLogic.onMoveCursor(offset); syncEditorFields() }
+
     override fun onSpecialKey(action: CursorAction) {
-        if (action == CursorAction.TOGGLE_SELECT) isSelectModeActive = !isSelectModeActive else inputLogic.onSpecialKey(action, isSelectModeActive)
+        if (action == CursorAction.TOGGLE_SELECT) {
+            isSelectModeActive = !isSelectModeActive
+        } else {
+            handleSpecialKey(action, isSelectModeActive)
+        }
         syncEditorFields()
     }
-    override fun onDevKey(item: DevKeyItem, modifierState: ModifierState) { inputLogic.onDevKey(item, modifierState); syncEditorFields() }
+
+    private fun handleSpecialKey(action: CursorAction, selectMode: Boolean) {
+        when (action) {
+            CursorAction.LEFT -> {
+                if (selectMode) richImm.sendKeyWithMeta(KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.META_SHIFT_ON)
+                else richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_LEFT)
+            }
+            CursorAction.RIGHT -> {
+                if (selectMode) richImm.sendKeyWithMeta(KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.META_SHIFT_ON)
+                else richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_RIGHT)
+            }
+            CursorAction.UP -> {
+                if (selectMode) richImm.sendKeyWithMeta(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.META_SHIFT_ON)
+                else richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_UP)
+            }
+            CursorAction.DOWN -> {
+                if (selectMode) richImm.sendKeyWithMeta(KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.META_SHIFT_ON)
+                else richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_DOWN)
+            }
+            CursorAction.HOME, CursorAction.START -> {
+                if (selectMode) richImm.sendKeyWithMeta(KeyEvent.KEYCODE_MOVE_HOME, KeyEvent.META_SHIFT_ON)
+                else richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_MOVE_HOME)
+            }
+            CursorAction.END -> {
+                if (selectMode) richImm.sendKeyWithMeta(KeyEvent.KEYCODE_MOVE_END, KeyEvent.META_SHIFT_ON)
+                else richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_MOVE_END)
+            }
+            CursorAction.SELECT_ALL -> richImm.performContextMenuAction(android.R.id.selectAll)
+            CursorAction.CUT -> richImm.performContextMenuAction(android.R.id.cut)
+            CursorAction.COPY -> richImm.performContextMenuAction(android.R.id.copy)
+            CursorAction.PASTE -> richImm.performContextMenuAction(android.R.id.paste)
+            CursorAction.DELETE -> richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_FORWARD_DEL)
+            CursorAction.CLEAR -> {
+                richImm.beginBatchEdit()
+                try {
+                    richImm.deleteTextBeforeCursor(2000)
+                } finally {
+                    richImm.endBatchEdit()
+                }
+            }
+            CursorAction.TOGGLE_SELECT -> {}
+        }
+        inputLogic.updateWordPrefixAndCaps()
+    }
+
+    override fun onDevKey(item: DevKeyItem, modifierState: ModifierState) {
+        handleDevKey(item, modifierState)
+        syncEditorFields()
+    }
+
+    private fun handleDevKey(item: DevKeyItem, modifierState: ModifierState) {
+        when (item.type) {
+            DevKeyType.ESC -> richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_ESCAPE)
+            DevKeyType.TAB -> richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_TAB)
+            DevKeyType.ARROW_LEFT -> richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_LEFT)
+            DevKeyType.ARROW_RIGHT -> richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_RIGHT)
+            DevKeyType.ARROW_UP -> richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_UP)
+            DevKeyType.ARROW_DOWN -> richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_DOWN)
+            DevKeyType.HOME -> richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_MOVE_HOME)
+            DevKeyType.END -> richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_MOVE_END)
+            DevKeyType.CTRL -> modifierState.toggleCtrl()
+            DevKeyType.ALT -> modifierState.toggleAlt()
+            DevKeyType.TEXT -> {
+                val text = item.insertText.ifEmpty { item.label }
+                val metaState = (if (modifierState.isCtrlActive) KeyEvent.META_CTRL_ON else 0) or
+                                (if (modifierState.isAltActive) KeyEvent.META_ALT_ON else 0) or
+                                (if (modifierState.isShiftActive) KeyEvent.META_SHIFT_ON else 0)
+                if (metaState != 0 && text.length == 1) {
+                    val ch = text[0].lowercaseChar()
+                    val keyCode = when (ch) {
+                        in 'a'..'z' -> KeyEvent.KEYCODE_A + (ch - 'a')
+                        in '0'..'9' -> KeyEvent.KEYCODE_0 + (ch - '0')
+                        else -> 0
+                    }
+                    if (keyCode != 0) {
+                        richImm.sendKeyWithMeta(keyCode, metaState)
+                        modifierState.resetTransientModifiers()
+                        return
+                    }
+                }
+                richImm.commitText(text, 1)
+                modifierState.resetTransientModifiers()
+            }
+        }
+        inputLogic.updateWordPrefixAndCaps()
+    }
 
     override fun onVoiceRequested() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
@@ -258,21 +362,26 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
     }
 
     override fun getCurrentContextText(): String {
-        val selected = richImm.getSelectedText()
-        return if (selected.isNotBlank()) selected.trim() else richImm.getTextBeforeCursor(2000, 0).trim()
+        val selected = richImm.getSelectedText().toString()
+        return if (selected.isNotBlank()) selected.trim() else richImm.getTextBeforeCursor(2000, 0).toString().trim()
     }
 
     override fun onReplaceContextText(newText: String) {
-        val selected = richImm.getSelectedText()
+        val selected = richImm.getSelectedText().toString()
         richImm.beginBatchEdit()
         try {
-            if (selected.isNotBlank()) richImm.commitText(newText)
-            else {
-                val textBefore = richImm.getTextBeforeCursor(2000, 0)
-                if (textBefore.isNotEmpty()) richImm.deleteTextBeforeCursor(textBefore.length)
-                richImm.commitText(newText)
+            if (selected.isNotBlank()) {
+                richImm.commitText(newText, 1)
+            } else {
+                val textBefore = richImm.getTextBeforeCursor(2000, 0).toString()
+                if (textBefore.isNotEmpty()) {
+                    richImm.deleteTextBeforeCursor(textBefore.length)
+                }
+                richImm.commitText(newText, 1)
             }
-        } finally { richImm.endBatchEdit() }
+        } finally {
+            richImm.endBatchEdit()
+        }
         inputLogic.updateWordPrefixAndCaps()
         syncEditorFields()
     }
