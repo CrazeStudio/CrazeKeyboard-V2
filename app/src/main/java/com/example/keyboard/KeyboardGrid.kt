@@ -66,9 +66,7 @@ fun KeyboardGrid(
 
     var keyboardGridSize by remember { mutableStateOf(IntSize.Zero) }
 
-    // Glide state is deliberately dormant during ordinary taps. It becomes active only after
-    // the pointer moves far enough to prove this is a swipe, preventing geometry/suggestion work
-    // from competing with normal character input.
+    // Optional glide state is allocated once and stays dormant during ordinary taps.
     val glideTrailPoints = remember { mutableStateListOf<Offset>() }
     val sampledGlideChars = remember { mutableListOf<Char>() }
     var isGlideGestureActive by remember { mutableStateOf(false) }
@@ -134,7 +132,7 @@ fun KeyboardGrid(
     val currentShiftState by rememberUpdatedState(shiftState)
     val currentPreferences by rememberUpdatedState(preferences)
 
-    val touchCoordinator = remember(coroutineScope, geometry) {
+    val touchCoordinator = remember(geometry) {
         KeyboardTouchCoordinator(
             scope = coroutineScope,
             onKeyTap = { key -> triggerFeedback(key); onKeyTap(key) },
@@ -152,6 +150,8 @@ fun KeyboardGrid(
             isShifted = { currentShiftState != ShiftState.OFF }
         ).apply {
             setOnStateChangedListener {
+                // Gesture keys need visual state. Normal character taps intentionally do not
+                // publish state here: doing so would recompose the entire keyboard twice per key.
                 pressedPositions = this.pressedKeyPositions
                 activePopupInfo = this.activePopup
                 previewPosition = this.previewKeyPosition
@@ -172,9 +172,6 @@ fun KeyboardGrid(
                                 if (change.changedToDown()) {
                                     change.consume()
                                     touchCoordinator.onPointerDown(change)
-
-                                    // Do not inspect keyboard geometry here. Normal taps are the
-                                    // dominant path and must remain almost allocation-free.
                                     if (currentPreferences.isGlideTypingEnabled && keyboardMode == KeyboardMode.ALPHA) {
                                         glideCandidateStart = change.position
                                         glidePointerId = change.id
@@ -186,14 +183,9 @@ fun KeyboardGrid(
                                     change.consume()
                                     touchCoordinator.onPointerMove(change)
 
-                                    if (currentPreferences.isGlideTypingEnabled &&
-                                        keyboardMode == KeyboardMode.ALPHA &&
-                                        glidePointerId == change.id
-                                    ) {
+                                    if (currentPreferences.isGlideTypingEnabled && keyboardMode == KeyboardMode.ALPHA && glidePointerId == change.id) {
                                         val start = glideCandidateStart
                                         val distance = if (start != null) (change.position - start).getDistance() else 0f
-
-                                        // Enter glide mode only after a meaningful movement.
                                         if (!isGlideGestureActive && start != null && distance >= 18f) {
                                             val startChar = geometry?.findCharKeyAtOffset(start)
                                             if (startChar != null) {
@@ -205,19 +197,11 @@ fun KeyboardGrid(
                                             }
                                         }
 
-                                        if (isGlideGestureActive &&
-                                            (glideTrailPoints.isEmpty() ||
-                                             (change.position - glideTrailPoints.last()).getDistance() >= 8f)
-                                        ) {
+                                        if (isGlideGestureActive && (glideTrailPoints.isEmpty() || (change.position - glideTrailPoints.last()).getDistance() >= 8f)) {
                                             glideTrailPoints.add(change.position)
-                                            // Keep the overlay bounded; old points are visually
-                                            // irrelevant and only increase Compose snapshot work.
                                             if (glideTrailPoints.size > 48) glideTrailPoints.removeAt(0)
-
                                             val charUnderFinger = geometry?.findCharKeyAtOffset(change.position)
-                                            if (charUnderFinger != null &&
-                                                (sampledGlideChars.isEmpty() || sampledGlideChars.last() != charUnderFinger)
-                                            ) {
+                                            if (charUnderFinger != null && (sampledGlideChars.isEmpty() || sampledGlideChars.last() != charUnderFinger)) {
                                                 sampledGlideChars.add(charUnderFinger)
                                                 hapticHelper.performSelectionTick(currentPreferences.isHapticsEnabled, currentView)
                                             }
@@ -239,7 +223,6 @@ fun KeyboardGrid(
                                     sampledGlideChars.clear()
                                 }
                             }
-
                             if (event.changes.all { !it.pressed }) break
                         }
                     } finally {
@@ -257,15 +240,11 @@ fun KeyboardGrid(
             allDisplayedRows.forEachIndexed { rIdx, row ->
                 val isNumRow = hasNumberRow && rIdx == 0
                 val rowHeight = if (isNumRow) (preferences.keyHeightDp * 0.85f).dp else preferences.keyHeightDp.dp
-
-                Row(
-                    modifier = Modifier.fillMaxWidth().height(rowHeight)
-                ) {
+                Row(modifier = Modifier.fillMaxWidth().height(rowHeight)) {
                     row.forEachIndexed { kIdx, key ->
                         val isKeyPressed = pressedPositions.any { it.rowIndex == rIdx && it.keyIndex == kIdx }
                         val isPreviewShown = previewPosition?.let { it.rowIndex == rIdx && it.keyIndex == kIdx } == true
                         val popup = if (activePopupInfo?.keyPosition?.rowIndex == rIdx && activePopupInfo?.keyPosition?.keyIndex == kIdx) activePopupInfo else null
-
                         KeyView(
                             key = key,
                             theme = theme,
@@ -282,20 +261,14 @@ fun KeyboardGrid(
             }
         }
 
-        if (glideTrailPoints.size >= 2) {
-            GlideTrailOverlay(points = glideTrailPoints, color = theme.accentColor)
-        }
+        if (glideTrailPoints.size >= 2) GlideTrailOverlay(points = glideTrailPoints, color = theme.accentColor)
     }
 }
 
 @Composable
-private fun GlideTrailOverlay(
-    points: List<Offset>,
-    color: Color
-) {
+private fun GlideTrailOverlay(points: List<Offset>, color: Color) {
     if (points.size < 2) return
     val trailPath = remember { Path() }
-
     Canvas(modifier = Modifier.fillMaxSize()) {
         val path = trailPath.apply {
             reset()
@@ -309,7 +282,6 @@ private fun GlideTrailOverlay(
             }
             lineTo(points.last().x, points.last().y)
         }
-
         drawPath(path = path, color = color.copy(alpha = 0.35f), style = Stroke(width = 12.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
         drawPath(path = path, color = color.copy(alpha = 0.85f), style = Stroke(width = 5.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
         drawCircle(color = color, radius = 6.dp.toPx(), center = points.last())
