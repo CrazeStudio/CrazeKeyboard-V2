@@ -46,7 +46,7 @@ import com.example.core.SoundFeedbackHelper
 import com.example.developer.DevKeyType
 import com.example.developer.DeveloperToolbar
 import com.example.developer.ModifierState
-import com.example.emoji.LocalEmojiAiEngine
+import com.example.emoji.LocalEmojiEngine
 import com.example.settings.KeyboardPreferences
 import com.example.suggestions.SuggestionEngine
 import com.example.themes.KeyboardTheme
@@ -138,7 +138,7 @@ fun CrazeKeyboardView(
             val (newSuggestions, newEmojis) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
                 val sug = suggestionEngine.getSuggestionsSync(currentWordPrefix)
                 val emojis = if (preferences.isLocalAiEmojiEnabled) {
-                    LocalEmojiAiEngine.predictEmojisForText(currentWordPrefix)
+                    LocalEmojiEngine.predictEmojisForText(currentWordPrefix)
                 } else emptyList()
                 sug to emojis
             }
@@ -217,7 +217,6 @@ fun CrazeKeyboardView(
             // Stable 48.dp Fixed-Height Toolbar Section
             ClipboardToolbarSection(
                 activePanel = activePanel,
-                isAiPanelOpen = false,
                 isLiveTranslateActive = isLiveTranslateActive,
                 isMediaSearchMode = isMediaSearchMode,
                 currentWordPrefix = currentWordPrefix,
@@ -530,7 +529,6 @@ fun CrazeKeyboardView(
 @Composable
 private fun ClipboardToolbarSection(
     activePanel: ActivePanel,
-    isAiPanelOpen: Boolean,
     isLiveTranslateActive: Boolean,
     isMediaSearchMode: Boolean,
     currentWordPrefix: String,

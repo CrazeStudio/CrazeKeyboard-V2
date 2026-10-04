@@ -257,16 +257,10 @@ fun CrazeSettingsApp(
                             )
                         }
                         item {
-                            val netMode = preferences.networkMode
-                            val netLabel = when (netMode) {
-                                "OFFLINE_ONLY" -> "Hard Offline"
-                                "ONLINE_ONLY" -> "Cloud Optimized"
-                                else -> "Intelligent Auto"
-                            }
                             SettingsListItem(
                                 icon = Icons.Filled.Security,
-                                title = "Privacy & Network",
-                                subtitle = "$netLabel • Zero telemetry architecture",
+                                title = "Privacy & Offline Architecture",
+                                subtitle = "100% Offline • Zero telemetry architecture",
                                 onClick = { currentScreen = SettingsScreen.PRIVACY_NETWORK }
                             )
                         }

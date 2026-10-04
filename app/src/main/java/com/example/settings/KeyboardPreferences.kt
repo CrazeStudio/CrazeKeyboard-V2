@@ -110,9 +110,6 @@ class KeyboardPreferences(context: Context) {
         private set
 
     // Custom Theme Colors (Infinite Customization)
-    var networkMode by mutableStateOf(prefs.getString("network_mode", "AUTO") ?: "AUTO") // "AUTO", "ONLINE_ONLY", "OFFLINE_ONLY"
-        private set
-
     var isCustomThemeEnabled by mutableStateOf(prefs.getBoolean("is_custom_theme_enabled", false))
         private set
 
@@ -126,12 +123,6 @@ class KeyboardPreferences(context: Context) {
         private set
 
     var customTextColorHex by mutableStateOf(prefs.getString("custom_text_hex", "#CDD6F4") ?: "#CDD6F4")
-        private set
-
-    var libreTranslateEndpoint by mutableStateOf(prefs.getString("libre_translate_endpoint", "https://libretranslate.com/translate") ?: "https://libretranslate.com/translate")
-        private set
-
-    var libreTranslateApiKey by mutableStateOf(prefs.getString("libre_translate_api_key", "") ?: "")
         private set
 
     var clipboardUnpinnedLimit by mutableStateOf(prefs.getInt("clipboard_unpinned_limit", 10))
@@ -186,7 +177,6 @@ class KeyboardPreferences(context: Context) {
             "is_popup_preview_enabled" -> isPopupPreviewEnabled = prefs.getBoolean("is_popup_preview_enabled", true)
             "current_language" -> currentLanguage = prefs.getString("current_language", "en") ?: "en"
             "current_font_style" -> currentFontStyle = prefs.getString("current_font_style", "normal") ?: "normal"
-            "network_mode" -> networkMode = prefs.getString("network_mode", "AUTO") ?: "AUTO"
             "is_custom_theme_enabled" -> isCustomThemeEnabled = prefs.getBoolean("is_custom_theme_enabled", false)
             "custom_bg_hex" -> customBgColorHex = prefs.getString("custom_bg_hex", "#1E1E2E") ?: "#1E1E2E"
             "custom_key_hex" -> customKeyColorHex = prefs.getString("custom_key_hex", "#313244") ?: "#313244"
@@ -204,8 +194,6 @@ class KeyboardPreferences(context: Context) {
                     ?.filter { it.isNotBlank() }
                     ?: listOf("CLIPBOARD", "CURSOR_NAV", "FONTS", "LANGUAGE", "THEME", "SETTINGS")
             }
-            "libre_translate_endpoint" -> libreTranslateEndpoint = prefs.getString("libre_translate_endpoint", "https://libretranslate.com/translate") ?: "https://libretranslate.com/translate"
-            "libre_translate_api_key" -> libreTranslateApiKey = prefs.getString("libre_translate_api_key", "") ?: ""
             "clipboard_unpinned_limit" -> clipboardUnpinnedLimit = prefs.getInt("clipboard_unpinned_limit", 10)
             "haptic_profile" -> hapticProfile = prefs.getString("haptic_profile", "system") ?: "system"
             "haptic_intensity_percent" -> hapticIntensityPercent = prefs.getInt("haptic_intensity_percent", 65).coerceIn(5, 100)
@@ -254,14 +242,11 @@ class KeyboardPreferences(context: Context) {
         isPopupPreviewEnabled = prefs.getBoolean("is_popup_preview_enabled", true)
         currentLanguage = prefs.getString("current_language", "en") ?: "en"
         currentFontStyle = prefs.getString("current_font_style", "normal") ?: "normal"
-        networkMode = prefs.getString("network_mode", "AUTO") ?: "AUTO"
         isCustomThemeEnabled = prefs.getBoolean("is_custom_theme_enabled", false)
         customBgColorHex = prefs.getString("custom_bg_hex", "#1E1E2E") ?: "#1E1E2E"
         customKeyColorHex = prefs.getString("custom_key_hex", "#313244") ?: "#313244"
         customAccentColorHex = prefs.getString("custom_accent_hex", "#CBA6F7") ?: "#CBA6F7"
         customTextColorHex = prefs.getString("custom_text_hex", "#CDD6F4") ?: "#CDD6F4"
-        libreTranslateEndpoint = prefs.getString("libre_translate_endpoint", "https://libretranslate.com/translate") ?: "https://libretranslate.com/translate"
-        libreTranslateApiKey = prefs.getString("libre_translate_api_key", "") ?: ""
         clipboardUnpinnedLimit = prefs.getInt("clipboard_unpinned_limit", 10)
         hapticProfile = prefs.getString("haptic_profile", "system") ?: "system"
         hapticIntensityPercent = prefs.getInt("haptic_intensity_percent", 65).coerceIn(5, 100)
@@ -489,11 +474,6 @@ class KeyboardPreferences(context: Context) {
         prefs.edit().putString("current_font_style", styleId).apply()
     }
 
-    fun updateNetworkMode(mode: String) {
-        networkMode = mode
-        prefs.edit().putString("network_mode", mode).apply()
-    }
-
     fun updateHotbarTools(tools: List<String>) {
         hotbarTools = tools
         prefs.edit().putString("hotbar_tools", tools.joinToString(",")).apply()
@@ -533,18 +513,6 @@ class KeyboardPreferences(context: Context) {
     fun resetHotbarTools() {
         val defaultList = listOf("CLIPBOARD", "CURSOR_NAV", "FONTS", "LANGUAGE", "THEME", "SETTINGS")
         updateHotbarTools(defaultList)
-    }
-
-    fun updateLibreTranslateEndpoint(endpoint: String) {
-        val clean = endpoint.trim().ifBlank { "https://libretranslate.com/translate" }
-        libreTranslateEndpoint = clean
-        prefs.edit().putString("libre_translate_endpoint", clean).apply()
-    }
-
-    fun updateLibreTranslateApiKey(key: String) {
-        val clean = key.trim()
-        libreTranslateApiKey = clean
-        prefs.edit().putString("libre_translate_api_key", clean).apply()
     }
 
     fun updateClipboardUnpinnedLimit(limit: Int) {

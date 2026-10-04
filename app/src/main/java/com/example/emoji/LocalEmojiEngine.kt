@@ -2,7 +2,7 @@ package com.example.emoji
 
 import android.util.LruCache
 
-object LocalEmojiAiEngine {
+object LocalEmojiEngine {
 
     private val predictionCache = LruCache<String, List<String>>(64)
 
