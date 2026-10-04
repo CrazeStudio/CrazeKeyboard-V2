@@ -8,10 +8,7 @@ import com.example.settings.KeyboardPreferences
 import com.example.suggestions.SuggestionEngine
 import com.example.themes.KeyboardTheme
 
-/**
- * Keyboard rendering boundary. The keyboard itself is a single native View so normal
- * character input does not create a Compose node/recomposition per key.
- */
+/** Native rendering boundary: one Android View instead of one Compose node per key. */
 @Composable
 fun KeyboardGrid(
     context: android.content.Context,
@@ -57,8 +54,8 @@ fun KeyboardGrid(
                 suggestionEngine = suggestionEngine,
                 onKeyTap = onKeyTap,
                 onKeyLongPress = { key ->
-                    // Alternate-text long press uses the existing callback. Popup options
-                    // are selected by the native surface and inserted through onKeyInsertText.
+                    // Only alternateText keys use the legacy long-press callback.
+                    // Popup-option keys are selected and committed by the native surface.
                     if (key.longPressOptions.isEmpty()) onKeyLongPress(key)
                 },
                 onKeyInsertText = onKeyInsertText,
@@ -67,6 +64,8 @@ fun KeyboardGrid(
                 onBackspace = onBackspace,
                 onGlideWord = onGlideWord
             )
+            // A single Canvas redraw is cheap; importantly, no per-key Compose tree is rebuilt.
+            surface.invalidate()
         }
     )
 }
