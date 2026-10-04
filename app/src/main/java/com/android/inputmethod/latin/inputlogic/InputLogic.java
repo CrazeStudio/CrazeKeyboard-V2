@@ -22,8 +22,16 @@ import android.view.KeyEvent;
 import android.view.inputmethod.EditorInfo;
 import com.android.inputmethod.latin.RichInputConnection;
 import com.android.inputmethod.latin.common.Constants;
-import com.android.inputmethod.latin.common.StringUtils;
 
+/**
+ * LatinIME input core adapted for CrazeKeyboard.
+ *
+ * The typing hot path intentionally avoids querying the target editor after every character.
+ * Editor-context/caps queries are expensive cross-process operations and must not be chained
+ * behind every key press. Local composition state is used for normal character input and the
+ * editor is queried only at session boundaries, explicit selection changes, and operations that
+ * genuinely require surrounding text.
+ */
 public final class InputLogic {
     public interface Listener {
         void onWordComposed(String word);
@@ -39,12 +47,10 @@ public final class InputLogic {
     private long mLastSpaceTime = 0L;
     private boolean mDoubleSpacePeriodEnabled = true;
 
-    // Auto-correction undo tracking
     private String mLastOriginalWord = null;
     private String mLastCorrectedWord = null;
     private long mLastAutoCorrectTime = 0L;
 
-    // Editor traits
     private boolean mIsPasswordField = false;
     private boolean mIsEmailField = false;
     private boolean mIsUriField = false;
@@ -52,43 +58,31 @@ public final class InputLogic {
     private boolean mIsMultilineField = false;
     private int mCurrentImeAction = EditorInfo.IME_ACTION_NONE;
     private boolean mIsSentenceStart = true;
+    private boolean mSentenceBoundaryPending = false;
     private android.util.Pair<String, String> mAutoCorrectNotice = null;
 
     public InputLogic(final RichInputConnection connection) {
         mConnection = connection;
     }
 
-    public void setListener(final Listener listener) {
-        mListener = listener;
-    }
+    public void setListener(final Listener listener) { mListener = listener; }
 
     public void setDoubleSpacePeriodEnabled(final boolean enabled) {
         mDoubleSpacePeriodEnabled = enabled;
     }
 
-    public void onStartInput(final EditorInfo info) {
-        startInput(info);
-    }
+    public void onStartInput(final EditorInfo info) { startInput(info); }
 
-    public void onFinishInput() {
-        finishInput();
-    }
+    public void onFinishInput() { finishInput(); }
 
-    public void updateWordPrefixAndCaps() {
-        updateCapsMode();
-    }
+    /** Explicit refresh; do not call this for every normal character. */
+    public void updateWordPrefixAndCaps() { updateCapsModeFromEditor(); }
 
-    public void onBackspace() {
-        handleBackspace();
-    }
+    public void onBackspace() { handleBackspace(); }
 
-    public void onDeleteWord() {
-        deleteWord();
-    }
+    public void onDeleteWord() { deleteWord(); }
 
-    public void onEnter() {
-        handleEnter();
-    }
+    public void onEnter() { handleEnter(); }
 
     public void onReplaceCurrentWord(final String replacement) {
         onAutoCorrection(getCurrentWord(), replacement);
@@ -101,28 +95,23 @@ public final class InputLogic {
         for (int i = 0; i < count; i++) {
             mConnection.sendDownUpKeyEvents(keyCode);
         }
-        updateCapsMode();
+        updateCapsModeFromEditor();
     }
 
-    public boolean isSentenceStart() {
-        return mIsSentenceStart;
-    }
-
-    public String getCurrentWordPrefix() {
-        return getCurrentWord();
-    }
-
-    public android.util.Pair<String, String> getAutoCorrectNotice() {
-        return mAutoCorrectNotice;
-    }
+    public boolean isSentenceStart() { return mIsSentenceStart; }
+    public String getCurrentWordPrefix() { return getCurrentWord(); }
+    public android.util.Pair<String, String> getAutoCorrectNotice() { return mAutoCorrectNotice; }
 
     public void startInput(final EditorInfo info) {
         evaluateEditorInfo(info);
         mWordComposer.reset();
         mSpaceState = SpaceState.NONE;
+        mLastSpaceTime = 0L;
         mLastOriginalWord = null;
         mLastCorrectedWord = null;
-        updateCapsMode();
+        mAutoCorrectNotice = null;
+        mSentenceBoundaryPending = false;
+        updateCapsModeFromEditor();
         notifyWordComposed();
     }
 
@@ -131,6 +120,8 @@ public final class InputLogic {
         mSpaceState = SpaceState.NONE;
         mLastOriginalWord = null;
         mLastCorrectedWord = null;
+        mAutoCorrectNotice = null;
+        mSentenceBoundaryPending = false;
         notifyWordComposed();
     }
 
@@ -150,22 +141,19 @@ public final class InputLogic {
         final int inputClass = inputType & InputType.TYPE_MASK_CLASS;
         final int variation = inputType & InputType.TYPE_MASK_VARIATION;
 
-        mIsPasswordField = (inputClass == InputType.TYPE_CLASS_TEXT && (
-                variation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
-                variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
-                variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
-        )) || (inputClass == InputType.TYPE_CLASS_NUMBER && (
-                variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD
-        ));
+        mIsPasswordField = (inputClass == InputType.TYPE_CLASS_TEXT &&
+                (variation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
+                 variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
+                 variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD)) ||
+                (inputClass == InputType.TYPE_CLASS_NUMBER &&
+                 variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD);
 
-        mIsEmailField = inputClass == InputType.TYPE_CLASS_TEXT && (
-                variation == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS ||
-                variation == InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS
-        );
+        mIsEmailField = inputClass == InputType.TYPE_CLASS_TEXT &&
+                (variation == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS ||
+                 variation == InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS);
 
-        mIsUriField = inputClass == InputType.TYPE_CLASS_TEXT && (
-                variation == InputType.TYPE_TEXT_VARIATION_URI
-        );
+        mIsUriField = inputClass == InputType.TYPE_CLASS_TEXT &&
+                variation == InputType.TYPE_TEXT_VARIATION_URI;
 
         mIsNumericField = inputClass == InputType.TYPE_CLASS_NUMBER ||
                 inputClass == InputType.TYPE_CLASS_PHONE ||
@@ -190,62 +178,75 @@ public final class InputLogic {
             handleBackspace();
         } else if (primaryCode > 0) {
             int code = primaryCode;
-            if (isShifted && Character.isLetter(code)) {
-                code = Character.toUpperCase(code);
-            }
-            final String text = new String(Character.toChars(code));
-            onTextInput(text);
+            if (isShifted && Character.isLetter(code)) code = Character.toUpperCase(code);
+            onTextInput(new String(Character.toChars(code)));
         }
     }
 
+    /** Hot path: commit first, then update only local state. */
     public void onTextInput(final CharSequence text) {
         if (text == null || text.length() == 0) return;
-
         final String str = text.toString();
-        if (str.equals(" ")) {
+
+        if (" ".equals(str)) {
             handleSpace();
             return;
         }
 
-        // Direct commit to InputConnection
         mConnection.commitText(str, 1);
         mLastOriginalWord = null;
         mLastCorrectedWord = null;
-        if (mListener != null) {
-            mListener.onAutoCorrectChanged(null, null);
-        }
+        mAutoCorrectNotice = null;
+        if (mListener != null) mListener.onAutoCorrectChanged(null, null);
 
         if (str.length() == 1) {
             final char c = str.charAt(0);
             if (Character.isLetterOrDigit(c)) {
                 mWordComposer.add(c, 0, 0);
+                mIsSentenceStart = false;
+                mSentenceBoundaryPending = false;
             } else {
                 mWordComposer.reset();
+                if (c == '.' || c == '!' || c == '?') {
+                    mSentenceBoundaryPending = true;
+                } else if (c == '\n') {
+                    mSentenceBoundaryPending = false;
+                    mIsSentenceStart = true;
+                } else {
+                    mSentenceBoundaryPending = false;
+                    mIsSentenceStart = false;
+                }
             }
         } else {
             mWordComposer.reset();
+            mIsSentenceStart = false;
+            mSentenceBoundaryPending = false;
         }
 
         mSpaceState = SpaceState.NONE;
-        updateCapsMode();
+        notifyCapsState();
         notifyWordComposed();
     }
 
     public void handleSpace() {
         final long now = System.currentTimeMillis();
 
-        // AOSP LatinIME Double space to period
-        if (mDoubleSpacePeriodEnabled && (now - mLastSpaceTime < 350L) && mSpaceState == SpaceState.DOUBLE_SPACE_TO_PERIOD) {
+        if (mDoubleSpacePeriodEnabled &&
+                (now - mLastSpaceTime < 350L) &&
+                mSpaceState == SpaceState.DOUBLE_SPACE_TO_PERIOD) {
             final CharSequence textBefore = mConnection.getTextBeforeCursor(3, 0);
             if (textBefore != null && textBefore.length() >= 2 && textBefore.charAt(textBefore.length() - 1) == ' ') {
                 final char charBeforeSpace = textBefore.charAt(textBefore.length() - 2);
-                if (charBeforeSpace != '.' && charBeforeSpace != '?' && charBeforeSpace != '!' && charBeforeSpace != ',') {
+                if (charBeforeSpace != '.' && charBeforeSpace != '?' &&
+                        charBeforeSpace != '!' && charBeforeSpace != ',') {
                     mConnection.deleteTextBeforeCursor(1);
                     mConnection.commitText(". ", 1);
                     mSpaceState = SpaceState.NONE;
                     mLastSpaceTime = 0L;
                     mWordComposer.reset();
-                    updateCapsMode();
+                    mSentenceBoundaryPending = false;
+                    mIsSentenceStart = true;
+                    notifyCapsState();
                     notifyWordComposed();
                     return;
                 }
@@ -258,17 +259,21 @@ public final class InputLogic {
         mWordComposer.reset();
         mLastOriginalWord = null;
         mLastCorrectedWord = null;
-        if (mListener != null) {
-            mListener.onAutoCorrectChanged(null, null);
+        mAutoCorrectNotice = null;
+
+        if (mSentenceBoundaryPending) {
+            mIsSentenceStart = true;
+            mSentenceBoundaryPending = false;
+        } else {
+            mIsSentenceStart = false;
         }
-        updateCapsMode();
+        notifyCapsState();
         notifyWordComposed();
     }
 
     public void handleBackspace() {
         final long now = System.currentTimeMillis();
 
-        // AOSP LatinIME: Undo Auto-Correction on immediate Backspace
         if (mLastCorrectedWord != null && (now - mLastAutoCorrectTime < 3500L)) {
             final CharSequence textBefore = mConnection.getTextBeforeCursor(mLastCorrectedWord.length() + 1, 0);
             if (textBefore != null && textBefore.toString().equals(mLastCorrectedWord + " ")) {
@@ -280,17 +285,17 @@ public final class InputLogic {
                     mConnection.endBatchEdit();
                 }
                 mWordComposer.reset();
-                for (int i = 0; i < mLastOriginalWord.length(); ) {
+                for (int i = 0; i < mLastOriginalWord.length();) {
                     final int cp = mLastOriginalWord.codePointAt(i);
                     mWordComposer.add(cp, 0, 0);
                     i += Character.charCount(cp);
                 }
                 mLastOriginalWord = null;
                 mLastCorrectedWord = null;
-                if (mListener != null) {
-                    mListener.onAutoCorrectChanged(null, null);
-                }
-                updateCapsMode();
+                mAutoCorrectNotice = null;
+                if (mListener != null) mListener.onAutoCorrectChanged(null, null);
+                mIsSentenceStart = false;
+                notifyCapsState();
                 notifyWordComposed();
                 return;
             }
@@ -298,16 +303,22 @@ public final class InputLogic {
 
         mLastOriginalWord = null;
         mLastCorrectedWord = null;
-        if (mListener != null) {
-            mListener.onAutoCorrectChanged(null, null);
-        }
+        mAutoCorrectNotice = null;
+        if (mListener != null) mListener.onAutoCorrectChanged(null, null);
 
-        if (mWordComposer.size() > 0) {
-            mWordComposer.deleteLast();
-        }
+        final boolean hadWord = mWordComposer.size() > 0;
+        if (hadWord) mWordComposer.deleteLast();
         mConnection.deleteTextBeforeCursor(1);
         mSpaceState = SpaceState.NONE;
-        updateCapsMode();
+        mSentenceBoundaryPending = false;
+
+        // Keep deletion fast. Only re-query editor context when local state is exhausted.
+        if (mWordComposer.size() == 0) {
+            updateCapsModeFromEditor();
+        } else {
+            mIsSentenceStart = false;
+            notifyCapsState();
+        }
         notifyWordComposed();
     }
 
@@ -316,10 +327,9 @@ public final class InputLogic {
         mConnection.deleteWordBeforeCursor();
         mLastOriginalWord = null;
         mLastCorrectedWord = null;
-        if (mListener != null) {
-            mListener.onAutoCorrectChanged(null, null);
-        }
-        updateCapsMode();
+        mAutoCorrectNotice = null;
+        if (mListener != null) mListener.onAutoCorrectChanged(null, null);
+        updateCapsModeFromEditor();
         notifyWordComposed();
     }
 
@@ -327,15 +337,17 @@ public final class InputLogic {
         mWordComposer.reset();
         mLastOriginalWord = null;
         mLastCorrectedWord = null;
-        if (mCurrentImeAction != EditorInfo.IME_ACTION_NONE && mCurrentImeAction != EditorInfo.IME_ACTION_UNSPECIFIED) {
+        mAutoCorrectNotice = null;
+        if (mCurrentImeAction != EditorInfo.IME_ACTION_NONE &&
+                mCurrentImeAction != EditorInfo.IME_ACTION_UNSPECIFIED) {
             final boolean handled = mConnection.performEditorAction(mCurrentImeAction);
-            if (!handled) {
-                mConnection.sendDownUpKeyEvents(KeyEvent.KEYCODE_ENTER);
-            }
+            if (!handled) mConnection.sendDownUpKeyEvents(KeyEvent.KEYCODE_ENTER);
         } else {
             mConnection.sendDownUpKeyEvents(KeyEvent.KEYCODE_ENTER);
         }
-        updateCapsMode();
+        mSentenceBoundaryPending = false;
+        mIsSentenceStart = true;
+        notifyCapsState();
         notifyWordComposed();
     }
 
@@ -345,12 +357,9 @@ public final class InputLogic {
         mConnection.beginBatchEdit();
         try {
             final String currentWord = mWordComposer.getTypedWord();
-            final int deleteCount = (currentWord.length() > 0) ? currentWord.length() :
+            final int deleteCount = currentWord.length() > 0 ? currentWord.length() :
                     (original != null ? original.length() : 0);
-
-            if (deleteCount > 0) {
-                mConnection.deleteTextBeforeCursor(deleteCount);
-            }
+            if (deleteCount > 0) mConnection.deleteTextBeforeCursor(deleteCount);
             mConnection.commitText(replacement, 1);
 
             if (original != null && !original.isEmpty()) {
@@ -358,9 +367,7 @@ public final class InputLogic {
                 mLastCorrectedWord = replacement.trim();
                 mLastAutoCorrectTime = System.currentTimeMillis();
                 mAutoCorrectNotice = new android.util.Pair<>(original, mLastCorrectedWord);
-                if (mListener != null) {
-                    mListener.onAutoCorrectChanged(original, mLastCorrectedWord);
-                }
+                if (mListener != null) mListener.onAutoCorrectChanged(original, mLastCorrectedWord);
             } else {
                 mAutoCorrectNotice = null;
             }
@@ -369,21 +376,24 @@ public final class InputLogic {
         }
 
         mWordComposer.reset();
-        updateCapsMode();
+        mIsSentenceStart = false;
+        mSentenceBoundaryPending = false;
+        notifyCapsState();
         notifyWordComposed();
     }
 
-    public void updateCapsMode() {
+    /**
+     * Explicit editor synchronization. This is intentionally not part of the normal character
+     * insertion path because InputConnection editor queries can cross process boundaries.
+     */
+    public void updateCapsModeFromEditor() {
         final CharSequence textBefore = mConnection.getTextBeforeCursor(32, 0);
         final int reqModes = TextUtils.CAP_MODE_CHARACTERS | TextUtils.CAP_MODE_WORDS | TextUtils.CAP_MODE_SENTENCES;
         final int caps = (!mIsEmailField && !mIsUriField && !mIsPasswordField && !mIsNumericField)
                 ? mConnection.getCursorCapsMode(reqModes) : 0;
-
-        final boolean isSentenceStart = computeSentenceStart(textBefore, caps);
-        mIsSentenceStart = isSentenceStart;
-        if (mListener != null) {
-            mListener.onCapsModeChanged(isSentenceStart);
-        }
+        mIsSentenceStart = computeSentenceStart(textBefore, caps);
+        mSentenceBoundaryPending = false;
+        notifyCapsState();
     }
 
     private boolean computeSentenceStart(final CharSequence textBefore, final int capsMode) {
@@ -393,39 +403,31 @@ public final class InputLogic {
 
         final int len = textBefore.length();
         if (textBefore.charAt(len - 1) == '\n') return true;
-
         int i = len - 1;
-        while (i >= 0 && Character.isWhitespace(textBefore.charAt(i))) {
-            i--;
-        }
-        if (i < 0) return true; // only whitespace before cursor
-
+        while (i >= 0 && Character.isWhitespace(textBefore.charAt(i))) i--;
+        if (i < 0) return true;
         final char lastNonWs = textBefore.charAt(i);
-        if (lastNonWs == '.' || lastNonWs == '!' || lastNonWs == '?') {
-            if (i < len - 1) { // whitespace follows punctuation
-                return true;
-            }
-        }
-        return false;
+        return (lastNonWs == '.' || lastNonWs == '!' || lastNonWs == '?') && i < len - 1;
+    }
+
+    private void notifyCapsState() {
+        if (mListener != null) mListener.onCapsModeChanged(mIsSentenceStart);
     }
 
     private void notifyWordComposed() {
-        if (mListener != null) {
-            mListener.onWordComposed(mWordComposer.getTypedWord());
-        }
+        if (mListener != null) mListener.onWordComposed(mWordComposer.getTypedWord());
     }
 
-    public String getCurrentWord() {
-        return mWordComposer.getTypedWord();
-    }
+    public String getCurrentWord() { return mWordComposer.getTypedWord(); }
 
     public void onExternalSelectionChange() {
         final CharSequence textBefore = mConnection.getTextBeforeCursor(32, 0);
         final String currentTyped = mWordComposer.getTypedWord();
-        if (currentTyped.length() > 0 && !textBefore.toString().endsWith(currentTyped)) {
+        if (currentTyped.length() > 0 &&
+                (textBefore == null || !textBefore.toString().endsWith(currentTyped))) {
             mWordComposer.reset();
             notifyWordComposed();
         }
-        updateCapsMode();
+        updateCapsModeFromEditor();
     }
 }
