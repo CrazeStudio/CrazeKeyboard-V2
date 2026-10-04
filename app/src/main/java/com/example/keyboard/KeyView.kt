@@ -84,7 +84,10 @@ fun KeyView(
                 scaleX = scale
                 scaleY = scale
             }
-            .shadow(elevation = theme.elevationDp.dp, shape = shape, clip = false)
+            .then(
+                if (theme.elevationDp > 0f) Modifier.shadow(elevation = theme.elevationDp.dp, shape = shape, clip = false)
+                else Modifier
+            )
             .background(keyBg, shape)
             .then(
                 if (preferences.showKeyBorders) {

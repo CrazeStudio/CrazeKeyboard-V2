@@ -237,7 +237,6 @@ private fun PremiumToolCard(
         "NUMBER_ROW" -> preferences.isNumberRowEnabled
         "ONE_HANDED" -> preferences.layoutMode != com.example.settings.KeyboardLayoutMode.DEFAULT
         "FLOATING" -> preferences.layoutMode == com.example.settings.KeyboardLayoutMode.FLOATING
-        "AI" -> preferences.isAiFeatureEnabled
         else -> false
     }
 

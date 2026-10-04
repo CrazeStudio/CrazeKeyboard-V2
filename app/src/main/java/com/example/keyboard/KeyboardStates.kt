@@ -27,8 +27,6 @@ interface KeyboardActionListener {
     fun onVoiceRequested()
     fun onSettingsRequested()
     fun onMedia(url: String)
-    fun onAiPolishRequested()
-    fun onAiChatRequested(prompt: String)
     fun getCurrentContextText(): String
     fun onReplaceContextText(newText: String)
 }
@@ -42,7 +40,5 @@ enum class ActivePanel {
     FONTS,
     LANGUAGE_PICKER,
     CUSTOMIZE_HOTBAR,
-    TRANSLATE,
-    AI_CHAT,
-    SWIFT_AI
+    TRANSLATE
 }

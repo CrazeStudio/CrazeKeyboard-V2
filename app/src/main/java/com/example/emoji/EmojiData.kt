@@ -282,27 +282,4 @@ object EmojiData {
         }
         return results
     }
-
-    fun _old_searchEmojis(query: String): List<String> {
-        val cleanQuery = query.trim().lowercase()
-        if (cleanQuery.isEmpty()) return emptyList()
-
-        val results = mutableListOf<String>()
-
-        // 1. Check keyword dictionary matches
-        for ((emoji, keywords) in emojiKeywords) {
-            if (keywords.any { it.contains(cleanQuery) }) {
-                results.add(emoji)
-            }
-        }
-
-        // 2. Also match directly in case user pastes an emoji or symbol
-        for (emoji in allEmojis) {
-            if (emoji.contains(cleanQuery) && !results.contains(emoji)) {
-                results.add(emoji)
-            }
-        }
-
-        return results
-    }
 }

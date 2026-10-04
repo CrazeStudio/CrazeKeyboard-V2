@@ -329,37 +329,39 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
             isPreviousUpper = newIsPreviousUpper
         }
 
-        // Optimized sentence detection: check only the last 3 characters
-        val newIsActualSentenceStart = if (textBefore.isEmpty()) {
-            true
-        } else {
-            val trimmed = textBefore.trimEnd()
-            if (trimmed.isEmpty()) {
-                true
-            } else {
-                val lastChar = trimmed.last()
-                (lastChar == '.' || lastChar == '!' || lastChar == '?' || lastChar == '\n')
-            }
-        }
-        if (isActualSentenceStart != newIsActualSentenceStart) {
-            isActualSentenceStart = newIsActualSentenceStart
-        }
-
         val editorInfo = currentInputEditorInfo
-        val capsMode = if (editorInfo != null && !isEmailField && !isUriField && !isPasswordField) {
+        val capsMode = if (editorInfo != null && !isEmailField && !isUriField && !isPasswordField && !isNumericField) {
             ic.getCursorCapsMode(editorInfo.inputType)
         } else 0
 
-        val newIsSentenceStart = if (isEmailField || isUriField || isPasswordField) {
-            false
-        } else if (capsMode != 0) {
-            true
-        } else {
-            newIsActualSentenceStart
-        }
+        val newIsSentenceStart = computeSentenceStart(textBefore, capsMode)
         if (isSentenceStart != newIsSentenceStart) {
             isSentenceStart = newIsSentenceStart
         }
+        if (isActualSentenceStart != newIsSentenceStart) {
+            isActualSentenceStart = newIsSentenceStart
+        }
+    }
+
+    private fun computeSentenceStart(textBefore: String, capsMode: Int): Boolean {
+        if (isEmailField || isUriField || isPasswordField || isNumericField) return false
+        if (capsMode != 0) return true
+        if (textBefore.isEmpty()) return true
+        val len = textBefore.length
+        if (textBefore.endsWith('\n')) return true
+
+        var i = len - 1
+        while (i >= 0 && textBefore[i].isWhitespace()) {
+            i--
+        }
+        if (i < 0) return true // only whitespace before cursor
+        val lastNonWs = textBefore[i]
+        if (lastNonWs == '.' || lastNonWs == '!' || lastNonWs == '?') {
+            if (i < len - 1) { // whitespace follows punctuation
+                return true
+            }
+        }
+        return false
     }
 
     override fun onText(text: String) {
@@ -379,15 +381,26 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
                 } else {
                     currentWordPrefix = ""
                     isPreviousUpper = false
-                    val isStop = (c == '.' || c == '!' || c == '?' || c == '\n')
-                    isSentenceStart = isStop
-                    isActualSentenceStart = isStop
+                    val textBefore = ic.getTextBeforeCursor(20, 0)?.toString() ?: ""
+                    val editorInfo = currentInputEditorInfo
+                    val capsMode = if (editorInfo != null && !isEmailField && !isUriField && !isPasswordField && !isNumericField) {
+                        ic.getCursorCapsMode(editorInfo.inputType)
+                    } else 0
+                    val isSentence = computeSentenceStart(textBefore, capsMode)
+                    isSentenceStart = isSentence
+                    isActualSentenceStart = isSentence
                 }
             } else {
                 currentWordPrefix = ""
                 isPreviousUpper = false
-                isSentenceStart = false
-                isActualSentenceStart = false
+                val textBefore = ic.getTextBeforeCursor(20, 0)?.toString() ?: ""
+                val editorInfo = currentInputEditorInfo
+                val capsMode = if (editorInfo != null && !isEmailField && !isUriField && !isPasswordField && !isNumericField) {
+                    ic.getCursorCapsMode(editorInfo.inputType)
+                } else 0
+                val isSentence = computeSentenceStart(textBefore, capsMode)
+                isSentenceStart = isSentence
+                isActualSentenceStart = isSentence
             }
         } finally {
             ic.endBatchEdit()
@@ -653,80 +666,30 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
     }
 
     override fun onMedia(url: String) {
-        if (com.example.core.NetworkCheck.enforceOfflineMode(this)) {
-            android.widget.Toast.makeText(this, "Offline Mode: Media downloads disabled", android.widget.Toast.LENGTH_SHORT).show()
-            return
-        }
+        // Local offline media only
+        if (url.isBlank()) return
         val ic = currentInputConnection ?: return
         val editorInfo = currentInputEditorInfo ?: return
 
         serviceScope.launch(Dispatchers.IO) {
             try {
-                val gifsDir = File(cacheDir, "gifs")
-                if (!gifsDir.exists()) gifsDir.mkdirs()
-                
-                // Use unique filename to avoid races
-                val timestamp = System.currentTimeMillis()
-                val gifFile = File(gifsDir, "gif_$timestamp.gif")
-                
-                URL(url).openStream().use { input ->
-                    gifFile.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
+                val file = File(url)
+                if (file.exists()) {
+                    val uri = FileProvider.getUriForFile(this@CrazeInputMethodService, "com.example.fileprovider", file)
+                    val contentInfo = InputContentInfoCompat(uri, ClipDescription("Media", arrayOf("image/*")), null)
+                    val flags = InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION
+                    InputConnectionCompat.commitContent(ic, editorInfo, contentInfo, flags, null)
                 }
-                
-                val uri = FileProvider.getUriForFile(this@CrazeInputMethodService, "com.example.fileprovider", gifFile)
-                val contentInfo = InputContentInfoCompat(uri, ClipDescription("GIF", arrayOf("image/gif")), null)
-                
-                val flags = InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION
-                val success = InputConnectionCompat.commitContent(ic, editorInfo, contentInfo, flags, null)
-                
-                if (!success) {
-                    withContext(Dispatchers.Main) {
-                        android.widget.Toast.makeText(this@CrazeInputMethodService, "App does not support GIF insertion", android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                }
-                
-                // Optional: Clean up old files in background
-                gifsDir.listFiles()?.forEach { file ->
-                    if (file.lastModified() < System.currentTimeMillis() - 3600000) { // 1 hour old
-                        file.delete()
-                    }
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    android.widget.Toast.makeText(this@CrazeInputMethodService, "Failed to send GIF", android.widget.Toast.LENGTH_SHORT).show()
-                }
+            } catch (_: Exception) {
             }
         }
     }
+
     override fun onSettingsRequested() {
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
         }
         startActivity(intent)
-    }
-
-    override fun onAiPolishRequested() {
-        if (!preferences.isAiFeatureEnabled) return
-        val ic = currentInputConnection ?: return
-        // Get up to 500 characters before cursor to polish the current context
-        val textBefore = ic.getTextBeforeCursor(500, 0)?.toString() ?: ""
-        if (textBefore.isBlank()) return
-
-        serviceScope.launch(Dispatchers.Main) {
-            val polished = com.example.ai.AiRepository.polishText(textBefore)
-            if (polished.isNotBlank() && !polished.startsWith("Error:") && polished != "API Key not configured.") {
-                ic.beginBatchEdit()
-                ic.deleteSurroundingText(textBefore.length, 0)
-                ic.commitText(polished, 1)
-                ic.endBatchEdit()
-            }
-        }
-    }
-
-    override fun onAiChatRequested(prompt: String) {
-        // This can be used if we want to trigger chat from elsewhere
     }
 
     override fun getCurrentContextText(): String {

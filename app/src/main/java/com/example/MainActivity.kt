@@ -642,21 +642,10 @@ fun CrazeSettingsApp(
                     var liveOutput by remember { mutableStateOf("") }
                     var isTranslating by remember { mutableStateOf(false) }
 
-                    LaunchedEffect(sourceText, sourceCode, targetCode, preferences.libreTranslateEndpoint, preferences.libreTranslateApiKey) {
+                    LaunchedEffect(sourceText, sourceCode, targetCode) {
                         if (sourceText.isNotBlank()) {
                             isTranslating = true
-                            val fastResult = com.example.translate.TranslateEngine.translateOffline(sourceText, sourceCode, targetCode)
-                            liveOutput = fastResult
-                            val onlineResult = com.example.translate.TranslateEngine.translateOnline(
-                                text = sourceText,
-                                sourceLang = sourceCode,
-                                targetLang = targetCode,
-                                endpoint = preferences.libreTranslateEndpoint,
-                                apiKey = preferences.libreTranslateApiKey
-                            )
-                            if (onlineResult.isNotBlank()) {
-                                liveOutput = onlineResult
-                            }
+                            liveOutput = com.example.translate.TranslateEngine.translate(sourceText, sourceCode, targetCode)
                             isTranslating = false
                         } else {
                             liveOutput = ""
@@ -682,7 +671,7 @@ fun CrazeSettingsApp(
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(
-                                            "LibreTranslate Integration",
+                                            "Offline Instant Translate",
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 17.sp,
                                             color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -690,39 +679,10 @@ fun CrazeSettingsApp(
                                     }
                                     Spacer(modifier = Modifier.height(6.dp))
                                     Text(
-                                        "Powered by LibreTranslate (${preferences.libreTranslateEndpoint}). Live translates as you type with zero keystroke logging, complete privacy, and automatic offline fallback.",
+                                        "100% on-device translation using built-in phrasebooks and vocabulary maps. Works completely offline with zero network requests, zero API keys, and instantaneous zero-latency output.",
                                         fontSize = 12.sp,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
                                         lineHeight = 16.sp
-                                    )
-                                }
-                            }
-                        }
-
-                        item {
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                            ) {
-                                Column(modifier = Modifier.padding(14.dp)) {
-                                    Text("LibreTranslate Endpoint", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    OutlinedTextField(
-                                        value = preferences.libreTranslateEndpoint,
-                                        onValueChange = { preferences.updateLibreTranslateEndpoint(it) },
-                                        label = { Text("Server URL") },
-                                        placeholder = { Text("https://libretranslate.com/translate") },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        singleLine = true
-                                    )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    OutlinedTextField(
-                                        value = preferences.libreTranslateApiKey,
-                                        onValueChange = { preferences.updateLibreTranslateApiKey(it) },
-                                        label = { Text("API Key (Optional)") },
-                                        placeholder = { Text("Leave blank for public instance") },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        singleLine = true
                                     )
                                 }
                             }
@@ -769,7 +729,6 @@ fun CrazeSettingsApp(
                 }
 
                 SettingsScreen.PRIVACY_NETWORK -> {
-                    val isOnline by com.example.core.rememberNetworkStatus()
                     LazyColumn(
                         modifier = Modifier.fillMaxSize().padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -789,7 +748,7 @@ fun CrazeSettingsApp(
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(
-                                            "Privacy & Network Architecture",
+                                            "100% Offline Architecture",
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 17.sp,
                                             color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -797,7 +756,7 @@ fun CrazeSettingsApp(
                                     }
                                     Spacer(modifier = Modifier.height(6.dp))
                                     Text(
-                                        "Cboard is built from the ground up for absolute privacy: 0 keystroke logging, 0 telemetry, 0 ads, and 0 ragebait algorithms. Choose your preferred connectivity behavior below.",
+                                        "CrazeKeyboard requires ZERO internet permission. All suggestions, autocorrect, dictionaries, clipboard history, fonts, and emoji operations run entirely locally on your device with maximum speed and complete privacy.",
                                         fontSize = 13.sp,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                                         lineHeight = 17.sp
@@ -816,76 +775,22 @@ fun CrazeSettingsApp(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
-                                        painter = painterResource(id = if (isOnline) R.drawable.ic_globe else R.drawable.ic_wifi_off),
+                                        painter = painterResource(id = R.drawable.ic_wifi_off),
                                         contentDescription = null,
-                                        tint = if (isOnline) Color(0xFF10B981) else Color(0xFFEF4444),
+                                        tint = Color(0xFF10B981),
                                         modifier = Modifier.size(28.dp)
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = if (isOnline) "Network Connected" else "No Internet Connection",
+                                            text = "Genuinely Offline-First",
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 15.sp
                                         )
                                         Text(
-                                            text = if (isOnline) "Online features (GIF search & Lingva API) are currently active." else "Operating in 100% offline mode. Offline dictionaries and emojis are fully functional.",
+                                            text = "Zero network requests. Functions seamlessly in Airplane Mode with ultra-low latency.",
                                             fontSize = 12.sp,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        item {
-                            Text("Select Keyboard Mode:", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                        }
-
-                        val modes = listOf(
-                            Triple("AUTO", "Smart Auto Mode (Recommended)", "Uses offline dictionaries when disconnected; uses privacy-preserving Open-Source API when online."),
-                            Triple("OFFLINE_ONLY", "100% Offline Only Mode", "Never makes any internet requests. Only local emojis, kaomojis, and offline dictionary phrasebooks are shown."),
-                            Triple("ONLINE_ONLY", "Online Features Active", "Enables online GIF search and Lingva open-source translator with zero tracking.")
-                        )
-
-                        items(modes.size) { index ->
-                            val (modeKey, modeTitle, modeDesc) = modes[index]
-                            val isSelected = preferences.networkMode == modeKey
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { preferences.updateNetworkMode(modeKey) },
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface
-                                ),
-                                border = androidx.compose.foundation.BorderStroke(
-                                    width = if (isSelected) 2.dp else 1.dp,
-                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-                                ),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(14.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    RadioButton(
-                                        selected = isSelected,
-                                        onClick = { preferences.updateNetworkMode(modeKey) }
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = modeTitle,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 14.sp,
-                                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                        )
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(
-                                            text = modeDesc,
-                                            fontSize = 12.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            lineHeight = 16.sp
                                         )
                                     }
                                 }
@@ -909,10 +814,10 @@ fun CrazeSettingsApp(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Column {
-                                        Text("Open-Source Privacy Guarantee", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        Text("Local Privacy Guarantee", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                         Spacer(modifier = Modifier.height(4.dp))
                                         Text(
-                                            "• Translation uses LibreTranslate (https://libretranslate.com/translate) without tracking cookies or user fingerprinting.\n• Clipboard stores up to 10 recent unpinned copies locally with permanent pinning support.\n• Personal dictionary and key heuristics remain stored exclusively in Room on-device database.\n• Zero telemetry, zero analytics SDKs, zero background data collection.",
+                                            "• Zero internet permissions declared in AndroidManifest.\n• Clipboard stores recent copies in Room SQLite database on-device.\n• Personal dictionary and user learning run locally on background threads.\n• Zero telemetry, zero analytics SDKs, zero background data collection.",
                                             fontSize = 12.sp,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             lineHeight = 16.sp

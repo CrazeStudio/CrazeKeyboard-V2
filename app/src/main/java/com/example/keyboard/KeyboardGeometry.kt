@@ -25,8 +25,8 @@ class KeyboardGeometry(
     val keySpacingPx: Float = 6f
 ) {
     val keyPositions = ArrayList<KeyPosition>(45)
-    val rowHeights = FloatArray(rows.size + if (hasNumberRow) 1 else 0)
-    val rowTopPositions = FloatArray(rows.size + if (hasNumberRow) 1 else 0)
+    val rowHeights = FloatArray(rows.size)
+    val rowTopPositions = FloatArray(rows.size)
 
     init {
         computeLayout()
@@ -37,15 +37,18 @@ class KeyboardGeometry(
         val height = size.height.toFloat()
         if (width <= 0f || height <= 0f || rows.isEmpty()) return
 
-        val totalEffectiveRows = if (hasNumberRow) (rows.size + numberRowHeightRatio) else rows.size.toFloat()
+        val totalEffectiveRows = if (hasNumberRow) {
+            ((rows.size - 1).coerceAtLeast(1) + numberRowHeightRatio)
+        } else {
+            rows.size.toFloat().coerceAtLeast(1f)
+        }
         val standardRowHeight = height / totalEffectiveRows
         val numberRowHeight = standardRowHeight * numberRowHeightRatio
 
         var currentY = 0f
         var currentRowIdx = 0
 
-        // 1. Compute optional number row if present in rows
-        // Note: rows parameter includes all rows to be rendered.
+        // 1. Compute rows (number row if present is at index 0)
         for (r in rows.indices) {
             val isNumRow = hasNumberRow && r == 0
             val rowH = if (isNumRow) numberRowHeight else standardRowHeight
@@ -101,7 +104,7 @@ class KeyboardGeometry(
      * Finds the key corresponding to a touch offset.
      * Uses cellRect bounding boxes first; if slightly outside, finds nearest key within touch slop.
      */
-    fun findKeyAtOffset(offset: Offset, touchSlopPx: Float = 16f): KeyPosition? {
+    fun findKeyAtOffset(offset: Offset, touchSlopPx: Float = 40f): KeyPosition? {
         if (keyPositions.isEmpty()) return null
 
         // 1. Direct hit test within cell bounds

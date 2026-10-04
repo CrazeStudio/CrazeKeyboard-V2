@@ -14,6 +14,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -132,6 +133,9 @@ fun KeyboardGrid(
     var activePopupInfo by remember { mutableStateOf<ActivePopupInfo?>(null) }
     var previewPosition by remember { mutableStateOf<KeyPosition?>(null) }
 
+    val currentShiftState by rememberUpdatedState(shiftState)
+    val currentPreferences by rememberUpdatedState(preferences)
+
     val touchCoordinator = remember(coroutineScope, geometry) {
         KeyboardTouchCoordinator(
             scope = coroutineScope,
@@ -153,17 +157,17 @@ fun KeyboardGrid(
             },
             onMoveCursor = onMoveCursor,
             onLongPressTick = {
-                hapticHelper.performLongPressHaptic(preferences.isHapticsEnabled, currentView)
+                hapticHelper.performLongPressHaptic(currentPreferences.isHapticsEnabled, currentView)
             },
             onSelectionTick = {
-                hapticHelper.performSelectionTick(preferences.isHapticsEnabled, currentView)
+                hapticHelper.performSelectionTick(currentPreferences.isHapticsEnabled, currentView)
             },
             getGeometry = { geometry },
-            getLongPressDelayMs = { preferences.longPressDelayMs },
-            isPopupPreviewEnabled = { preferences.isPopupPreviewEnabled },
-            isSpaceSwipeEnabled = { preferences.isSpaceSwipeCursorEnabled },
-            isBackspaceSwipeEnabled = { preferences.isBackspaceSwipeDeleteEnabled },
-            isShifted = { shiftState != ShiftState.OFF }
+            getLongPressDelayMs = { currentPreferences.longPressDelayMs },
+            isPopupPreviewEnabled = { currentPreferences.isPopupPreviewEnabled },
+            isSpaceSwipeEnabled = { currentPreferences.isSpaceSwipeCursorEnabled },
+            isBackspaceSwipeEnabled = { currentPreferences.isBackspaceSwipeDeleteEnabled },
+            isShifted = { currentShiftState != ShiftState.OFF }
         ).apply {
             setOnStateChangedListener {
                 pressedPositions = this.pressedKeyPositions
@@ -179,58 +183,65 @@ fun KeyboardGrid(
             .onSizeChanged { keyboardGridSize = it }
             .pointerInput(geometry, preferences.isGlideTypingEnabled) {
                 awaitEachGesture {
-                    while (true) {
-                        val event = awaitPointerEvent(PointerEventPass.Main)
-                        for (change in event.changes) {
-                            if (change.changedToDown()) {
-                                change.consume()
-                                touchCoordinator.onPointerDown(change)
+                    try {
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Main)
+                            for (change in event.changes) {
+                                if (change.changedToDown()) {
+                                    change.consume()
+                                    touchCoordinator.onPointerDown(change)
 
-                                // Check glide initiation if enabled
-                                if (preferences.isGlideTypingEnabled && keyboardMode == KeyboardMode.ALPHA) {
-                                    val startChar = geometry?.findCharKeyAtOffset(change.position)
-                                    if (startChar != null) {
-                                        sampledGlideChars.clear()
-                                        sampledGlideChars.add(startChar)
-                                        glideTrailPoints.clear()
-                                    }
-                                }
-                            } else if (change.pressed) {
-                                change.consume()
-                                touchCoordinator.onPointerMove(change)
-
-                                // Handle glide tracking
-                                if (preferences.isGlideTypingEnabled && keyboardMode == KeyboardMode.ALPHA) {
-                                    val currentPoint = change.position
-                                    if (glideTrailPoints.size > 2 || (change.position - change.previousPosition).getDistance() > 8f) {
-                                        glideTrailPoints.add(currentPoint)
-                                        val charUnderFinger = geometry?.findCharKeyAtOffset(currentPoint)
-                                        if (charUnderFinger != null && (sampledGlideChars.isEmpty() || sampledGlideChars.last() != charUnderFinger)) {
-                                            sampledGlideChars.add(charUnderFinger)
-                                            hapticHelper.performSelectionTick(preferences.isHapticsEnabled, currentView)
+                                    // Check glide initiation if enabled
+                                    if (currentPreferences.isGlideTypingEnabled && keyboardMode == KeyboardMode.ALPHA) {
+                                        val startChar = geometry?.findCharKeyAtOffset(change.position)
+                                        if (startChar != null) {
+                                            sampledGlideChars.clear()
+                                            sampledGlideChars.add(startChar)
+                                            glideTrailPoints.clear()
                                         }
-                                        isGlideGestureActive = true
                                     }
-                                }
-                            } else if (change.changedToUp()) {
-                                change.consume()
-                                if (isGlideGestureActive && sampledGlideChars.size >= 2) {
-                                    val glideWord = suggestionEngine.findGlideWord(sampledGlideChars)
-                                    if (glideWord != null) {
-                                        onGlideWord(glideWord)
+                                } else if (change.pressed) {
+                                    change.consume()
+                                    touchCoordinator.onPointerMove(change)
+
+                                    // Handle glide tracking
+                                    if (currentPreferences.isGlideTypingEnabled && keyboardMode == KeyboardMode.ALPHA) {
+                                        val currentPoint = change.position
+                                        if (glideTrailPoints.size > 2 || (change.position - change.previousPosition).getDistance() > 8f) {
+                                            glideTrailPoints.add(currentPoint)
+                                            val charUnderFinger = geometry?.findCharKeyAtOffset(currentPoint)
+                                            if (charUnderFinger != null && (sampledGlideChars.isEmpty() || sampledGlideChars.last() != charUnderFinger)) {
+                                                sampledGlideChars.add(charUnderFinger)
+                                                hapticHelper.performSelectionTick(currentPreferences.isHapticsEnabled, currentView)
+                                            }
+                                            isGlideGestureActive = true
+                                        }
                                     }
+                                } else if (change.changedToUp()) {
+                                    change.consume()
+                                    if (isGlideGestureActive && sampledGlideChars.size >= 2) {
+                                        val glideWord = suggestionEngine.findGlideWord(sampledGlideChars)
+                                        if (glideWord != null) {
+                                            onGlideWord(glideWord)
+                                        }
+                                    }
+                                    touchCoordinator.onPointerUp(change)
+                                    isGlideGestureActive = false
+                                    glideTrailPoints.clear()
+                                    sampledGlideChars.clear()
                                 }
-                                touchCoordinator.onPointerUp(change)
-                                isGlideGestureActive = false
-                                glideTrailPoints.clear()
-                                sampledGlideChars.clear()
+                            }
+
+                            // If all pointers lifted or canceled
+                            if (event.changes.all { !it.pressed }) {
+                                break
                             }
                         }
-
-                        // If all pointers lifted or canceled
-                        if (event.changes.all { !it.pressed }) {
-                            break
-                        }
+                    } finally {
+                        touchCoordinator.onCancel()
+                        isGlideGestureActive = false
+                        glideTrailPoints.clear()
+                        sampledGlideChars.clear()
                     }
                 }
             }

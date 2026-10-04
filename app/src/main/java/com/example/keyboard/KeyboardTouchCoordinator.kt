@@ -37,6 +37,7 @@ class PointerTrack(
     var popupOptions: List<String> = emptyList(),
     var selectedOptionIndex: Int = 0,
     var isDragActionHandled: Boolean = false,
+    var lastCursorSwipeX: Float = downPosition.x,
     var longPressJob: Job? = null,
     var repeatJob: Job? = null
 )
@@ -62,6 +63,7 @@ class KeyboardTouchCoordinator(
     private val isShifted: () -> Boolean
 ) {
     private val activePointers = HashMap<PointerId, PointerTrack>(8)
+    private val pressedPositionsCache = HashSet<KeyPosition>(8)
 
     // Observable states for UI rendering
     var pressedKeyPositions: Set<KeyPosition> = emptySet()
@@ -77,8 +79,25 @@ class KeyboardTouchCoordinator(
         onStateChangedListener = listener
     }
 
+    private fun updatePreviewKey() {
+        if (!isPopupPreviewEnabled()) {
+            previewKeyPosition = null
+            return
+        }
+        // Show preview for the latest active character pointer that is not committed or in popup
+        val activeCharTrack = activePointers.values
+            .filter { !it.isCommitted && !it.isPopupShowing && it.initialKeyPos.key.type == KeyType.CHARACTER && it.initialKeyPos.key.primaryText.isNotEmpty() }
+            .maxByOrNull { it.downTimeMs }
+        previewKeyPosition = activeCharTrack?.initialKeyPos
+    }
+
     private fun notifyStateChanged() {
-        pressedKeyPositions = activePointers.values.map { it.currentKeyPos }.toSet()
+        pressedPositionsCache.clear()
+        for (track in activePointers.values) {
+            pressedPositionsCache.add(track.currentKeyPos)
+        }
+        pressedKeyPositions = pressedPositionsCache.toSet()
+        updatePreviewKey()
         onStateChangedListener?.invoke()
     }
 
@@ -128,18 +147,19 @@ class KeyboardTouchCoordinator(
             currentPosition = change.position,
             downTimeMs = now,
             popupOptions = alternateOptions,
-            selectedOptionIndex = defaultIdx
+            selectedOptionIndex = defaultIdx,
+            lastCursorSwipeX = change.position.x
         )
 
         activePointers[change.id] = track
 
-        // Show key preview popup for characters if enabled
-        if (isPopupPreviewEnabled() && key.type == KeyType.CHARACTER && key.primaryText.isNotEmpty()) {
-            previewKeyPosition = keyPos
-        }
-
-        // Handle Backspace auto-repeat
-        if (key.type == KeyType.BACKSPACE) {
+        // Shift key optimization for immediate two-thumb typing response:
+        // Trigger Shift on down so all keys immediately update to uppercase while holding Shift!
+        if (key.type == KeyType.SHIFT) {
+            track.isCommitted = true
+            onKeyTap(key)
+        } else if (key.type == KeyType.BACKSPACE) {
+            // Handle Backspace auto-repeat
             track.isCommitted = true
             onBackspace()
             track.repeatJob = scope.launch {
@@ -169,7 +189,6 @@ class KeyboardTouchCoordinator(
                             isLeftEdge = isLeftEdge,
                             isRightEdge = isRightEdge
                         )
-                        previewKeyPosition = null
                         notifyStateChanged()
                     } else if (key.alternateText.isNotEmpty()) {
                         val text = if (shifted) key.alternateText.uppercase() else key.alternateText
@@ -216,18 +235,16 @@ class KeyboardTouchCoordinator(
 
         // 2. Spacebar horizontal swipe cursor control
         if (track.initialKeyPos.key.type == KeyType.SPACE && isSpaceSwipeEnabled()) {
-            val deltaX = currentPos.x - track.downPosition.x
-            if (abs(deltaX) > 24f) {
+            val deltaFromLast = currentPos.x - track.lastCursorSwipeX
+            val stepThresholdPx = 28f
+            if (abs(deltaFromLast) >= stepThresholdPx) {
                 track.isDragActionHandled = true
                 track.longPressJob?.cancel()
-                val steps = (deltaX / 28f).toInt()
+                val steps = (deltaFromLast / stepThresholdPx).toInt()
                 if (steps != 0) {
-                    onMoveCursor(if (steps > 0) 1 else -1)
-                    // Reset reference position slightly for continuous scrolling
-                    track.downPosition.let {
-                        val newRefX = currentPos.x
-                        // Move cursor
-                    }
+                    onMoveCursor(steps)
+                    track.lastCursorSwipeX += steps * stepThresholdPx
+                    onSelectionTick()
                 }
             }
             return
@@ -267,10 +284,6 @@ class KeyboardTouchCoordinator(
         val track = activePointers.remove(change.id) ?: return
         track.longPressJob?.cancel()
         track.repeatJob?.cancel()
-
-        if (previewKeyPosition == track.initialKeyPos) {
-            previewKeyPosition = null
-        }
 
         if (track.isPopupShowing) {
             // Commit selected alternate character from popup

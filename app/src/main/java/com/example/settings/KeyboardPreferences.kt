@@ -145,12 +145,6 @@ class KeyboardPreferences(context: Context) {
     )
         private set
 
-    var isAiFeatureEnabled by mutableStateOf(prefs.getBoolean("is_ai_enabled", true))
-        private set
-
-    var preferredAiModel by mutableStateOf(prefs.getString("preferred_ai_model", "nex") ?: "nex")
-        private set
-
     var hotbarTools by mutableStateOf(
         prefs.getString("hotbar_tools", "CLIPBOARD,CURSOR_NAV,FONTS,LANGUAGE,THEME,SETTINGS")
             ?.split(",")
@@ -204,13 +198,11 @@ class KeyboardPreferences(context: Context) {
                     ?.filter { it.isNotBlank() }
                     ?: listOf("👍", "❤️", "😊", "🔥", "✨", "🎉", "🚀", "💻", "⚡", "🙌", "👏", "💡", "🤖", "✅", "😍", "🤣", "🎂", "🥳", "☕", "🍕")
             }
-            "is_ai_enabled" -> isAiFeatureEnabled = prefs.getBoolean("is_ai_enabled", true)
-            "preferred_ai_model" -> preferredAiModel = prefs.getString("preferred_ai_model", "nex") ?: "nex"
             "hotbar_tools" -> {
-                hotbarTools = prefs.getString("hotbar_tools", "AI,CLIPBOARD,CURSOR_NAV,FONTS,LANGUAGE")
+                hotbarTools = prefs.getString("hotbar_tools", "CLIPBOARD,CURSOR_NAV,FONTS,LANGUAGE,THEME,SETTINGS")
                     ?.split(",")
                     ?.filter { it.isNotBlank() }
-                    ?: listOf("AI", "CLIPBOARD", "CURSOR_NAV", "FONTS", "LANGUAGE")
+                    ?: listOf("CLIPBOARD", "CURSOR_NAV", "FONTS", "LANGUAGE", "THEME", "SETTINGS")
             }
             "libre_translate_endpoint" -> libreTranslateEndpoint = prefs.getString("libre_translate_endpoint", "https://libretranslate.com/translate") ?: "https://libretranslate.com/translate"
             "libre_translate_api_key" -> libreTranslateApiKey = prefs.getString("libre_translate_api_key", "") ?: ""
@@ -270,8 +262,6 @@ class KeyboardPreferences(context: Context) {
         customTextColorHex = prefs.getString("custom_text_hex", "#CDD6F4") ?: "#CDD6F4"
         libreTranslateEndpoint = prefs.getString("libre_translate_endpoint", "https://libretranslate.com/translate") ?: "https://libretranslate.com/translate"
         libreTranslateApiKey = prefs.getString("libre_translate_api_key", "") ?: ""
-        isAiFeatureEnabled = prefs.getBoolean("is_ai_enabled", true)
-        preferredAiModel = prefs.getString("preferred_ai_model", "nex") ?: "nex"
         clipboardUnpinnedLimit = prefs.getInt("clipboard_unpinned_limit", 10)
         hapticProfile = prefs.getString("haptic_profile", "system") ?: "system"
         hapticIntensityPercent = prefs.getInt("haptic_intensity_percent", 65).coerceIn(5, 100)
@@ -499,16 +489,6 @@ class KeyboardPreferences(context: Context) {
         prefs.edit().putString("current_font_style", styleId).apply()
     }
 
-    fun setAiEnabled(enabled: Boolean) {
-        isAiFeatureEnabled = enabled
-        prefs.edit().putBoolean("is_ai_enabled", enabled).apply()
-    }
-
-    fun updatePreferredAiModel(model: String) {
-        preferredAiModel = model
-        prefs.edit().putString("preferred_ai_model", model).apply()
-    }
-
     fun updateNetworkMode(mode: String) {
         networkMode = mode
         prefs.edit().putString("network_mode", mode).apply()
@@ -551,7 +531,7 @@ class KeyboardPreferences(context: Context) {
     }
 
     fun resetHotbarTools() {
-        val defaultList = listOf("AI", "TRANSLATE", "CLIPBOARD", "CURSOR_NAV", "FONTS", "LANGUAGE")
+        val defaultList = listOf("CLIPBOARD", "CURSOR_NAV", "FONTS", "LANGUAGE", "THEME", "SETTINGS")
         updateHotbarTools(defaultList)
     }
 

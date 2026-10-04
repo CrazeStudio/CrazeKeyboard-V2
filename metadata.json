@@ -1,6 +1,6 @@
 {
   "name": "CrazeKeyboard",
-  "description": "High-performance technical keyboard with mechanical haptics, multi-model AI (Gemini & Llama), and real-time web search grounding.",
+  "description": "High-performance, offline-first Android keyboard with ultra-low input latency, multitouch responsiveness, local suggestions, and rich offline tooling.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

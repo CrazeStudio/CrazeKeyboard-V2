@@ -40,7 +40,6 @@ enum class ToolbarAction {
     TOGGLE_DEV_MODE,
     OPEN_TRANSLATE,
     OPEN_EMOJI,
-    OPEN_GIF,
     OPEN_CLIPBOARD,
     OPEN_CURSOR_NAV,
     OPEN_SETTINGS,
@@ -54,8 +53,7 @@ enum class ToolbarAction {
     OPEN_FLOATING,
     OPEN_SPEED_TEST,
     OPEN_TOOLS_MENU,
-    OPEN_CUSTOMIZE_HOTBAR,
-    OPEN_AI
+    OPEN_CUSTOMIZE_HOTBAR
 }
 
 @Composable
@@ -187,12 +185,10 @@ private fun HotbarStrip(
                             .clickable { 
                                 when(tool.id) {
                                     "TRANSLATE" -> onAction(ToolbarAction.OPEN_TRANSLATE)
-                                    "AI" -> onAction(ToolbarAction.OPEN_AI)
                                     "CLIPBOARD" -> onAction(ToolbarAction.OPEN_CLIPBOARD)
                                     "CURSOR_NAV" -> onAction(ToolbarAction.OPEN_CURSOR_NAV)
                                     "FONTS" -> onAction(ToolbarAction.OPEN_FONTS)
                                     "LANGUAGE" -> onAction(ToolbarAction.OPEN_LANGUAGE)
-                                    "GIF" -> onAction(ToolbarAction.OPEN_GIF)
                                     "THEME" -> onAction(ToolbarAction.CYCLE_THEME)
                                     "SOUND" -> onAction(ToolbarAction.TOGGLE_SOUND)
                                     "NUMBER_ROW" -> onAction(ToolbarAction.TOGGLE_NUMBER_ROW)

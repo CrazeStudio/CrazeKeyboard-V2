@@ -47,7 +47,7 @@ import com.example.settings.KeyboardPreferences
 import com.example.themes.KeyboardTheme
 
 enum class MediaTab {
-    EMOJI, KAOMOJI, GIF
+    EMOJI, KAOMOJI
 }
 
 @Composable
@@ -56,13 +56,12 @@ fun MediaPanel(
     preferences: KeyboardPreferences,
     initialTab: MediaTab = MediaTab.EMOJI,
     onEmojiSelected: (String) -> Unit,
-    onGifSelected: (GifItem) -> Unit,
     onOpenSearch: (MediaTab) -> Unit,
     onBackspace: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var currentTab by remember { mutableStateOf(if (initialTab == MediaTab.GIF) MediaTab.EMOJI else initialTab) }
+    var currentTab by remember { mutableStateOf(initialTab) }
     var selectedCategory by remember { mutableStateOf(EmojiCategory.SMILEYS) }
     var searchQuery by remember { mutableStateOf("") }
 
@@ -273,19 +272,6 @@ fun MediaPanel(
                                 )
                             }
                         }
-                    }
-                }
-
-                MediaTab.GIF -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Online GIF search is disabled in offline mode.",
-                            color = theme.secondaryTextColor,
-                            fontSize = 13.sp
-                        )
                     }
                 }
             }

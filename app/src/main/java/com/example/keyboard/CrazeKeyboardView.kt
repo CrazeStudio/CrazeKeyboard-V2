@@ -39,9 +39,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
-import com.example.ai.ChatMessage
-import com.example.ai.SearchSource
-import com.example.ai.SearchResultItem
 import com.example.clipboard.ClipboardDao
 import com.example.clipboard.ClipboardPanel
 import com.example.core.HapticFeedbackHelper
@@ -86,14 +83,24 @@ fun CrazeKeyboardView(
     var keyboardMode by remember(isNumericField) {
         mutableStateOf(if (isNumericField) KeyboardMode.NUMBERS else KeyboardMode.ALPHA)
     }
-    var shiftState by remember(isSentenceStart, isEmailField, isUriField, isPasswordField) {
+    var shiftState by remember {
         mutableStateOf(
-            if (preferences.isAutoCapEnabled && isSentenceStart && !isEmailField && !isUriField && !isPasswordField) {
+            if (preferences.isAutoCapEnabled && isSentenceStart && !isEmailField && !isUriField && !isPasswordField && !isNumericField) {
                 ShiftState.SHIFTED
             } else {
                 ShiftState.OFF
             }
         )
+    }
+
+    LaunchedEffect(isSentenceStart, isEmailField, isUriField, isPasswordField, isNumericField, preferences.isAutoCapEnabled) {
+        if (shiftState != ShiftState.CAPS_LOCK) {
+            shiftState = if (preferences.isAutoCapEnabled && isSentenceStart && !isEmailField && !isUriField && !isPasswordField && !isNumericField) {
+                ShiftState.SHIFTED
+            } else {
+                ShiftState.OFF
+            }
+        }
     }
     var lastShiftTapTime by remember { mutableStateOf(0L) }
     var lastSpaceTapTime by remember { mutableStateOf(0L) }
@@ -101,15 +108,6 @@ fun CrazeKeyboardView(
     var mediaInitialTab by remember { mutableStateOf(MediaTab.EMOJI) }
     var sourceLang by remember { mutableStateOf("en") }
     var targetLang by remember { mutableStateOf("es") }
-    var swiftAiTab by remember { mutableStateOf(SwiftKeyAiTab.CHATBOT) }
-
-    // AI State
-    var aiChatMessages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
-    var aiIsProcessing by remember { mutableStateOf(false) }
-    var aiResultText by remember { mutableStateOf<String?>(null) }
-    var snapshotContextText by remember { mutableStateOf("") }
-    var aiSearchSource by remember { mutableStateOf(SearchSource.ALL) }
-    var aiQuickSearchResults by remember { mutableStateOf<List<SearchResultItem>>(emptyList()) }
 
     // State for Panels
     var isLiveTranslateActive by remember { mutableStateOf(false) }
@@ -250,11 +248,6 @@ fun CrazeKeyboardView(
                 onFontsPanelOpen = { activePanel = ActivePanel.FONTS },
                 onLanguagePickerPanelOpen = { activePanel = ActivePanel.LANGUAGE_PICKER },
                 onCursorNavPanelOpen = { activePanel = ActivePanel.CURSOR_NAV },
-                onAiChatPanelOpen = {
-                    activePanel = ActivePanel.SWIFT_AI
-                    snapshotContextText = listener.getCurrentContextText()
-                    localSearchQuery = ""
-                },
                 onToggleSound = { preferences.setSound(!preferences.isSoundEnabled) },
                 onToggleNumberRow = { preferences.setNumberRow(!preferences.isNumberRowEnabled) },
                 onVoiceInput = { listener.onVoiceRequested() },
@@ -315,10 +308,6 @@ fun CrazeKeyboardView(
                                 preferences.addRecentEmoji(it)
                                 listener.onText(it)
                             },
-                            onGifSelected = {
-                                triggerTapFeedback()
-                                listener.onMedia(it.url)
-                            },
                             onOpenSearch = {
                                 isMediaSearchMode = true
                                 activePanel = ActivePanel.KEYBOARD
@@ -351,12 +340,7 @@ fun CrazeKeyboardView(
                                     "FONTS" -> activePanel = ActivePanel.FONTS
                                     "LANGUAGE" -> activePanel = ActivePanel.LANGUAGE_PICKER
                                     "CURSOR_NAV" -> activePanel = ActivePanel.CURSOR_NAV
-                                    "AI" -> {
-                                        snapshotContextText = listener.getCurrentContextText()
-                                        activePanel = ActivePanel.SWIFT_AI
-                                    }
                                     "CLIPBOARD" -> activePanel = ActivePanel.CLIPBOARD
-                                    "GIF" -> { mediaInitialTab = MediaTab.EMOJI; activePanel = ActivePanel.MEDIA }
                                     "THEME" -> {
                                         val themes = listOf("light", "dark", "blue", "green", "pink", "amoled")
                                         val currentIdx = themes.indexOf(preferences.themeId)
@@ -391,12 +375,19 @@ fun CrazeKeyboardView(
                             onClose = { activePanel = ActivePanel.KEYBOARD }
                         )
 
-                        ActivePanel.FONTS -> FontsPanel(
-                            theme = currentTheme,
-                            currentStyleId = preferences.currentFontStyle,
-                            onStyleSelected = { preferences.setFontStyle(it) },
-                            onClose = { activePanel = ActivePanel.KEYBOARD }
-                        )
+                        ActivePanel.FONTS -> {
+                            val contextText = remember(activePanel) { listener.getCurrentContextText() }
+                            FontsPanel(
+                                theme = currentTheme,
+                                currentStyleId = preferences.currentFontStyle,
+                                contextText = contextText,
+                                onStyleSelected = { preferences.setFontStyle(it) },
+                                onApplyToContextText = { transformed ->
+                                    listener.onReplaceContextText(transformed)
+                                },
+                                onClose = { activePanel = ActivePanel.KEYBOARD }
+                            )
+                        }
 
                         ActivePanel.LANGUAGE_PICKER -> LanguagePickerPanel(
                             theme = currentTheme,
@@ -426,78 +417,6 @@ fun CrazeKeyboardView(
                                 preferences.updateHotbarTools(KeyboardToolsCatalog.defaultHotbarIds)
                             },
                             onClose = { activePanel = ActivePanel.KEYBOARD }
-                        )
-
-                        ActivePanel.SWIFT_AI -> SwiftKeyAiPanel(
-                            theme = currentTheme,
-                            preferences = preferences,
-                            contextText = snapshotContextText,
-                            currentQuery = localSearchQuery,
-                            activeTab = swiftAiTab,
-                            chatMessages = aiChatMessages,
-                            onTabChange = { swiftAiTab = it },
-                            onClearQuery = { localSearchQuery = "" },
-                            onSendChatMessage = { query ->
-                                val userMsg = ChatMessage(isUser = true, text = query)
-                                aiChatMessages = aiChatMessages + userMsg
-                                aiIsProcessing = true
-                                localSearchQuery = ""
-                                coroutineScope.launch {
-                                    val (response, searchResults) = com.example.ai.AiRepository.sendChatWithSearch(
-                                        conversation = aiChatMessages,
-                                        searchSource = aiSearchSource,
-                                        contextText = snapshotContextText
-                                    )
-                                    aiChatMessages = aiChatMessages + ChatMessage(isUser = false, text = response, searchResults = searchResults)
-                                    aiIsProcessing = false
-                                }
-                            },
-                            onClearChat = { aiChatMessages = emptyList() },
-                            onSendQuickQuery = { query ->
-                                aiIsProcessing = true
-                                aiResultText = null
-                                localSearchQuery = ""
-                                coroutineScope.launch {
-                                    val (response, searchResults) = com.example.ai.AiRepository.askWithSearch(
-                                        query = query,
-                                        searchSource = aiSearchSource,
-                                        contextText = snapshotContextText
-                                    )
-                                    aiResultText = response
-                                    aiQuickSearchResults = searchResults
-                                    aiIsProcessing = false
-                                }
-                            },
-                            onRewriteTone = { tone ->
-                                aiIsProcessing = true
-                                aiResultText = null
-                                coroutineScope.launch {
-                                    val response = com.example.ai.AiRepository.rewriteTone(
-                                        text = snapshotContextText,
-                                        tone = tone
-                                    )
-                                    aiResultText = response
-                                    aiIsProcessing = false
-                                }
-                            },
-                            onReplaceText = { listener.onReplaceContextText(it) },
-                            onInsertText = { listener.onText(it) },
-                            isProcessing = aiIsProcessing,
-                            aiResultText = aiResultText,
-                            searchSource = aiSearchSource,
-                            onSearchSourceChange = { aiSearchSource = it },
-                            quickSearchResults = aiQuickSearchResults,
-                            onClose = { activePanel = ActivePanel.KEYBOARD }
-                        )
-
-                        ActivePanel.AI_CHAT -> AiChatPanel(
-                            theme = currentTheme,
-                            initialContext = currentWordPrefix,
-                            onBack = { activePanel = ActivePanel.KEYBOARD },
-                            onInsert = {
-                                triggerTapFeedback()
-                                listener.onText(it)
-                            }
                         )
 
                         ActivePanel.KEYBOARD -> KeyboardGrid(
@@ -635,7 +554,6 @@ private fun ClipboardToolbarSection(
     onFontsPanelOpen: () -> Unit,
     onLanguagePickerPanelOpen: () -> Unit,
     onCursorNavPanelOpen: () -> Unit,
-    onAiChatPanelOpen: () -> Unit,
     onToggleSound: () -> Unit,
     onToggleNumberRow: () -> Unit,
     onVoiceInput: () -> Unit,
@@ -729,8 +647,6 @@ private fun ClipboardToolbarSection(
                     ToolbarAction.OPEN_FONTS -> onFontsPanelOpen()
                     ToolbarAction.OPEN_LANGUAGE -> onLanguagePickerPanelOpen()
                     ToolbarAction.OPEN_CURSOR_NAV -> onCursorNavPanelOpen()
-                    ToolbarAction.OPEN_AI -> onAiChatPanelOpen()
-                    ToolbarAction.OPEN_GIF -> onMediaPanelOpen(MediaTab.EMOJI)
                     ToolbarAction.TOGGLE_SOUND -> onToggleSound()
                     ToolbarAction.TOGGLE_NUMBER_ROW -> onToggleNumberRow()
                     ToolbarAction.VOICE_INPUT -> onVoiceInput()

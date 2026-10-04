@@ -152,8 +152,6 @@ fun TranslatePanel(
             )
         } else {
             // Live Translate Banner
-            val isOnline by com.example.core.rememberNetworkStatus()
-            
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -178,7 +176,7 @@ fun TranslatePanel(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = if (isOnline) "Instantly translate as you type" else "Offline dictionary mode active",
+                            text = "Offline dictionary & phrasebook active",
                             color = theme.textColor.copy(alpha = 0.6f),
                             fontSize = 11.sp
                         )

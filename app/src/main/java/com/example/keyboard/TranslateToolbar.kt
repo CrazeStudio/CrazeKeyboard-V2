@@ -21,19 +21,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
-import com.example.core.rememberNetworkStatus
 import com.example.themes.KeyboardTheme
 import com.example.translate.TranslateEngine
 
@@ -50,7 +47,6 @@ fun TranslateToolbar(
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isOnline by rememberNetworkStatus()
     val sourceLang = TranslateEngine.getLanguage(sourceLanguageCode)
     val targetLang = TranslateEngine.getLanguage(targetLanguageCode)
 
@@ -153,24 +149,17 @@ fun TranslateToolbar(
                         modifier = Modifier.weight(1f)
                     )
 
-                    // Mode Badge (Online / Offline)
+                    // Offline Dictionary Badge
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .clip(RoundedCornerShape(4.dp))
-                            .background(if (isOnline) Color(0xFF2E7D32).copy(alpha = 0.15f) else theme.borderColor.copy(alpha = 0.4f))
+                            .background(theme.borderColor.copy(alpha = 0.4f))
                             .padding(horizontal = 4.dp, vertical = 1.dp)
                     ) {
-                        Icon(
-                            painter = painterResource(id = if (isOnline) R.drawable.ic_globe else R.drawable.ic_wifi_off),
-                            contentDescription = if (isOnline) "Online API" else "Offline Dictionary",
-                            tint = if (isOnline) Color(0xFF4CAF50) else theme.secondaryTextColor,
-                            modifier = Modifier.size(10.dp)
-                        )
-                        Spacer(modifier = Modifier.width(2.dp))
                         Text(
-                            text = if (isOnline) "Online" else "Offline",
-                            color = if (isOnline) Color(0xFF4CAF50) else theme.secondaryTextColor,
+                            text = "Offline",
+                            color = theme.secondaryTextColor,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold
                         )
