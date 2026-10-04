@@ -6,6 +6,7 @@ import android.media.AudioManager
 import android.media.SoundPool
 import com.example.R
 
+/** Lightweight sound feedback. Audio resources are loaded only when first requested. */
 enum class MechanicalSwitchType(val id: String, val displayName: String, val description: String) {
     IPHONE("iphone", "iPhone iOS Click", "Authentic iOS acoustic keyboard tap sound"),
     CLICK("click", "Crisp Click", "Ultra-crisp, sharp acoustic mechanical click"),
@@ -19,54 +20,66 @@ enum class MechanicalSwitchType(val id: String, val displayName: String, val des
 class SoundFeedbackHelper private constructor(context: Context) {
     private val appContext = context.applicationContext
     private val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-    private var soundPool: SoundPool? = null
-    
-    private var soundIdIphone = 0
-    private var soundIdClick = 0
-    private var soundIdThock = 0
-    private var soundIdBlue = 0
-    private var soundIdBrown = 0
-    private var soundIdTypewriter = 0
-    private var soundIdPop = 0
 
-    // Cached volume ratio to prevent cross-process Binder IPC on every single keypress
+    @Volatile private var soundPool: SoundPool? = null
+    private val loadedSounds = HashMap<String, Int>(7)
+    private val loadLock = Any()
+
     @Volatile
     private var cachedSysRatio = 1.0f
 
-    init {
-        try {
-            val audioAttributes = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .build()
-                
-            val pool = SoundPool.Builder()
-                .setMaxStreams(10)
-                .setAudioAttributes(audioAttributes)
-                .build()
-                
-            soundPool = pool
-            soundIdIphone = pool.load(appContext, R.raw.mech_iphone, 1)
-            soundIdClick = pool.load(appContext, R.raw.mech_click, 1)
-            soundIdThock = pool.load(appContext, R.raw.mech_thock, 1)
-            soundIdBlue = pool.load(appContext, R.raw.mech_blue, 1)
-            soundIdBrown = pool.load(appContext, R.raw.mech_brown, 1)
-            soundIdTypewriter = pool.load(appContext, R.raw.mech_typewriter, 1)
-            soundIdPop = pool.load(appContext, R.raw.mech_pop, 1)
-        } catch (_: Exception) {
-            // Safe fallback if SoundPool native initialization fails
+    private fun ensurePool(): SoundPool? {
+        soundPool?.let { return it }
+        synchronized(loadLock) {
+            soundPool?.let { return it }
+            return try {
+                val attributes = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+                SoundPool.Builder()
+                    .setMaxStreams(4)
+                    .setAudioAttributes(attributes)
+                    .build()
+                    .also { soundPool = it }
+            } catch (_: Throwable) {
+                null
+            }
         }
-        refreshVolume()
+    }
+
+    private fun resourceFor(type: String): Int = when (type.lowercase()) {
+        "iphone", "ios" -> R.raw.mech_iphone
+        "click" -> R.raw.mech_click
+        "thock" -> R.raw.mech_thock
+        "blue" -> R.raw.mech_blue
+        "brown" -> R.raw.mech_brown
+        "typewriter" -> R.raw.mech_typewriter
+        "pop" -> R.raw.mech_pop
+        else -> R.raw.mech_iphone
+    }
+
+    private fun soundIdFor(type: String): Int {
+        val key = type.lowercase()
+        synchronized(loadLock) {
+            loadedSounds[key]?.let { return it }
+            val pool = ensurePool() ?: return 0
+            return try {
+                val id = pool.load(appContext, resourceFor(key), 1)
+                loadedSounds[key] = id
+                id
+            } catch (_: Throwable) {
+                0
+            }
+        }
     }
 
     fun refreshVolume() {
         try {
-            val systemVolume = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: 1
-            val maxSystemVolume = audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 1
-            cachedSysRatio = if (maxSystemVolume > 0) {
-                (systemVolume.toFloat() / maxSystemVolume.toFloat()).coerceIn(0.2f, 1f)
-            } else 1f
-        } catch (_: Exception) {
+            val current = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: 1
+            val max = audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 1
+            cachedSysRatio = if (max > 0) (current.toFloat() / max).coerceIn(0.2f, 1f) else 1f
+        } catch (_: Throwable) {
             cachedSysRatio = 1f
         }
     }
@@ -77,50 +90,34 @@ class SoundFeedbackHelper private constructor(context: Context) {
         isSoundEnabled: Boolean = true
     ) {
         if (!isSoundEnabled || volumePercent <= 0) return
-        
         try {
-            val userGain = (volumePercent.toFloat() / 100f).coerceIn(0f, 1f)
+            val soundId = soundIdFor(switchType)
+            if (soundId <= 0) return
+            val userGain = (volumePercent / 100f).coerceIn(0f, 1f)
             val finalVolume = (cachedSysRatio * userGain).coerceIn(0.05f, 1f)
-
-            val soundId = when (switchType.lowercase()) {
-                "iphone", "ios" -> if (soundIdIphone != 0) soundIdIphone else soundIdClick
-                "click" -> if (soundIdClick != 0) soundIdClick else soundIdIphone
-                "blue" -> if (soundIdBlue != 0) soundIdBlue else soundIdIphone
-                "brown" -> if (soundIdBrown != 0) soundIdBrown else soundIdIphone
-                "typewriter" -> if (soundIdTypewriter != 0) soundIdTypewriter else soundIdIphone
-                "pop" -> if (soundIdPop != 0) soundIdPop else soundIdIphone
-                "thock" -> if (soundIdThock != 0) soundIdThock else soundIdIphone
-                else -> if (soundIdIphone != 0) soundIdIphone else soundIdClick
-            }
-
-            if (soundId > 0) {
-                val pitch = 0.98f + (Math.random().toFloat() * 0.04f)
-                soundPool?.play(soundId, finalVolume, finalVolume, 1, 0, pitch)
-            }
-        } catch (_: Exception) {
-            // Fail silently on audio drop to avoid any typing freeze
+            soundPool?.play(soundId, finalVolume, finalVolume, 1, 0, 0.99f + (Math.random().toFloat() * 0.02f))
+        } catch (_: Throwable) {
+            // Audio failure must never affect typing.
         }
     }
-    
-    fun playTestSound(switchType: String, volumePercent: Int = 80) {
-        playKeyPress(switchType = switchType, volumePercent = volumePercent, isSoundEnabled = true)
-    }
+
+    fun playTestSound(switchType: String, volumePercent: Int = 80) =
+        playKeyPress(switchType, volumePercent, true)
 
     fun release() {
-        try {
-            soundPool?.release()
+        synchronized(loadLock) {
+            try { soundPool?.release() } catch (_: Throwable) {}
             soundPool = null
-        } catch (_: Exception) {}
+            loadedSounds.clear()
+        }
     }
 
     companion object {
-        @Volatile
-        private var instance: SoundFeedbackHelper? = null
+        @Volatile private var instance: SoundFeedbackHelper? = null
 
-        fun getInstance(context: Context): SoundFeedbackHelper {
-            return instance ?: synchronized(this) {
+        fun getInstance(context: Context): SoundFeedbackHelper =
+            instance ?: synchronized(this) {
                 instance ?: SoundFeedbackHelper(context.applicationContext).also { instance = it }
             }
-        }
     }
 }
