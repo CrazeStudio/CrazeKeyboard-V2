@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.inputmethodservice.InputMethodService
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
@@ -40,10 +42,11 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.io.File
 
-/** CrazeKeyboard IME service with an AOSP-style input pipeline. */
+/** CrazeKeyboard IME service. Input commits stay independent from Compose/UI synchronization. */
 class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val imeLifecycleOwner = ImeLifecycleOwner()
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val database: AppDatabase by lazy { AppDatabase.getInstance(applicationContext) }
     private val preferences: KeyboardPreferences by lazy { KeyboardPreferences.getInstance(applicationContext) }
     private val suggestionEngine: SuggestionEngine by lazy { SuggestionEngine(applicationContext, database.personalDictionaryDao()) }
@@ -53,14 +56,14 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
         logic.setDoubleSpacePeriodEnabled(preferences.isDoubleSpacePeriodEnabled)
         logic.setListener(object : InputLogic.Listener {
             override fun onWordComposed(word: String) {
-                this@CrazeInputMethodService.currentWordPrefix = word
+                // Never mutate Compose state synchronously from the character hot path.
+                requestUiSync()
             }
             override fun onAutoCorrectChanged(original: String?, correction: String?) {
-                this@CrazeInputMethodService.autoCorrectNotice = if (original != null && correction != null) Pair(original, correction) else null
+                requestUiSync()
             }
             override fun onCapsModeChanged(sentenceStart: Boolean) {
-                this@CrazeInputMethodService.isSentenceStart = sentenceStart
-                this@CrazeInputMethodService.isActualSentenceStart = sentenceStart
+                requestUiSync()
             }
         })
         logic
@@ -80,21 +83,18 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
     private var isMultilineField by mutableStateOf(false)
     private var autoCorrectNotice by mutableStateOf<Pair<String, String>?>(null)
     private var cachedComposeView: ComposeView? = null
+    private var uiSyncPending = false
     private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener { saveLatestClipboard() }
 
     override fun onCreate() {
         super.onCreate()
         imeLifecycleOwner.onCreate()
-        serviceScope.launch(Dispatchers.IO) {
-            try { database.clipboardDao().trimUnpinned(10); com.example.emoji.EmojiData.allEmojis.size } catch (_: Exception) {}
-        }
-        serviceScope.launch(Dispatchers.Main) {
-            try { if (cachedComposeView == null) cachedComposeView = createAndWarmUpComposeView() } catch (_: Exception) {}
-        }
+        // Do not eagerly create the entire Compose keyboard or load emoji data during IME startup.
+        // Optional data is loaded when its UI is actually opened.
         (getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)?.addPrimaryClipChangedListener(clipboardListener)
     }
 
-    private fun createAndWarmUpComposeView(): ComposeView = ComposeView(this).apply {
+    private fun createKeyboardView(): ComposeView = ComposeView(this).apply {
         isHapticFeedbackEnabled = true
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnLifecycleDestroyed(imeLifecycleOwner))
         setViewTreeLifecycleOwner(imeLifecycleOwner)
@@ -125,7 +125,7 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
 
     override fun onCreateInputView(): View {
         imeLifecycleOwner.onStart()
-        val composeView = cachedComposeView ?: createAndWarmUpComposeView().also { cachedComposeView = it }
+        val composeView = cachedComposeView ?: createKeyboardView().also { cachedComposeView = it }
         window?.window?.let { win ->
             win.addFlags(android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED)
             win.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
@@ -157,12 +157,12 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        suggestionEngine.ensureLoaded()
+        // Loading suggestions is intentionally outside the character insertion path.
+        serviceScope.launch(Dispatchers.Default) { suggestionEngine.ensureLoaded() }
         imeLifecycleOwner.onStart()
         richImm.onConnect(currentInputConnection)
-        // Do not restart InputLogic here: onStartInput already initialized this editor session.
         inputLogic.updateWordPrefixAndCaps()
-        syncEditorFields()
+        requestUiSync()
         inlineSuggestionViews = emptyList()
     }
 
@@ -176,12 +176,21 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
         super.onWindowShown()
         imeLifecycleOwner.onStart()
         richImm.onConnect(currentInputConnection)
-        // Window visibility must not reset composition/correction state.
         inputLogic.updateWordPrefixAndCaps()
-        syncEditorFields()
+        requestUiSync()
     }
 
     override fun onWindowHidden() { super.onWindowHidden(); imeLifecycleOwner.onStop() }
+
+    /** Coalesces rapid state changes so a burst of key presses does not trigger one recomposition per key. */
+    private fun requestUiSync() {
+        if (uiSyncPending) return
+        uiSyncPending = true
+        mainHandler.postDelayed({
+            uiSyncPending = false
+            if (!isDestroyed) syncEditorFields()
+        }, 12L)
+    }
 
     private fun syncEditorFields() {
         isPasswordField = inputLogic.isPasswordField
@@ -202,7 +211,7 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
         if (oldSelStart == newSelStart && oldSelEnd == newSelEnd) return
         if (!richImm.onUpdateSelection(newSelStart, newSelEnd)) {
             inputLogic.updateWordPrefixAndCaps()
-            syncEditorFields()
+            requestUiSync()
         }
     }
 
@@ -228,12 +237,13 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
         return true
     }
 
-    override fun onText(text: String) { inputLogic.onTextInput(text); syncEditorFields() }
-    override fun onReplaceCurrentWord(replacement: String) { inputLogic.onReplaceCurrentWord(replacement); syncEditorFields() }
-    override fun onBackspace() { inputLogic.onBackspace(); syncEditorFields() }
-    override fun onDeleteWord() { inputLogic.onDeleteWord(); syncEditorFields() }
-    override fun onEnter() { inputLogic.onEnter(); syncEditorFields() }
-    override fun onMoveCursor(offset: Int) { inputLogic.onMoveCursor(offset); syncEditorFields() }
+    // These callbacks deliberately do not synchronously synchronize the Compose tree.
+    override fun onText(text: String) { inputLogic.onTextInput(text) }
+    override fun onReplaceCurrentWord(replacement: String) { inputLogic.onReplaceCurrentWord(replacement); requestUiSync() }
+    override fun onBackspace() { inputLogic.onBackspace(); requestUiSync() }
+    override fun onDeleteWord() { inputLogic.onDeleteWord(); requestUiSync() }
+    override fun onEnter() { inputLogic.onEnter(); requestUiSync() }
+    override fun onMoveCursor(offset: Int) { inputLogic.onMoveCursor(offset); requestUiSync() }
 
     override fun onSpecialKey(action: CursorAction) {
         if (action == CursorAction.TOGGLE_SELECT) {
@@ -241,35 +251,17 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
         } else {
             handleSpecialKey(action, isSelectModeActive)
         }
-        syncEditorFields()
+        requestUiSync()
     }
 
     private fun handleSpecialKey(action: CursorAction, selectMode: Boolean) {
         when (action) {
-            CursorAction.LEFT -> {
-                if (selectMode) richImm.sendKeyWithMeta(KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.META_SHIFT_ON)
-                else richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_LEFT)
-            }
-            CursorAction.RIGHT -> {
-                if (selectMode) richImm.sendKeyWithMeta(KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.META_SHIFT_ON)
-                else richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_RIGHT)
-            }
-            CursorAction.UP -> {
-                if (selectMode) richImm.sendKeyWithMeta(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.META_SHIFT_ON)
-                else richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_UP)
-            }
-            CursorAction.DOWN -> {
-                if (selectMode) richImm.sendKeyWithMeta(KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.META_SHIFT_ON)
-                else richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_DOWN)
-            }
-            CursorAction.HOME, CursorAction.START -> {
-                if (selectMode) richImm.sendKeyWithMeta(KeyEvent.KEYCODE_MOVE_HOME, KeyEvent.META_SHIFT_ON)
-                else richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_MOVE_HOME)
-            }
-            CursorAction.END -> {
-                if (selectMode) richImm.sendKeyWithMeta(KeyEvent.KEYCODE_MOVE_END, KeyEvent.META_SHIFT_ON)
-                else richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_MOVE_END)
-            }
+            CursorAction.LEFT -> if (selectMode) richImm.sendKeyWithMeta(KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.META_SHIFT_ON) else richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_LEFT)
+            CursorAction.RIGHT -> if (selectMode) richImm.sendKeyWithMeta(KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.META_SHIFT_ON) else richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_RIGHT)
+            CursorAction.UP -> if (selectMode) richImm.sendKeyWithMeta(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.META_SHIFT_ON) else richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_UP)
+            CursorAction.DOWN -> if (selectMode) richImm.sendKeyWithMeta(KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.META_SHIFT_ON) else richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_DOWN)
+            CursorAction.HOME, CursorAction.START -> if (selectMode) richImm.sendKeyWithMeta(KeyEvent.KEYCODE_MOVE_HOME, KeyEvent.META_SHIFT_ON) else richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_MOVE_HOME)
+            CursorAction.END -> if (selectMode) richImm.sendKeyWithMeta(KeyEvent.KEYCODE_MOVE_END, KeyEvent.META_SHIFT_ON) else richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_MOVE_END)
             CursorAction.SELECT_ALL -> richImm.performContextMenuAction(android.R.id.selectAll)
             CursorAction.CUT -> richImm.performContextMenuAction(android.R.id.cut)
             CursorAction.COPY -> richImm.performContextMenuAction(android.R.id.copy)
@@ -277,20 +269,16 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
             CursorAction.DELETE -> richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_FORWARD_DEL)
             CursorAction.CLEAR -> {
                 richImm.beginBatchEdit()
-                try {
-                    richImm.deleteTextBeforeCursor(2000)
-                } finally {
-                    richImm.endBatchEdit()
-                }
+                try { richImm.deleteTextBeforeCursor(2000) } finally { richImm.endBatchEdit() }
             }
-            CursorAction.TOGGLE_SELECT -> {}
+            CursorAction.TOGGLE_SELECT -> Unit
         }
         inputLogic.updateWordPrefixAndCaps()
     }
 
     override fun onDevKey(item: DevKeyItem, modifierState: ModifierState) {
         handleDevKey(item, modifierState)
-        syncEditorFields()
+        requestUiSync()
     }
 
     private fun handleDevKey(item: DevKeyItem, modifierState: ModifierState) {
@@ -308,8 +296,8 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
             DevKeyType.TEXT -> {
                 val text = item.insertText.ifEmpty { item.label }
                 val metaState = (if (modifierState.isCtrlActive) KeyEvent.META_CTRL_ON else 0) or
-                                (if (modifierState.isAltActive) KeyEvent.META_ALT_ON else 0) or
-                                (if (modifierState.isShiftActive) KeyEvent.META_SHIFT_ON else 0)
+                    (if (modifierState.isAltActive) KeyEvent.META_ALT_ON else 0) or
+                    (if (modifierState.isShiftActive) KeyEvent.META_SHIFT_ON else 0)
                 if (metaState != 0 && text.length == 1) {
                     val ch = text[0].lowercaseChar()
                     val keyCode = when (ch) {
@@ -374,16 +362,14 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
                 richImm.commitText(newText, 1)
             } else {
                 val textBefore = richImm.getTextBeforeCursor(2000, 0).toString()
-                if (textBefore.isNotEmpty()) {
-                    richImm.deleteTextBeforeCursor(textBefore.length)
-                }
+                if (textBefore.isNotEmpty()) richImm.deleteTextBeforeCursor(textBefore.length)
                 richImm.commitText(newText, 1)
             }
         } finally {
             richImm.endBatchEdit()
         }
         inputLogic.updateWordPrefixAndCaps()
-        syncEditorFields()
+        requestUiSync()
     }
 
     private fun saveLatestClipboard() {
@@ -400,6 +386,7 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacksAndMessages(null)
         (getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)?.removePrimaryClipChangedListener(clipboardListener)
         imeLifecycleOwner.onDestroy()
         serviceScope.cancel()
