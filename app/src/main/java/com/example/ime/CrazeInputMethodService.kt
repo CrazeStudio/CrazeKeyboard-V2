@@ -1,36 +1,29 @@
 package com.example.ime
 
-import androidx.core.content.FileProvider
-import androidx.core.view.inputmethod.InputConnectionCompat
-import androidx.core.view.inputmethod.InputContentInfoCompat
 import android.content.ClipDescription
-import java.io.File
-import java.io.FileOutputStream
-import java.net.URL
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.inputmethodservice.InputMethodService
 import android.os.Build
-import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
-import android.view.inputmethod.InputConnection
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.core.content.FileProvider
+import androidx.core.view.inputmethod.InputConnectionCompat
+import androidx.core.view.inputmethod.InputContentInfoCompat
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.example.MainActivity
-import com.example.clipboard.ClipboardItemEntity
 import com.example.core.AppDatabase
-import com.example.developer.DevKeyItem
-import com.example.developer.DevKeyType
-import com.example.developer.ModifierState
 import com.example.core.SoundFeedbackHelper
+import com.example.developer.DevKeyItem
+import com.example.developer.ModifierState
 import com.example.keyboard.CrazeKeyboardView
 import com.example.keyboard.CursorAction
 import com.example.keyboard.KeyboardActionListener
@@ -41,18 +34,47 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import java.io.File
 
+/**
+ * CrazeKeyboard IME Service powered by AOSP LatinIME input architecture.
+ *
+ * Employs RichInputConnection and InputLogic for:
+ * - High-speed synchronous key commits
+ * - Low-latency startup and pre-warmed Compose view
+ * - AOSP-grade nested batch edit safety
+ * - Unicode surrogate-pair aware backspace
+ * - Immediate auto-correction undo on backspace
+ * - Automatic double-space-to-period replacement
+ * - Reliable cursor tracking and external selection change reconciliation
+ */
 class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val imeLifecycleOwner = ImeLifecycleOwner()
 
     private val database: AppDatabase by lazy { AppDatabase.getInstance(applicationContext) }
     private val preferences: KeyboardPreferences by lazy { KeyboardPreferences.getInstance(applicationContext) }
-    private val suggestionEngine: SuggestionEngine by lazy { 
-        SuggestionEngine(applicationContext, database.personalDictionaryDao()) 
+    private val suggestionEngine: SuggestionEngine by lazy {
+        SuggestionEngine(applicationContext, database.personalDictionaryDao())
     }
 
+    // AOSP LatinIME core components
+    private val richImm: RichInputConnection by lazy { RichInputConnection(this) }
+    private val inputLogic: InputLogic by lazy {
+        InputLogic(
+            richImm = richImm,
+            preferences = preferences,
+            suggestionEngine = suggestionEngine,
+            scope = serviceScope
+        ) { wordPrefix, sentenceStart, acNotice ->
+            currentWordPrefix = wordPrefix
+            isSentenceStart = sentenceStart
+            isActualSentenceStart = sentenceStart
+            autoCorrectNotice = acNotice
+        }
+    }
+
+    // Observable states for CrazeKeyboardView
     private var currentWordPrefix by mutableStateOf("")
     private var isSentenceStart by mutableStateOf(true)
     private var isActualSentenceStart by mutableStateOf(true)
@@ -65,6 +87,7 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
     private var isUriField by mutableStateOf(false)
     private var isNumericField by mutableStateOf(false)
     private var isMultilineField by mutableStateOf(false)
+    private var autoCorrectNotice by mutableStateOf<Pair<String, String>?>(null)
 
     private var cachedComposeView: ComposeView? = null
 
@@ -76,17 +99,15 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
         super.onCreate()
         imeLifecycleOwner.onCreate()
 
-        // Defer non-critical startup work to background
+        // Background non-critical initialization for rapid cold-start
         serviceScope.launch(Dispatchers.IO) {
             try {
                 database.clipboardDao().trimUnpinned(10)
-                // Warm up emoji data for fast loading later
                 com.example.emoji.EmojiData.allEmojis.size
-                com.example.emoji.LocalEmojiAiEngine.predictEmojisForText("warmup")
             } catch (_: Exception) {}
         }
 
-        // Pre-create and warm up the ComposeView asynchronously to prevent blocking IME service startup
+        // Warm up ComposeView on Main thread to avoid layout stutter
         serviceScope.launch(Dispatchers.Main) {
             try {
                 if (cachedComposeView == null) {
@@ -161,66 +182,28 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
         return super.onEvaluateInputViewShown()
     }
 
-    private fun evaluateEditorInfo(info: EditorInfo?) {
-        if (info == null) {
-            isPasswordField = false
-            isEmailField = false
-            isUriField = false
-            isNumericField = false
-            isMultilineField = false
-            currentImeAction = EditorInfo.IME_ACTION_NONE
-            return
-        }
-
-        currentImeAction = info.imeOptions and EditorInfo.IME_MASK_ACTION
-        val inputType = info.inputType
-        val inputClass = inputType and android.text.InputType.TYPE_MASK_CLASS
-        val variation = inputType and android.text.InputType.TYPE_MASK_VARIATION
-
-        isPasswordField = (inputClass == android.text.InputType.TYPE_CLASS_TEXT && (
-            variation == android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD ||
-            variation == android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
-            variation == android.text.InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
-        )) || (inputClass == android.text.InputType.TYPE_CLASS_NUMBER && (
-            variation == android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
-        ))
-
-        isEmailField = inputClass == android.text.InputType.TYPE_CLASS_TEXT && (
-            variation == android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS ||
-            variation == android.text.InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS
-        )
-
-        isUriField = inputClass == android.text.InputType.TYPE_CLASS_TEXT && (
-            variation == android.text.InputType.TYPE_TEXT_VARIATION_URI
-        )
-
-        isNumericField = inputClass == android.text.InputType.TYPE_CLASS_NUMBER ||
-            inputClass == android.text.InputType.TYPE_CLASS_PHONE ||
-            inputClass == android.text.InputType.TYPE_CLASS_DATETIME
-
-        isMultilineField = (inputType and android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE) != 0
-    }
-
     override fun onStartInput(info: EditorInfo?, restarting: Boolean) {
         super.onStartInput(info, restarting)
         SoundFeedbackHelper.getInstance(this).refreshVolume()
-        evaluateEditorInfo(info)
-        updateCurrentWordPrefix()
+        richImm.onConnect(currentInputConnection)
+        inputLogic.onStartInput(info)
+        syncEditorFields()
     }
 
     override fun onFinishInput() {
         super.onFinishInput()
-        currentWordPrefix = ""
-        isSentenceStart = true
+        inputLogic.onFinishInput()
+        richImm.onDisconnect()
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         suggestionEngine.ensureLoaded()
         imeLifecycleOwner.onStart()
-        evaluateEditorInfo(info)
+        richImm.onConnect(currentInputConnection)
+        inputLogic.onStartInput(info)
+        syncEditorFields()
         inlineSuggestionViews = emptyList()
-        updateCurrentWordPrefix()
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
@@ -232,13 +215,49 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
     override fun onWindowShown() {
         super.onWindowShown()
         imeLifecycleOwner.onStart()
-        currentImeAction = currentInputEditorInfo?.imeOptions ?: EditorInfo.IME_ACTION_NONE
-        updateCurrentWordPrefix()
+        richImm.onConnect(currentInputConnection)
+        inputLogic.onStartInput(currentInputEditorInfo)
+        syncEditorFields()
     }
 
     override fun onWindowHidden() {
         super.onWindowHidden()
         imeLifecycleOwner.onStop()
+    }
+
+    private fun syncEditorFields() {
+        isPasswordField = inputLogic.isPasswordField
+        isEmailField = inputLogic.isEmailField
+        isUriField = inputLogic.isUriField
+        isNumericField = inputLogic.isNumericField
+        isMultilineField = inputLogic.isMultilineField
+        currentImeAction = inputLogic.currentImeAction
+        currentWordPrefix = inputLogic.currentWordPrefix
+        isSentenceStart = inputLogic.isSentenceStart
+        isActualSentenceStart = inputLogic.isSentenceStart
+        autoCorrectNotice = inputLogic.autoCorrectNotice
+    }
+
+    override fun onUpdateSelection(
+        oldSelStart: Int,
+        oldSelEnd: Int,
+        newSelStart: Int,
+        newSelEnd: Int,
+        candidatesStart: Int,
+        candidatesEnd: Int
+    ) {
+        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+
+        // Performance: Skip if cursor has not actually changed
+        if (oldSelStart == newSelStart && oldSelEnd == newSelEnd) return
+
+        // AOSP LatinIME cursor confirmation: check if selection update is self-generated echo
+        val isEcho = richImm.onUpdateSelection(newSelStart, newSelEnd)
+        if (!isEcho) {
+            // External cursor movement (e.g. user tapped elsewhere in the text field)
+            inputLogic.updateWordPrefixAndCaps()
+            syncEditorFields()
+        }
     }
 
     override fun onCreateInlineSuggestionsRequest(uiExtras: android.os.Bundle): android.view.inputmethod.InlineSuggestionsRequest? {
@@ -281,379 +300,67 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
         return false
     }
 
-    private var lastLocalActionTime = 0L
-    private var lastObservedSelectionStart = -1
-    private var lastObservedSelectionEnd = -1
-
-    override fun onUpdateSelection(
-        oldSelStart: Int,
-        oldSelEnd: Int,
-        newSelStart: Int,
-        newSelEnd: Int,
-        candidatesStart: Int,
-        candidatesEnd: Int
-    ) {
-        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
-        
-        lastObservedSelectionStart = newSelStart
-        lastObservedSelectionEnd = newSelEnd
-
-        // Performance: Skip prefix update if the selection hasn't actually moved (e.g. cursor blink)
-        if (oldSelStart == newSelStart && oldSelEnd == newSelEnd) return
-
-        // Debounce selection updates caused by our own keystrokes to prevent prefix-flicker
-        val now = System.currentTimeMillis()
-        if (now - lastLocalActionTime < 60L) {
-            return
-        }
-        
-        updateCurrentWordPrefix()
-    }
-
-    private fun updateCurrentWordPrefix() {
-        val ic = currentInputConnection ?: return
-        
-        // Performance: Reduce character lookback for prefix detection to improve speed
-        // 20 characters is enough for any reasonable prefix/word detection
-        val textBefore = ic.getTextBeforeCursor(20, 0)?.toString() ?: ""
-        
-        val lastWord = textBefore.takeLastWhile { !it.isWhitespace() && it.isLetterOrDigit() }
-        
-        if (currentWordPrefix != lastWord) {
-            currentWordPrefix = lastWord
-        }
-        
-        val prevChar = textBefore.lastOrNull()
-        val newIsPreviousUpper = prevChar != null && prevChar.isUpperCase()
-        if (isPreviousUpper != newIsPreviousUpper) {
-            isPreviousUpper = newIsPreviousUpper
-        }
-
-        val editorInfo = currentInputEditorInfo
-        val capsMode = if (editorInfo != null && !isEmailField && !isUriField && !isPasswordField && !isNumericField) {
-            ic.getCursorCapsMode(editorInfo.inputType)
-        } else 0
-
-        val newIsSentenceStart = computeSentenceStart(textBefore, capsMode)
-        if (isSentenceStart != newIsSentenceStart) {
-            isSentenceStart = newIsSentenceStart
-        }
-        if (isActualSentenceStart != newIsSentenceStart) {
-            isActualSentenceStart = newIsSentenceStart
-        }
-    }
-
-    private fun computeSentenceStart(textBefore: String, capsMode: Int): Boolean {
-        if (isEmailField || isUriField || isPasswordField || isNumericField) return false
-        if (capsMode != 0) return true
-        if (textBefore.isEmpty()) return true
-        val len = textBefore.length
-        if (textBefore.endsWith('\n')) return true
-
-        var i = len - 1
-        while (i >= 0 && textBefore[i].isWhitespace()) {
-            i--
-        }
-        if (i < 0) return true // only whitespace before cursor
-        val lastNonWs = textBefore[i]
-        if (lastNonWs == '.' || lastNonWs == '!' || lastNonWs == '?') {
-            if (i < len - 1) { // whitespace follows punctuation
-                return true
-            }
-        }
-        return false
-    }
+    // KeyboardActionListener implementations delegating to AOSP LatinIME core
 
     override fun onText(text: String) {
-        val ic = currentInputConnection ?: return
-        lastLocalActionTime = System.currentTimeMillis()
-        
-        ic.beginBatchEdit()
-        try {
-            ic.commitText(text, 1)
-            if (text.length == 1) {
-                val c = text[0]
-                if (c.isLetterOrDigit()) {
-                    currentWordPrefix += text
-                    isPreviousUpper = c.isUpperCase()
-                    isSentenceStart = false
-                    isActualSentenceStart = false
-                } else {
-                    currentWordPrefix = ""
-                    isPreviousUpper = false
-                    val textBefore = ic.getTextBeforeCursor(20, 0)?.toString() ?: ""
-                    val editorInfo = currentInputEditorInfo
-                    val capsMode = if (editorInfo != null && !isEmailField && !isUriField && !isPasswordField && !isNumericField) {
-                        ic.getCursorCapsMode(editorInfo.inputType)
-                    } else 0
-                    val isSentence = computeSentenceStart(textBefore, capsMode)
-                    isSentenceStart = isSentence
-                    isActualSentenceStart = isSentence
-                }
-            } else {
-                currentWordPrefix = ""
-                isPreviousUpper = false
-                val textBefore = ic.getTextBeforeCursor(20, 0)?.toString() ?: ""
-                val editorInfo = currentInputEditorInfo
-                val capsMode = if (editorInfo != null && !isEmailField && !isUriField && !isPasswordField && !isNumericField) {
-                    ic.getCursorCapsMode(editorInfo.inputType)
-                } else 0
-                val isSentence = computeSentenceStart(textBefore, capsMode)
-                isSentenceStart = isSentence
-                isActualSentenceStart = isSentence
-            }
-        } finally {
-            ic.endBatchEdit()
-        }
+        inputLogic.onTextInput(text)
+        syncEditorFields()
     }
 
     override fun onReplaceCurrentWord(replacement: String) {
-        val ic = currentInputConnection ?: return
-        lastLocalActionTime = System.currentTimeMillis()
-        
-        ic.beginBatchEdit()
-        try {
-            // Verify the prefix is still what we think it is before deleting
-            val textBefore = ic.getTextBeforeCursor(currentWordPrefix.length, 0)?.toString() ?: ""
-            if (textBefore == currentWordPrefix) {
-                ic.deleteSurroundingText(currentWordPrefix.length, 0)
-            } else {
-                // If text changed externally, find the actual word to replace
-                val actualBefore = ic.getTextBeforeCursor(20, 0)?.toString() ?: ""
-                val actualWord = actualBefore.takeLastWhile { it.isLetterOrDigit() }
-                if (actualWord.isNotEmpty()) {
-                    ic.deleteSurroundingText(actualWord.length, 0)
-                }
-            }
-            ic.commitText(replacement, 1)
-        } catch (_: Exception) {
-        } finally {
-            ic.endBatchEdit()
-        }
-        
-        currentWordPrefix = ""
-        isPreviousUpper = false
-        isSentenceStart = false
-        isActualSentenceStart = false
+        inputLogic.onReplaceCurrentWord(replacement)
+        syncEditorFields()
     }
 
     override fun onBackspace() {
-        val ic = currentInputConnection ?: return
-        lastLocalActionTime = System.currentTimeMillis()
-        
-        ic.beginBatchEdit()
-        try {
-            // Standard backspace handling. If selection exists, it deletes it.
-            // Using KEYCODE_DEL is robust for most editors.
-            sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
-        } finally {
-            ic.endBatchEdit()
-        }
-        
-        // We'll let onUpdateSelection resync the prefix to be safe after a backspace
+        inputLogic.onBackspace()
+        syncEditorFields()
     }
 
     override fun onDeleteWord() {
-        val ic = currentInputConnection ?: return
-        lastLocalActionTime = System.currentTimeMillis()
-        ic.beginBatchEdit()
-        try {
-            val textBefore = ic.getTextBeforeCursor(50, 0)?.toString() ?: ""
-            if (textBefore.isNotEmpty()) {
-                var deleteCount = 0
-                var i = textBefore.length - 1
-                // Skip trailing whitespace
-                while (i >= 0 && textBefore[i].isWhitespace()) {
-                    deleteCount++
-                    i--
-                }
-                // Delete the word
-                while (i >= 0 && !textBefore[i].isWhitespace()) {
-                    deleteCount++
-                    i--
-                }
-                if (deleteCount > 0) {
-                    ic.deleteSurroundingText(deleteCount, 0)
-                }
-            }
-        } catch (_: Exception) {
-        } finally {
-            ic.endBatchEdit()
-        }
-        currentWordPrefix = ""
+        inputLogic.onDeleteWord()
+        syncEditorFields()
     }
 
     override fun onEnter() {
-        val ic = currentInputConnection ?: return
-        val editorInfo = currentInputEditorInfo
-        val action = if (editorInfo != null) {
-            editorInfo.imeOptions and EditorInfo.IME_MASK_ACTION
-        } else EditorInfo.IME_ACTION_NONE
-        
-        ic.beginBatchEdit()
-        try {
-            if (action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
-                ic.performEditorAction(action)
-            } else {
-                sendDownUpKeyEvents(KeyEvent.KEYCODE_ENTER)
-            }
-        } finally {
-            ic.endBatchEdit()
-        }
+        inputLogic.onEnter()
+        syncEditorFields()
     }
 
     override fun onMoveCursor(offset: Int) {
-        val ic = currentInputConnection ?: return
-        lastLocalActionTime = System.currentTimeMillis()
-        if (offset > 0) {
-            repeat(offset) { sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_RIGHT) }
-        } else if (offset < 0) {
-            repeat(-offset) { sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_LEFT) }
-        }
+        inputLogic.onMoveCursor(offset)
+        syncEditorFields()
     }
 
     override fun onSpecialKey(action: CursorAction) {
-        val ic = currentInputConnection ?: return
-        lastLocalActionTime = System.currentTimeMillis()
-        when (action) {
-            CursorAction.TOGGLE_SELECT -> {
-                isSelectModeActive = !isSelectModeActive
-            }
-            CursorAction.LEFT -> {
-                if (isSelectModeActive) {
-                    sendKeyWithMeta(KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.META_SHIFT_ON)
-                } else {
-                    sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_LEFT)
-                }
-            }
-            CursorAction.RIGHT -> {
-                if (isSelectModeActive) {
-                    sendKeyWithMeta(KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.META_SHIFT_ON)
-                } else {
-                    sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_RIGHT)
-                }
-            }
-            CursorAction.UP -> {
-                if (isSelectModeActive) {
-                    sendKeyWithMeta(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.META_SHIFT_ON)
-                } else {
-                    sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_UP)
-                }
-            }
-            CursorAction.DOWN -> {
-                if (isSelectModeActive) {
-                    sendKeyWithMeta(KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.META_SHIFT_ON)
-                } else {
-                    sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_DOWN)
-                }
-            }
-            CursorAction.HOME -> {
-                if (isSelectModeActive) {
-                    sendKeyWithMeta(KeyEvent.KEYCODE_MOVE_HOME, KeyEvent.META_SHIFT_ON)
-                } else {
-                    sendDownUpKeyEvents(KeyEvent.KEYCODE_MOVE_HOME)
-                }
-            }
-            CursorAction.END -> {
-                if (isSelectModeActive) {
-                    sendKeyWithMeta(KeyEvent.KEYCODE_MOVE_END, KeyEvent.META_SHIFT_ON)
-                } else {
-                    sendDownUpKeyEvents(KeyEvent.KEYCODE_MOVE_END)
-                }
-            }
-            CursorAction.SELECT_ALL -> {
-                ic.performContextMenuAction(android.R.id.selectAll)
-            }
-            CursorAction.CUT -> {
-                ic.performContextMenuAction(android.R.id.cut)
-                isSelectModeActive = false
-            }
-            CursorAction.COPY -> {
-                ic.performContextMenuAction(android.R.id.copy)
-                isSelectModeActive = false
-            }
-            CursorAction.PASTE -> {
-                ic.performContextMenuAction(android.R.id.paste)
-            }
-            CursorAction.DELETE -> {
-                ic.beginBatchEdit()
-                try {
-                    val sel = ic.getSelectedText(0)
-                    if (!sel.isNullOrEmpty()) {
-                        ic.commitText("", 1)
-                    } else {
-                        ic.deleteSurroundingText(0, 1) // Forward delete
-                    }
-                } finally {
-                    ic.endBatchEdit()
-                }
-            }
-            else -> {}
+        if (action == CursorAction.TOGGLE_SELECT) {
+            isSelectModeActive = !isSelectModeActive
+        } else {
+            inputLogic.onSpecialKey(action, isSelectModeActive)
         }
-    }
-
-    private fun sendKeyWithMeta(keyCode: Int, metaState: Int) {
-        val ic = currentInputConnection ?: return
-        val now = System.currentTimeMillis()
-        ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0, metaState))
-        ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0, metaState))
+        syncEditorFields()
     }
 
     override fun onDevKey(item: DevKeyItem, modifierState: ModifierState) {
-        val ic = currentInputConnection ?: return
-        lastLocalActionTime = System.currentTimeMillis()
-        
-        var meta = 0
-        if (modifierState.isCtrlActive) meta = meta or KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON
-        if (modifierState.isAltActive) meta = meta or KeyEvent.META_ALT_ON or KeyEvent.META_ALT_LEFT_ON
-        if (modifierState.isShiftActive) meta = meta or KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON
-
-        when (item.type) {
-            DevKeyType.ESC -> sendKeyWithMeta(KeyEvent.KEYCODE_ESCAPE, meta)
-            DevKeyType.TAB -> sendKeyWithMeta(KeyEvent.KEYCODE_TAB, meta)
-            DevKeyType.ARROW_LEFT -> sendKeyWithMeta(KeyEvent.KEYCODE_DPAD_LEFT, meta)
-            DevKeyType.ARROW_RIGHT -> sendKeyWithMeta(KeyEvent.KEYCODE_DPAD_RIGHT, meta)
-            DevKeyType.ARROW_UP -> sendKeyWithMeta(KeyEvent.KEYCODE_DPAD_UP, meta)
-            DevKeyType.ARROW_DOWN -> sendKeyWithMeta(KeyEvent.KEYCODE_DPAD_DOWN, meta)
-            DevKeyType.HOME -> sendKeyWithMeta(KeyEvent.KEYCODE_MOVE_HOME, meta)
-            DevKeyType.END -> sendKeyWithMeta(KeyEvent.KEYCODE_MOVE_END, meta)
-            DevKeyType.TEXT -> {
-                if (modifierState.isCtrlActive) {
-                    when (item.label.lowercase()) {
-                        "c" -> ic.performContextMenuAction(android.R.id.copy)
-                        "v" -> ic.performContextMenuAction(android.R.id.paste)
-                        "x" -> ic.performContextMenuAction(android.R.id.cut)
-                        "a" -> ic.performContextMenuAction(android.R.id.selectAll)
-                        "z" -> ic.performContextMenuAction(android.R.id.undo)
-                        "y" -> ic.performContextMenuAction(android.R.id.redo)
-                        else -> ic.commitText(item.insertText, 1)
-                    }
-                } else {
-                    ic.commitText(item.insertText, 1)
-                }
-            }
-            else -> {}
-        }
+        inputLogic.onDevKey(item, modifierState)
+        syncEditorFields()
     }
 
     override fun onVoiceRequested() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
-        // In production, we'd use recognizer intent or a specific voice IME package if known.
-        // For now, we'll try to find any IME with "voice" in its ID or name.
         val imes = imm.enabledInputMethodList
-        val voiceIme = imes.firstOrNull { 
-            it.id.contains("voice", ignoreCase = true) || 
-            it.loadLabel(packageManager).toString().contains("voice", ignoreCase = true) 
+        val voiceIme = imes.firstOrNull {
+            it.id.contains("voice", ignoreCase = true) ||
+            it.loadLabel(packageManager).toString().contains("voice", ignoreCase = true)
         }
-        
+
         if (voiceIme != null) {
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                     switchInputMethod(voiceIme.id)
                 } else {
-                    // Fallback for older versions
                     @Suppress("DEPRECATION")
-                    window.window?.attributes?.token?.let { token ->
+                    window?.window?.attributes?.token?.let { token ->
                         imm.setInputMethod(token, voiceIme.id)
                     }
                 }
@@ -680,8 +387,7 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
                     val flags = InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION
                     InputConnectionCompat.commitContent(ic, editorInfo, contentInfo, flags, null)
                 }
-            } catch (_: Exception) {
-            }
+            } catch (_: Exception) {}
         }
     }
 
@@ -693,27 +399,30 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
     }
 
     override fun getCurrentContextText(): String {
-        val ic = currentInputConnection ?: return ""
-        val selected = ic.getSelectedText(0)?.toString()
-        if (!selected.isNullOrBlank()) return selected.trim()
-        val textBefore = ic.getTextBeforeCursor(2000, 0)?.toString() ?: ""
+        val selected = richImm.getSelectedText()
+        if (selected.isNotBlank()) return selected.trim()
+        val textBefore = richImm.getTextBeforeCursor(2000, 0)
         return textBefore.trim()
     }
 
     override fun onReplaceContextText(newText: String) {
-        val ic = currentInputConnection ?: return
-        val selected = ic.getSelectedText(0)?.toString()
-        ic.beginBatchEdit()
-        if (!selected.isNullOrBlank()) {
-            ic.commitText(newText, 1)
-        } else {
-            val textBefore = ic.getTextBeforeCursor(2000, 0)?.toString() ?: ""
-            if (textBefore.isNotEmpty()) {
-                ic.deleteSurroundingText(textBefore.length, 0)
+        val selected = richImm.getSelectedText()
+        richImm.beginBatchEdit()
+        try {
+            if (selected.isNotBlank()) {
+                richImm.commitText(newText)
+            } else {
+                val textBefore = richImm.getTextBeforeCursor(2000, 0)
+                if (textBefore.isNotEmpty()) {
+                    richImm.deleteTextBeforeCursor(textBefore.length)
+                }
+                richImm.commitText(newText)
             }
-            ic.commitText(newText, 1)
+        } finally {
+            richImm.endBatchEdit()
         }
-        ic.endBatchEdit()
+        inputLogic.updateWordPrefixAndCaps()
+        syncEditorFields()
     }
 
     private fun saveLatestClipboard() {
@@ -741,6 +450,7 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
         serviceScope.cancel()
         suggestionEngine.close()
         cachedComposeView = null
+        richImm.onDisconnect()
         super.onDestroy()
     }
 }
