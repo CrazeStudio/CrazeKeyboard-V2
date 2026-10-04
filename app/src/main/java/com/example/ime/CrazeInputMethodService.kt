@@ -42,7 +42,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.io.File
 
-/** CrazeKeyboard IME service. Input commits stay independent from Compose/UI synchronization. */
+/** CrazeKeyboard IME service. The normal typing path uses direct InputConnection operations. */
 class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val imeLifecycleOwner = ImeLifecycleOwner()
@@ -55,16 +55,9 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
         val logic = InputLogic(richImm)
         logic.setDoubleSpacePeriodEnabled(preferences.isDoubleSpacePeriodEnabled)
         logic.setListener(object : InputLogic.Listener {
-            override fun onWordComposed(word: String) {
-                // Never mutate Compose state synchronously from the character hot path.
-                requestUiSync()
-            }
-            override fun onAutoCorrectChanged(original: String?, correction: String?) {
-                requestUiSync()
-            }
-            override fun onCapsModeChanged(sentenceStart: Boolean) {
-                requestUiSync()
-            }
+            override fun onWordComposed(word: String) { requestUiSync() }
+            override fun onAutoCorrectChanged(original: String?, correction: String?) { requestUiSync() }
+            override fun onCapsModeChanged(sentenceStart: Boolean) { requestUiSync() }
         })
         logic
     }
@@ -84,13 +77,12 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
     private var autoCorrectNotice by mutableStateOf<Pair<String, String>?>(null)
     private var cachedComposeView: ComposeView? = null
     private var uiSyncPending = false
+    private var editorRefreshPending = false
     private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener { saveLatestClipboard() }
 
     override fun onCreate() {
         super.onCreate()
         imeLifecycleOwner.onCreate()
-        // Do not eagerly create the entire Compose keyboard or load emoji data during IME startup.
-        // Optional data is loaded when its UI is actually opened.
         (getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)?.addPrimaryClipChangedListener(clipboardListener)
     }
 
@@ -157,7 +149,6 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        // Loading suggestions is intentionally outside the character insertion path.
         serviceScope.launch(Dispatchers.Default) { suggestionEngine.ensureLoaded() }
         imeLifecycleOwner.onStart()
         richImm.onConnect(currentInputConnection)
@@ -182,14 +173,27 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
 
     override fun onWindowHidden() { super.onWindowHidden(); imeLifecycleOwner.onStop() }
 
-    /** Coalesces rapid state changes so a burst of key presses does not trigger one recomposition per key. */
+    /** UI/editor context is intentionally refreshed off the immediate key-commit path and coalesced. */
     private fun requestUiSync() {
         if (uiSyncPending) return
         uiSyncPending = true
         mainHandler.postDelayed({
             uiSyncPending = false
             if (!isDestroyed) syncEditorFields()
-        }, 12L)
+        }, 24L)
+    }
+
+    private fun requestEditorRefresh() {
+        if (editorRefreshPending) return
+        editorRefreshPending = true
+        mainHandler.postDelayed({
+            editorRefreshPending = false
+            if (isDestroyed) return@postDelayed
+            try {
+                inputLogic.updateWordPrefixAndCaps()
+                requestUiSync()
+            } catch (_: Exception) { }
+        }, 40L)
     }
 
     private fun syncEditorFields() {
@@ -210,8 +214,7 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
         if (oldSelStart == newSelStart && oldSelEnd == newSelEnd) return
         if (!richImm.onUpdateSelection(newSelStart, newSelEnd)) {
-            inputLogic.updateWordPrefixAndCaps()
-            requestUiSync()
+            requestEditorRefresh()
         }
     }
 
@@ -237,21 +240,68 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
         return true
     }
 
-    // These callbacks deliberately do not synchronously synchronize the Compose tree.
-    override fun onText(text: String) { inputLogic.onTextInput(text) }
-    override fun onReplaceCurrentWord(replacement: String) { inputLogic.onReplaceCurrentWord(replacement); requestUiSync() }
-    override fun onBackspace() { inputLogic.onBackspace(); requestUiSync() }
-    override fun onDeleteWord() { inputLogic.onDeleteWord(); requestUiSync() }
-    override fun onEnter() { inputLogic.onEnter(); requestUiSync() }
-    override fun onMoveCursor(offset: Int) { inputLogic.onMoveCursor(offset); requestUiSync() }
+    // Normal typing bypasses the heavy InputLogic pipeline. Context/suggestion work is delayed and coalesced.
+    override fun onText(text: String) {
+        if (text.isEmpty()) return
+        currentInputConnection?.commitText(text, 1)
+        requestEditorRefresh()
+    }
+
+    override fun onReplaceCurrentWord(replacement: String) {
+        inputLogic.onReplaceCurrentWord(replacement)
+        requestUiSync()
+    }
+
+    override fun onBackspace() {
+        val ic = currentInputConnection
+        if (ic != null) {
+            try {
+                ic.deleteSurroundingTextInCodePoints(1, 0)
+            } catch (_: Exception) {
+                ic.deleteSurroundingText(1, 0)
+            }
+        }
+        requestEditorRefresh()
+    }
+
+    override fun onDeleteWord() {
+        val ic = currentInputConnection ?: return
+        try {
+            val before = ic.getTextBeforeCursor(128, 0)?.toString().orEmpty()
+            if (before.isNotEmpty()) {
+                val count = before.takeLastWhile { !it.isWhitespace() }.length
+                val deleteCount = if (count > 0) count else 1
+                ic.deleteSurroundingTextInCodePoints(deleteCount, 0)
+            }
+        } catch (_: Exception) {
+            inputLogic.onDeleteWord()
+        }
+        requestEditorRefresh()
+    }
+
+    override fun onEnter() {
+        val ic = currentInputConnection
+        if (ic == null) return
+        val action = currentImeAction
+        if (action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
+            ic.performEditorAction(action)
+        } else {
+            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+        }
+        requestEditorRefresh()
+    }
+
+    override fun onMoveCursor(offset: Int) {
+        val ic = currentInputConnection ?: return
+        val code = if (offset < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
+        repeat(kotlin.math.abs(offset).coerceAtMost(16)) { ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code)); ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code)) }
+        requestEditorRefresh()
+    }
 
     override fun onSpecialKey(action: CursorAction) {
-        if (action == CursorAction.TOGGLE_SELECT) {
-            isSelectModeActive = !isSelectModeActive
-        } else {
-            handleSpecialKey(action, isSelectModeActive)
-        }
-        requestUiSync()
+        if (action == CursorAction.TOGGLE_SELECT) isSelectModeActive = !isSelectModeActive else handleSpecialKey(action, isSelectModeActive)
+        requestEditorRefresh()
     }
 
     private fun handleSpecialKey(action: CursorAction, selectMode: Boolean) {
@@ -267,18 +317,14 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
             CursorAction.COPY -> richImm.performContextMenuAction(android.R.id.copy)
             CursorAction.PASTE -> richImm.performContextMenuAction(android.R.id.paste)
             CursorAction.DELETE -> richImm.sendDownUpKeyEvents(KeyEvent.KEYCODE_FORWARD_DEL)
-            CursorAction.CLEAR -> {
-                richImm.beginBatchEdit()
-                try { richImm.deleteTextBeforeCursor(2000) } finally { richImm.endBatchEdit() }
-            }
+            CursorAction.CLEAR -> { richImm.beginBatchEdit(); try { richImm.deleteTextBeforeCursor(2000) } finally { richImm.endBatchEdit() } }
             CursorAction.TOGGLE_SELECT -> Unit
         }
-        inputLogic.updateWordPrefixAndCaps()
     }
 
     override fun onDevKey(item: DevKeyItem, modifierState: ModifierState) {
         handleDevKey(item, modifierState)
-        requestUiSync()
+        requestEditorRefresh()
     }
 
     private fun handleDevKey(item: DevKeyItem, modifierState: ModifierState) {
@@ -295,27 +341,16 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
             DevKeyType.ALT -> modifierState.toggleAlt()
             DevKeyType.TEXT -> {
                 val text = item.insertText.ifEmpty { item.label }
-                val metaState = (if (modifierState.isCtrlActive) KeyEvent.META_CTRL_ON else 0) or
-                    (if (modifierState.isAltActive) KeyEvent.META_ALT_ON else 0) or
-                    (if (modifierState.isShiftActive) KeyEvent.META_SHIFT_ON else 0)
+                val metaState = (if (modifierState.isCtrlActive) KeyEvent.META_CTRL_ON else 0) or (if (modifierState.isAltActive) KeyEvent.META_ALT_ON else 0) or (if (modifierState.isShiftActive) KeyEvent.META_SHIFT_ON else 0)
                 if (metaState != 0 && text.length == 1) {
                     val ch = text[0].lowercaseChar()
-                    val keyCode = when (ch) {
-                        in 'a'..'z' -> KeyEvent.KEYCODE_A + (ch - 'a')
-                        in '0'..'9' -> KeyEvent.KEYCODE_0 + (ch - '0')
-                        else -> 0
-                    }
-                    if (keyCode != 0) {
-                        richImm.sendKeyWithMeta(keyCode, metaState)
-                        modifierState.resetTransientModifiers()
-                        return
-                    }
+                    val keyCode = when (ch) { in 'a'..'z' -> KeyEvent.KEYCODE_A + (ch - 'a'); in '0'..'9' -> KeyEvent.KEYCODE_0 + (ch - '0'); else -> 0 }
+                    if (keyCode != 0) { richImm.sendKeyWithMeta(keyCode, metaState); modifierState.resetTransientModifiers(); return }
                 }
-                richImm.commitText(text, 1)
+                currentInputConnection?.commitText(text, 1)
                 modifierState.resetTransientModifiers()
             }
         }
-        inputLogic.updateWordPrefixAndCaps()
     }
 
     override fun onVoiceRequested() {
@@ -358,18 +393,14 @@ class CrazeInputMethodService : InputMethodService(), KeyboardActionListener {
         val selected = richImm.getSelectedText().toString()
         richImm.beginBatchEdit()
         try {
-            if (selected.isNotBlank()) {
-                richImm.commitText(newText, 1)
-            } else {
+            if (selected.isNotBlank()) richImm.commitText(newText, 1)
+            else {
                 val textBefore = richImm.getTextBeforeCursor(2000, 0).toString()
                 if (textBefore.isNotEmpty()) richImm.deleteTextBeforeCursor(textBefore.length)
                 richImm.commitText(newText, 1)
             }
-        } finally {
-            richImm.endBatchEdit()
-        }
-        inputLogic.updateWordPrefixAndCaps()
-        requestUiSync()
+        } finally { richImm.endBatchEdit() }
+        requestEditorRefresh()
     }
 
     private fun saveLatestClipboard() {
