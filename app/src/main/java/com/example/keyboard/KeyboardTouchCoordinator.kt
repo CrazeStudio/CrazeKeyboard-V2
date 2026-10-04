@@ -10,9 +10,25 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
-/**
- * Data class representing an active popup triggered by long-press.
- */
+/** Lightweight, allocation-conscious pointer state for the keyboard input hot path. */
+private class PointerTrack(
+    val pointerId: PointerId,
+    val initialKeyPos: KeyPosition,
+    var currentKeyPos: KeyPosition,
+    val downPosition: Offset,
+    var currentPosition: Offset,
+    val downTimeMs: Long,
+    var committed: Boolean = false,
+    var longPressFired: Boolean = false,
+    var popupShowing: Boolean = false,
+    val popupOptions: List<String> = emptyList(),
+    var selectedOptionIndex: Int = 0,
+    var dragHandled: Boolean = false,
+    var lastCursorSwipeX: Float = downPosition.x,
+    var longPressJob: Job? = null,
+    var repeatJob: Job? = null
+)
+
 data class ActivePopupInfo(
     val keyPosition: KeyPosition,
     val options: List<String>,
@@ -22,29 +38,12 @@ data class ActivePopupInfo(
 )
 
 /**
- * Independent pointer tracking state for pointer-aware multitouch.
- */
-class PointerTrack(
-    val pointerId: PointerId,
-    val initialKeyPos: KeyPosition,
-    var currentKeyPos: KeyPosition,
-    val downPosition: Offset,
-    var currentPosition: Offset,
-    val downTimeMs: Long,
-    var isCommitted: Boolean = false,
-    var isLongPressFired: Boolean = false,
-    var isPopupShowing: Boolean = false,
-    var popupOptions: List<String> = emptyList(),
-    var selectedOptionIndex: Int = 0,
-    var isDragActionHandled: Boolean = false,
-    var lastCursorSwipeX: Float = downPosition.x,
-    var longPressJob: Job? = null,
-    var repeatJob: Job? = null
-)
-
-/**
- * Touch coordinator managing multitouch, rollover typing, key repeat,
- * and popup states for high-frequency typing with zero dropped characters.
+ * Performance-first touch dispatcher.
+ *
+ * The dispatcher deliberately keeps all pointer state local and commits simple character keys
+ * immediately on DOWN when they have no long-press alternatives. This removes an avoidable
+ * frame/event round trip from the normal typing path while retaining deferred handling for keys
+ * that genuinely need a long-press gesture.
  */
 class KeyboardTouchCoordinator(
     private val scope: CoroutineScope,
@@ -62,10 +61,9 @@ class KeyboardTouchCoordinator(
     private val isBackspaceSwipeEnabled: () -> Boolean,
     private val isShifted: () -> Boolean
 ) {
-    private val activePointers = HashMap<PointerId, PointerTrack>(8)
-    private val pressedPositionsCache = HashSet<KeyPosition>(8)
+    private val activePointers = HashMap<PointerId, PointerTrack>(4)
+    private val pressedPositionsCache = HashSet<KeyPosition>(4)
 
-    // Observable states for UI rendering
     var pressedKeyPositions: Set<KeyPosition> = emptySet()
         private set
     var activePopup: ActivePopupInfo? = null
@@ -79,60 +77,33 @@ class KeyboardTouchCoordinator(
         onStateChangedListener = listener
     }
 
-    private fun updatePreviewKey() {
-        if (!isPopupPreviewEnabled()) {
-            previewKeyPosition = null
-            return
-        }
-        // Show preview for the latest active character pointer that is not committed or in popup
-        val activeCharTrack = activePointers.values
-            .filter { !it.isCommitted && !it.isPopupShowing && it.initialKeyPos.key.type == KeyType.CHARACTER && it.initialKeyPos.key.primaryText.isNotEmpty() }
-            .maxByOrNull { it.downTimeMs }
-        previewKeyPosition = activeCharTrack?.initialKeyPos
-    }
-
     private fun notifyStateChanged() {
         pressedPositionsCache.clear()
+        var latest: PointerTrack? = null
         for (track in activePointers.values) {
             pressedPositionsCache.add(track.currentKeyPos)
+            if (!track.committed && !track.popupShowing &&
+                track.initialKeyPos.key.type == KeyType.CHARACTER &&
+                track.initialKeyPos.key.primaryText.isNotEmpty() &&
+                (latest == null || track.downTimeMs > latest.downTimeMs)
+            ) {
+                latest = track
+            }
         }
-        pressedKeyPositions = pressedPositionsCache.toSet()
-        updatePreviewKey()
+        pressedKeyPositions = if (pressedPositionsCache.isEmpty()) emptySet() else pressedPositionsCache.toSet()
+        previewKeyPosition = if (isPopupPreviewEnabled()) latest?.initialKeyPos else null
         onStateChangedListener?.invoke()
     }
 
-    /**
-     * Handles pointer down events.
-     */
     fun onPointerDown(change: PointerInputChange) {
         val geometry = getGeometry() ?: return
         val keyPos = geometry.findKeyAtOffset(change.position) ?: return
         val key = keyPos.key
         val now = System.currentTimeMillis()
-
-        // Rollover typing optimization:
-        // If an earlier pointer is still holding an uncommitted character key,
-        // commit it immediately so no characters are lost during rapid sequential typing!
-        for (track in activePointers.values) {
-            if (!track.isCommitted && !track.isLongPressFired && !track.isPopupShowing) {
-                if (track.initialKeyPos.key.type == KeyType.CHARACTER ||
-                    track.initialKeyPos.key.type == KeyType.SPACE ||
-                    track.initialKeyPos.key.type == KeyType.MODE_CHANGE ||
-                    track.initialKeyPos.key.type == KeyType.EMOJI
-                ) {
-                    track.longPressJob?.cancel()
-                    track.isCommitted = true
-                    onKeyTap(track.initialKeyPos.key)
-                }
-            }
-        }
-
-        // Prepare alternate options for long-press
         val shifted = isShifted()
         val alternateOptions = buildAlternateOptions(key, shifted)
-
-        val isLeftEdge = key.primaryText in listOf("q", "1", "a", "z")
-        val isRightEdge = key.primaryText in listOf("p", "0", "l", "m")
+        val isLeftEdge = key.primaryText in LEFT_EDGE_KEYS
+        val isRightEdge = key.primaryText in RIGHT_EDGE_KEYS
         val defaultIdx = when {
             isLeftEdge -> 0
             isRightEdge -> (alternateOptions.size - 1).coerceAtLeast(0)
@@ -147,83 +118,88 @@ class KeyboardTouchCoordinator(
             currentPosition = change.position,
             downTimeMs = now,
             popupOptions = alternateOptions,
-            selectedOptionIndex = defaultIdx,
-            lastCursorSwipeX = change.position.x
+            selectedOptionIndex = defaultIdx
         )
-
         activePointers[change.id] = track
 
-        // Shift key optimization for immediate two-thumb typing response:
-        // Trigger Shift on down so all keys immediately update to uppercase while holding Shift!
-        if (key.type == KeyType.SHIFT) {
-            track.isCommitted = true
-            onKeyTap(key)
-        } else if (key.type == KeyType.BACKSPACE) {
-            // Handle Backspace auto-repeat
-            track.isCommitted = true
-            onBackspace()
-            track.repeatJob = scope.launch {
-                delay(300L)
-                var delayMs = 60L
-                while (isActive) {
-                    onBackspace()
-                    delay(delayMs)
-                    if (delayMs > 30L) delayMs -= 5L
-                }
+        when (key.type) {
+            KeyType.SHIFT -> {
+                track.committed = true
+                onKeyTap(key)
             }
-        } else {
-            // Schedule long-press timer for keys with alternates or long press options
-            val longPressDelay = getLongPressDelayMs().toLong()
-            track.longPressJob = scope.launch {
-                delay(longPressDelay)
-                if (isActive && !track.isCommitted && !track.isDragActionHandled) {
-                    track.isLongPressFired = true
-                    onLongPressTick()
-
-                    if (alternateOptions.isNotEmpty()) {
-                        track.isPopupShowing = true
-                        activePopup = ActivePopupInfo(
-                            keyPosition = keyPos,
-                            options = alternateOptions,
-                            selectedIndex = defaultIdx,
-                            isLeftEdge = isLeftEdge,
-                            isRightEdge = isRightEdge
-                        )
-                        notifyStateChanged()
-                    } else if (key.alternateText.isNotEmpty()) {
-                        val text = if (shifted) key.alternateText.uppercase() else key.alternateText
-                        onKeyInsertText(text)
-                        track.isCommitted = true
+            KeyType.BACKSPACE -> {
+                track.committed = true
+                onBackspace()
+                track.repeatJob = scope.launch {
+                    delay(300L)
+                    var repeatDelay = 60L
+                    while (isActive && activePointers.containsKey(track.pointerId)) {
+                        onBackspace()
+                        delay(repeatDelay)
+                        if (repeatDelay > 30L) repeatDelay -= 5L
                     }
                 }
+            }
+            KeyType.CHARACTER -> {
+                // Simple character taps have no reason to wait for ACTION_UP. This is the
+                // normal typing hot path and is the main fix for sub-frame rapid key drops.
+                if (alternateOptions.isEmpty()) {
+                    track.committed = true
+                    onKeyTap(key)
+                } else {
+                    scheduleLongPress(track, key, alternateOptions, isLeftEdge, isRightEdge, defaultIdx, shifted)
+                }
+            }
+            else -> {
+                scheduleLongPress(track, key, alternateOptions, isLeftEdge, isRightEdge, defaultIdx, shifted)
             }
         }
 
         notifyStateChanged()
     }
 
-    /**
-     * Handles pointer movement events.
-     */
+    private fun scheduleLongPress(
+        track: PointerTrack,
+        key: KeyModel,
+        alternateOptions: List<String>,
+        isLeftEdge: Boolean,
+        isRightEdge: Boolean,
+        defaultIdx: Int,
+        shifted: Boolean
+    ) {
+        val delayMs = getLongPressDelayMs().coerceAtLeast(120).toLong()
+        track.longPressJob = scope.launch {
+            delay(delayMs)
+            if (!isActive || !activePointers.containsKey(track.pointerId) || track.committed || track.dragHandled) return@launch
+            track.longPressFired = true
+            onLongPressTick()
+            if (alternateOptions.isNotEmpty()) {
+                track.popupShowing = true
+                activePopup = ActivePopupInfo(track.initialKeyPos, alternateOptions, defaultIdx, isLeftEdge, isRightEdge)
+                notifyStateChanged()
+            } else if (key.alternateText.isNotEmpty()) {
+                val text = if (shifted) key.alternateText.uppercase() else key.alternateText
+                onKeyInsertText(text)
+                track.committed = true
+                notifyStateChanged()
+            }
+        }
+    }
+
     fun onPointerMove(change: PointerInputChange) {
         val track = activePointers[change.id] ?: return
         val currentPos = change.position
-        val dragDist = (currentPos - track.downPosition).getDistance()
         track.currentPosition = currentPos
 
-        // 1. Popup option selection tracking
-        if (track.isPopupShowing && track.popupOptions.isNotEmpty()) {
+        if (track.popupShowing && track.popupOptions.isNotEmpty()) {
             val deltaX = currentPos.x - track.downPosition.x
             val itemStepPx = 40f
-            val isLeftEdge = activePopup?.isLeftEdge == true
-            val isRightEdge = activePopup?.isRightEdge == true
             val baseIdx = when {
-                isLeftEdge -> 0
-                isRightEdge -> (track.popupOptions.size - 1).coerceAtLeast(0)
+                activePopup?.isLeftEdge == true -> 0
+                activePopup?.isRightEdge == true -> (track.popupOptions.size - 1).coerceAtLeast(0)
                 else -> track.popupOptions.size / 2
             }
-            val offsetIdx = (deltaX / itemStepPx).toInt()
-            val newIdx = (baseIdx + offsetIdx).coerceIn(0, track.popupOptions.lastIndex)
+            val newIdx = (baseIdx + (deltaX / itemStepPx).toInt()).coerceIn(0, track.popupOptions.lastIndex)
             if (newIdx != track.selectedOptionIndex) {
                 track.selectedOptionIndex = newIdx
                 activePopup = activePopup?.copy(selectedIndex = newIdx)
@@ -233,79 +209,61 @@ class KeyboardTouchCoordinator(
             return
         }
 
-        // 2. Spacebar horizontal swipe cursor control
         if (track.initialKeyPos.key.type == KeyType.SPACE && isSpaceSwipeEnabled()) {
-            val deltaFromLast = currentPos.x - track.lastCursorSwipeX
-            val stepThresholdPx = 28f
-            if (abs(deltaFromLast) >= stepThresholdPx) {
-                track.isDragActionHandled = true
+            val delta = currentPos.x - track.lastCursorSwipeX
+            val threshold = 28f
+            if (abs(delta) >= threshold) {
+                track.dragHandled = true
                 track.longPressJob?.cancel()
-                val steps = (deltaFromLast / stepThresholdPx).toInt()
+                val steps = (delta / threshold).toInt()
                 if (steps != 0) {
                     onMoveCursor(steps)
-                    track.lastCursorSwipeX += steps * stepThresholdPx
+                    track.lastCursorSwipeX += steps * threshold
                     onSelectionTick()
                 }
             }
             return
         }
 
-        // 3. Backspace swipe delete word
         if (track.initialKeyPos.key.type == KeyType.BACKSPACE && isBackspaceSwipeEnabled()) {
-            val deltaX = currentPos.x - track.downPosition.x
-            if (deltaX < -50f && !track.isDragActionHandled) {
-                track.isDragActionHandled = true
+            if (currentPos.x - track.downPosition.x < -50f && !track.dragHandled) {
+                track.dragHandled = true
                 track.repeatJob?.cancel()
                 onDeleteWord()
             }
             return
         }
 
-        // 4. Movement beyond slop cancels long-press
-        if (dragDist > 30f && !track.isLongPressFired) {
+        if ((currentPos - track.downPosition).getDistance() > 30f && !track.longPressFired) {
             track.longPressJob?.cancel()
         }
 
-        // Update current key under finger
         val geometry = getGeometry()
-        if (geometry != null) {
-            val newKeyPos = geometry.findKeyAtOffset(currentPos)
-            if (newKeyPos != null && newKeyPos != track.currentKeyPos) {
-                track.currentKeyPos = newKeyPos
-                notifyStateChanged()
-            }
+        val newKeyPos = geometry?.findKeyAtOffset(currentPos)
+        if (newKeyPos != null && newKeyPos != track.currentKeyPos) {
+            track.currentKeyPos = newKeyPos
+            notifyStateChanged()
         }
     }
 
-    /**
-     * Handles pointer up events.
-     */
     fun onPointerUp(change: PointerInputChange) {
         val track = activePointers.remove(change.id) ?: return
         track.longPressJob?.cancel()
         track.repeatJob?.cancel()
 
-        if (track.isPopupShowing) {
-            // Commit selected alternate character from popup
-            val textToInsert = track.popupOptions.getOrNull(track.selectedOptionIndex)
+        if (track.popupShowing) {
+            val text = track.popupOptions.getOrNull(track.selectedOptionIndex)
                 ?: track.initialKeyPos.key.alternateText.ifEmpty { track.initialKeyPos.key.primaryText }
-            if (textToInsert.isNotEmpty()) {
-                onKeyInsertText(textToInsert)
-            }
+            if (text.isNotEmpty()) onKeyInsertText(text)
             activePopup = null
-        } else if (!track.isCommitted && !track.isLongPressFired && !track.isDragActionHandled) {
-            // Normal tap release
+        } else if (!track.committed && !track.longPressFired && !track.dragHandled) {
             onKeyTap(track.initialKeyPos.key)
-            track.isCommitted = true
         }
-
         notifyStateChanged()
     }
 
-    /**
-     * Handles cancellation of touches (e.g. system dialog or window focus lost).
-     */
     fun onCancel() {
+        if (activePointers.isEmpty() && activePopup == null && previewKeyPosition == null) return
         for (track in activePointers.values) {
             track.longPressJob?.cancel()
             track.repeatJob?.cancel()
@@ -313,27 +271,25 @@ class KeyboardTouchCoordinator(
         activePointers.clear()
         activePopup = null
         previewKeyPosition = null
-        notifyStateChanged()
+        pressedKeyPositions = emptySet()
+        pressedPositionsCache.clear()
+        onStateChangedListener?.invoke()
     }
 
     private fun buildAlternateOptions(key: KeyModel, shifted: Boolean): List<String> {
-        val rawList = when {
-            key.longPressOptions.isNotEmpty() -> {
-                val withoutBase = key.longPressOptions.filter { it.lowercase() != key.primaryText.lowercase() }
-                if (withoutBase.isNotEmpty()) withoutBase else key.longPressOptions
-            }
-            key.alternateText.isNotEmpty() -> listOf(key.alternateText)
-            else -> emptyList()
-        }
-        val optionsWithAlt = if (key.alternateText.isNotEmpty() && !rawList.contains(key.alternateText)) {
-            listOf(key.alternateText) + rawList
-        } else {
-            rawList
-        }
-        return if (shifted) {
-            optionsWithAlt.map { opt -> if (opt.length == 1 && opt.first().isLetter()) opt.uppercase() else opt }
-        } else {
-            optionsWithAlt
-        }
+        val raw = if (key.longPressOptions.isNotEmpty()) {
+            key.longPressOptions.filter { it.lowercase() != key.primaryText.lowercase() }
+        } else if (key.alternateText.isNotEmpty()) {
+            listOf(key.alternateText)
+        } else emptyList()
+        val options = if (key.alternateText.isNotEmpty() && !raw.contains(key.alternateText)) {
+            listOf(key.alternateText) + raw
+        } else raw
+        return if (shifted) options.map { if (it.length == 1 && it[0].isLetter()) it.uppercase() else it } else options
+    }
+
+    private companion object {
+        val LEFT_EDGE_KEYS = setOf("q", "1", "a", "z")
+        val RIGHT_EDGE_KEYS = setOf("p", "0", "l", "m")
     }
 }
