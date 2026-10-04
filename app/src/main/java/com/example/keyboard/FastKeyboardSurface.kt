@@ -18,15 +18,12 @@ import com.example.themes.KeyboardTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.max
-import kotlin.math.min
 
-/**
- * Native View keyboard surface. Drawing and hit testing happen without Compose nodes,
- * per-key recomposition, pointer-input coroutines or per-key layout objects.
- */
+/** Native, allocation-light keyboard surface. Text keys commit on DOWN for minimum latency. */
 class FastKeyboardSurface(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { isSubpixelText = true }
     private val rect = RectF()
@@ -39,7 +36,6 @@ class FastKeyboardSurface(context: Context) : View(context) {
     private var preferences: KeyboardPreferences? = null
     private var keyboardMode = KeyboardMode.ALPHA
     private var shiftState = ShiftState.OFF
-    private var imeAction = 0
 
     private var onKeyTap: ((KeyModel) -> Unit)? = null
     private var onKeyLongPress: ((KeyModel) -> Unit)? = null
@@ -64,7 +60,7 @@ class FastKeyboardSurface(context: Context) : View(context) {
         var repeat: Boolean = false,
         var popupIndex: Int = 0,
         var glide: Boolean = false,
-        val glideChars: MutableList<Char> = ArrayList()
+        val glideChars: MutableList<Char> = ArrayList(4)
     )
 
     private val pointers = HashMap<Int, PointerState>(4)
@@ -99,7 +95,6 @@ class FastKeyboardSurface(context: Context) : View(context) {
         this.preferences = preferences
         this.keyboardMode = keyboardMode
         this.shiftState = shiftState
-        this.imeAction = imeAction
         this.suggestionEngine = suggestionEngine
         this.onKeyTap = onKeyTap
         this.onKeyLongPress = onKeyLongPress
@@ -151,14 +146,13 @@ class FastKeyboardSurface(context: Context) : View(context) {
                 val bottom = top + rowHeight - keyGap * 2
                 val pressedNow = pressed.contains(keyIndexFor(rowIndex, keyIndex))
                 rect.set(left, top, right, bottom)
-
                 paint.color = if (pressedNow) t.accentColor.toArgbInt() else
                     if (key.type == KeyType.ACTION || key.type == KeyType.SHIFT || key.type == KeyType.BACKSPACE || key.type == KeyType.ENTER) t.specialKeyColor.toArgbInt() else t.keyColor.toArgbInt()
                 canvas.drawRoundRect(rect, corner, corner, paint)
 
                 val label = when {
                     key.iconResId != null -> ""
-                    key.type == KeyType.SHIFT -> if (shiftState == ShiftState.CAPS_LOCK) "⇧" else "⇧"
+                    key.type == KeyType.SHIFT -> "⇧"
                     key.type == KeyType.BACKSPACE -> "⌫"
                     key.type == KeyType.ENTER -> "↵"
                     key.type == KeyType.SPACE -> ""
@@ -181,9 +175,7 @@ class FastKeyboardSurface(context: Context) : View(context) {
         }
 
         val popupPointer = pointers.values.firstOrNull { it.longPressed && it.key != null }
-        if (popupPointer != null && popupPointer.key!!.longPressOptions.isNotEmpty()) {
-            drawPopup(canvas, popupPointer, t)
-        }
+        if (popupPointer != null && popupPointer.key!!.longPressOptions.isNotEmpty()) drawPopup(canvas, popupPointer, t)
     }
 
     private fun drawPopup(canvas: Canvas, state: PointerState, t: KeyboardTheme) {
@@ -223,19 +215,14 @@ class FastKeyboardSurface(context: Context) : View(context) {
                     dragStartY = averageY(event)
                     dragOriginX = floatingX
                     dragOriginY = floatingY
-                    pointers.values.forEach { cancelLongPress(it) }
-                } else {
-                    val index = event.actionIndex
-                    handleDown(event, index)
-                }
+                    pointers.values.forEach(::cancelLongPress)
+                } else handleDown(event, event.actionIndex)
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
                 if (twoFingerDrag && preferences?.layoutMode == KeyboardLayoutMode.FLOATING && event.pointerCount >= 2) {
-                    val dx = averageX(event) - dragStartX
-                    val dy = averageY(event) - dragStartY
-                    floatingX = (dragOriginX + dx).coerceIn(-width * .35f, width * .35f)
-                    floatingY = (dragOriginY + dy).coerceIn(-height * .45f, height * .35f)
+                    floatingX = (dragOriginX + averageX(event) - dragStartX).coerceIn(-width * .35f, width * .35f)
+                    floatingY = (dragOriginY + averageY(event) - dragStartY).coerceIn(-height * .35f, height * .15f)
                     invalidate()
                     return true
                 }
@@ -243,14 +230,11 @@ class FastKeyboardSurface(context: Context) : View(context) {
                 return true
             }
             MotionEvent.ACTION_POINTER_UP -> {
-                val index = event.actionIndex
-                val id = event.getPointerId(index)
-                if (!twoFingerDrag) handleUp(id)
+                if (!twoFingerDrag) handleUp(event.getPointerId(event.actionIndex))
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                if (!twoFingerDrag) handleUp(event.getPointerId(0))
-                else { pointers.clear(); pressed.clear(); invalidate() }
+                if (!twoFingerDrag) handleUp(event.getPointerId(0)) else cancelAll()
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
@@ -265,28 +249,35 @@ class FastKeyboardSurface(context: Context) : View(context) {
         val id = event.getPointerId(index)
         val point = eventToKey(event.getX(index), event.getY(index)) ?: return
         val key = point.third
-        val state = PointerState(id, key, point.first, event.getX(index), event.getY(index), event.getX(index), false)
+        val state = PointerState(id, key, point.first, event.getX(index), event.getY(index), event.getX(index))
         state.rowIndex = point.second
         pointers[id] = state
         pressed.add(keyIndexFor(point.second, point.first))
         performFeedback()
 
-        if (key.type == KeyType.CHARACTER && key.longPressOptions.isEmpty() && key.alternateText.isEmpty()) {
-            state.committed = true
-            onKeyTap?.invoke(key)
-        } else if (key.type == KeyType.BACKSPACE) {
-            state.committed = true
-            onBackspace?.invoke()
-            state.repeat = true
-            scheduleBackspaceRepeat(state)
-        } else if (key.type == KeyType.SHIFT) {
-            state.committed = true
-            onKeyTap?.invoke(key)
-        } else {
-            scheduleLongPress(state)
-            if (p.glideEnabled()) {
-                state.glide = key.type == KeyType.CHARACTER
-                if (state.glide) key.primaryText.firstOrNull()?.let { state.glideChars.add(it.lowercaseChar()) }
+        when (key.type) {
+            KeyType.CHARACTER -> {
+                // Commit ordinary characters immediately. Long-press can replace the committed base char.
+                state.committed = true
+                onKeyTap?.invoke(key)
+                if (key.longPressOptions.isNotEmpty() || key.alternateText.isNotEmpty()) scheduleLongPress(state)
+                if (p.glideEnabled()) {
+                    state.glide = true
+                    key.primaryText.firstOrNull()?.let { state.glideChars.add(it.lowercaseChar()) }
+                }
+            }
+            KeyType.BACKSPACE -> {
+                state.committed = true
+                onBackspace?.invoke()
+                state.repeat = true
+                scheduleBackspaceRepeat(state)
+            }
+            KeyType.SHIFT -> {
+                state.committed = true
+                onKeyTap?.invoke(key)
+            }
+            else -> {
+                if (key.longPressOptions.isNotEmpty() || key.alternateText.isNotEmpty()) scheduleLongPress(state)
             }
         }
         invalidate()
@@ -299,10 +290,9 @@ class FastKeyboardSurface(context: Context) : View(context) {
         val y = event.getY(index)
         state.lastX = x
 
-        if (state.committed && !state.glide) return
         if (state.longPressed && state.key?.longPressOptions?.isNotEmpty() == true) {
             val options = state.key!!.longPressOptions
-            val center = width / 2f
+            val center = state.downX
             state.popupIndex = ((x - center) / dp(42f) + options.size / 2f).toInt().coerceIn(0, options.lastIndex)
             invalidate()
             return
@@ -357,9 +347,13 @@ class FastKeyboardSurface(context: Context) : View(context) {
         }
 
         if (state.longPressed && state.key?.longPressOptions?.isNotEmpty() == true) {
+            // Base character was already committed on DOWN; replace it with the selected alternate.
             val options = state.key!!.longPressOptions
             val selected = options.getOrNull(state.popupIndex) ?: options.firstOrNull()
-            if (!selected.isNullOrEmpty()) onKeyInsertText?.invoke(selected)
+            if (!selected.isNullOrEmpty()) {
+                onBackspace?.invoke()
+                onKeyInsertText?.invoke(selected)
+            }
         } else if (!state.committed && !state.dragHandled) {
             state.key?.let { onKeyTap?.invoke(it) }
         }
@@ -370,9 +364,9 @@ class FastKeyboardSurface(context: Context) : View(context) {
         val key = state.key ?: return
         if (key.longPressOptions.isEmpty() && key.alternateText.isEmpty()) return
         handler.postDelayed({
-            if (pointers[state.id] === state && !state.committed && !state.dragHandled) {
+            if (pointers[state.id] === state && !state.dragHandled) {
                 state.longPressed = true
-                state.popupIndex = key.longPressOptions.size / 2
+                state.popupIndex = (key.longPressOptions.size / 2).coerceAtMost(key.longPressOptions.lastIndex.coerceAtLeast(0))
                 onKeyLongPress?.invoke(key)
                 performFeedback()
                 invalidate()
@@ -391,14 +385,23 @@ class FastKeyboardSurface(context: Context) : View(context) {
     }
 
     private fun cancelLongPress(state: PointerState) {
-        // Pointer-specific callbacks are cheap and are invalidated by state identity checks.
-        state.committed = state.committed
+        state.dragHandled = state.dragHandled
+        // Delayed callbacks self-check pointer identity/drag state; no global queue work is needed.
     }
 
     private fun cancelAll() {
+        handler.removeCallbacksAndMessages(null)
         pointers.clear()
         pressed.clear()
         invalidate()
+    }
+
+    override fun onDetachedFromWindow() {
+        handler.removeCallbacksAndMessages(null)
+        workScope.cancel()
+        pointers.clear()
+        pressed.clear()
+        super.onDetachedFromWindow()
     }
 
     private fun eventToKey(x: Float, y: Float): Triple<Int, Int, KeyModel>? {
