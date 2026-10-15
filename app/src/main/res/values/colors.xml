@@ -1,7 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="craze_bg">#101116</color>
-    <color name="craze_surface">#1B1D26</color>
-    <color name="craze_accent">#A78BFA</color>
-    <color name="craze_text">#F5F5FA</color>
+    <!-- Gboard Navy & Ice Blue Palette -->
+    <color name="kb_bg_navy">#0E1118</color>
+    <color name="kb_surface_navy">#1A2232</color>
+    <color name="kb_surface_functional">#222C3E</color>
+    <color name="kb_accent_blue">#3B82F6</color>
+    <color name="kb_accent_ice">#60A5FA</color>
+    <color name="kb_text_white">#F8FAFC</color>
+    <color name="kb_text_slate">#94A3B8</color>
+
+    <!-- Legacy compatibility tokens -->
+    <color name="craze_bg">#0E1118</color>
+    <color name="craze_surface">#1A2232</color>
+    <color name="craze_accent">#3B82F6</color>
+    <color name="craze_text">#F8FAFC</color>
 </resources>

@@ -1,0 +1,6 @@
+{
+  "name": "CrazeKeyboard",
+  "description": "A clean, privacy-first custom Android keyboard with theme gallery and layout options",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
