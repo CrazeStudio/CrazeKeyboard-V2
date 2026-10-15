@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="craze_bg">#101116</color>
+    <color name="craze_surface">#1B1D26</color>
+    <color name="craze_accent">#A78BFA</color>
+    <color name="craze_text">#F5F5FA</color>
+</resources>
