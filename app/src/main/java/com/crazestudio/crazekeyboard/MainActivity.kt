@@ -50,7 +50,7 @@ class MainActivity : Activity() {
                 text = name
                 isAllCaps = false
                 textSize = 11f
-                setTextColor(text)
+                setTextColor(this@MainActivity.text)
                 background = rounded(surface, 18)
                 setOnClickListener { when(name) { "Home" -> showHome(); "Themes" -> showThemes(); "Typing" -> showTyping(); else -> showPrivacy() } }
             }, LinearLayout.LayoutParams(0, dp(44), 1f).apply { setMargins(dp(2), 0, dp(2), 0) })
@@ -151,7 +151,7 @@ class MainActivity : Activity() {
             addView(Button(this@MainActivity).apply {
                 text = if (prefs.getBoolean(key, default)) "ON  ✓" else "OFF"
                 isAllCaps = false
-                setTextColor(text)
+                setTextColor(this@MainActivity.text)
                 background = rounded(if (prefs.getBoolean(key, default)) accent else surface, 14)
                 setOnClickListener {
                     val next = !prefs.getBoolean(key, default)
@@ -193,7 +193,7 @@ class MainActivity : Activity() {
     private fun button(value: String, onClick: () -> Unit) = Button(this).apply {
         text = value
         isAllCaps = false
-        setTextColor(text)
+        setTextColor(this@MainActivity.text)
         background = rounded(accent, 14)
         setOnClickListener { onClick() }
     }
