@@ -45,7 +45,7 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
         TOOLS
     }
 
-    private var stripMode = StripMode.SUGGESTIONS
+    private var stripMode = StripMode.TOOLS
     private var rootContainer: LinearLayout? = null
     private var topStripLayout: LinearLayout? = null
     private var toggleToolsButton: ImageView? = null
@@ -562,6 +562,9 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
         })
 
         root.addView(topStripLayout)
+        // Apply the initial mode after both suggestions and tools have been attached.
+        // This makes the actual quick-tools toolbar visible when the keyboard first opens.
+        setStripMode(stripMode)
     }
 
     private fun setStripMode(mode: StripMode) {
