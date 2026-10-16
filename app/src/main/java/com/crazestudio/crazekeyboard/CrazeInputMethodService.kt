@@ -649,6 +649,13 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
             setMargins(dp(1), 0, dp(1), 0)
         })
 
+        // Re-apply the current mode after rebuilding the strip. Input views can be
+        // recreated when the theme, language, or key height changes; without this,
+        // the newly-created tools row stays GONE even when TOOLS was selected.
+        setStripMode(stripMode)
+        topStripLayout?.minimumHeight = dp(44)
+        topStripLayout?.visibility = View.VISIBLE
+
         (topStripLayout?.parent as? ViewGroup)?.removeView(topStripLayout)
     }
 
