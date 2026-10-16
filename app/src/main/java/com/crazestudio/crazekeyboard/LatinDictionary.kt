@@ -12,7 +12,7 @@ object LatinDictionary {
         "then", "now", "look", "only", "come", "its", "over", "think", "also", "back",
         "after", "use", "two", "how", "our", "work", "first", "well", "way", "even",
         "new", "want", "because", "any", "these", "give", "day", "most", "us", "great",
-        "great", "need", "feel", "high", "please", "thank", "thanks", "hello", "hi", "hey",
+        "need", "feel", "high", "please", "thank", "thanks", "hello", "hi", "hey",
         "help", "today", "tomorrow", "tonight", "night", "morning", "friend", "love", "awesome",
         "cool", "nice", "fine", "okay", "sure", "done", "ready", "keyboard", "android", "craze",
         "studio", "mobile", "phone", "happy", "smile", "world", "music", "video", "photo", "message"
@@ -23,10 +23,8 @@ object LatinDictionary {
         val clean = prefix.lowercase()
         val exactMatches = commonWords.filter { it.startsWith(clean) }
         val result = mutableListOf<String>()
-
-        // Capitalize if prefix was capitalized
-        val isCapital = prefix.first().isUpperCase()
-
+        val isCapital = prefix.isNotEmpty() && prefix.first().isUpperCase()
+        
         for (w in exactMatches) {
             val formatted = if (isCapital) w.replaceFirstChar { it.uppercase() } else w
             if (!result.contains(formatted)) {
@@ -34,10 +32,20 @@ object LatinDictionary {
             }
             if (result.size >= limit) break
         }
-
+        
         if (result.isEmpty()) {
-            result.add(prefix)
+            val formatted = if (isCapital) prefix.replaceFirstChar { it.uppercase() } else prefix
+            result.add(formatted)
         }
-        return result
+        
+        val fillDefaults = listOf("the", "and", "you", "to", "is", "for", "with", "that")
+        for (f in fillDefaults) {
+            if (result.size >= limit) break
+            val formatted = if (isCapital) f.replaceFirstChar { it.uppercase() } else f
+            if (!result.contains(formatted)) {
+                result.add(formatted)
+            }
+        }
+        return result.take(limit)
     }
 }

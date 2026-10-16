@@ -20,6 +20,7 @@ import android.os.VibratorManager
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
+import android.view.MotionEvent
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.view.Window
@@ -45,7 +46,7 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
         TOOLS
     }
 
-    private var stripMode = StripMode.TOOLS
+    private var stripMode = StripMode.SUGGESTIONS
     private var rootContainer: LinearLayout? = null
     private var topStripLayout: LinearLayout? = null
     private var toggleToolsButton: ImageView? = null
@@ -300,29 +301,28 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
         )
     )
 
+    override fun onCreateCandidatesView(): View? {
+        return null
+    }
+
+    open fun onEvaluateCandidatesViewShown(): Boolean {
+        return false
+    }
+
     override fun onConfigureWindow(win: Window, isFullscreen: Boolean, isCandidatesOnly: Boolean) {
         super.onConfigureWindow(win, isFullscreen, isCandidatesOnly)
-        win.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        val themeBg = getThemeColors().bg
+        win.setBackgroundDrawable(ColorDrawable(themeBg))
         win.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         win.setDimAmount(0f)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            win.navigationBarColor = getThemeColors().bg
+            win.navigationBarColor = themeBg
         }
-    }
-
-    override fun onComputeInsets(outInsets: Insets) {
-        super.onComputeInsets(outInsets)
-        val root = rootContainer ?: return
-        val top = root.top
-        outInsets.contentTopInsets = top
-        outInsets.visibleTopInsets = top
-        outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_CONTENT
-        outInsets.touchableRegion.set(0, top, root.width, root.height)
     }
 
     override fun onCreateInputView(): View {
         val theme = getThemeColors()
-        val cornerR = dp(20).toFloat()
+        val cornerR = dp(16).toFloat()
         val layerBg = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             setColor(theme.bg)
@@ -339,35 +339,31 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
             orientation = LinearLayout.VERTICAL
             layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             background = layerBg
-            elevation = dp(18).toFloat()
-            outlineProvider = ViewOutlineProvider.BACKGROUND
-            clipToOutline = false
+            elevation = dp(12).toFloat()
             clipChildren = false
             clipToPadding = false
         }
 
-        // Sleek top grabber handle pill for independent floating layer appearance
-        floatingHandleBar = View(this).apply {
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                setColor(theme.divider)
-                cornerRadius = dp(3).toFloat()
-            }
-        }
-        val handleParams = LinearLayout.LayoutParams(dp(36), dp(4)).apply {
-            gravity = Gravity.CENTER_HORIZONTAL
-            setMargins(0, dp(6), 0, dp(3))
-        }
-        rootContainer!!.addView(floatingHandleBar, handleParams)
-
-        // 1. Build and add Unified Suggestions & Tools Top Strip
+        // 1. Physically Attached Unified Suggestions & Tools Top Strip
         buildUnifiedTopStrip()
+        topStripLayout?.let { strip ->
+            (strip.parent as? ViewGroup)?.removeView(strip)
+            strip.setBackgroundColor(theme.bg)
+            rootContainer!!.addView(strip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44)))
+        }
 
-        // 2. Panel Container hosting Keyboard View or Emoji / Clipboard panel
+        // 2. Subtle Hairline Divider between Toolbar and Keycaps
+        val dividerLine = View(this).apply {
+            setBackgroundColor(theme.divider)
+        }
+        rootContainer!!.addView(dividerLine, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)))
+
+        // 3. Panel Container hosting Keyboard View or Emoji / Clipboard panel
         panelContainer = FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             clipChildren = false
             clipToPadding = false
+            setBackgroundColor(theme.bg)
         }
         rootContainer!!.addView(panelContainer)
 
@@ -375,16 +371,19 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
             this.theme = theme
             this.listener = this@CrazeInputMethodService
             loadPreferences(prefs)
+            setBackgroundColor(theme.bg)
         }
         panelContainer!!.addView(keyboardView)
 
         updateKeyboardLayout()
         updateSuggestions()
+
         return rootContainer!!
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        setCandidatesViewShown(false)
         checkAutoCapitalization()
         updateKeyboardLayout()
         updateSuggestions()
@@ -392,7 +391,6 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
 
     // Unified 40dp Gboard-style top strip: seamlessly toggles between word suggestions and quick tools
     private fun buildUnifiedTopStrip() {
-        val root = rootContainer ?: return
         val theme = getThemeColors()
 
         topStripLayout = LinearLayout(this).apply {
@@ -561,10 +559,7 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
             setMargins(dp(1), 0, dp(1), 0)
         })
 
-        root.addView(topStripLayout)
-        // Apply the initial mode after both suggestions and tools have been attached.
-        // This makes the actual quick-tools toolbar visible when the keyboard first opens.
-        setStripMode(stripMode)
+        (topStripLayout?.parent as? ViewGroup)?.removeView(topStripLayout)
     }
 
     private fun setStripMode(mode: StripMode) {
@@ -616,15 +611,13 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
     private fun updateSuggestions() {
         val theme = getThemeColors()
 
-        if (!prefs.getBoolean("suggestions", true) || currentMode != KeyboardMode.NORMAL) {
+        if (!prefs.getBoolean("suggestions", true) || currentMode != KeyboardMode.NORMAL || stripMode == StripMode.TOOLS) {
             suggestionsContainer?.visibility = View.GONE
             suggestionDividers.forEach { it.visibility = View.GONE }
             return
         }
 
-        if (stripMode == StripMode.SUGGESTIONS) {
-            suggestionsContainer?.visibility = View.VISIBLE
-        }
+        suggestionsContainer?.visibility = View.VISIBLE
 
         val before = currentInputConnection?.getTextBeforeCursor(40, 0)?.toString().orEmpty()
         val token = before.substringAfterLast(' ').substringAfterLast('\n')
@@ -1494,6 +1487,8 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
 
     private fun applyTheme() {
         val t = getThemeColors()
+        try { window?.window?.setBackgroundDrawable(ColorDrawable(t.bg)) } catch (_: Exception) {}
+        
         val cornerR = dp(18).toFloat()
         val layerBg = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE

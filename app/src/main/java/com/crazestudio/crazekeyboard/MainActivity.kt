@@ -228,6 +228,9 @@ class MainActivity : Activity() {
         scroll.addView(contentContainer)
         rootContainer.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
+        // On-Screen Interactive CrazeKeyboard VW Toolbar & Keypad
+        rootContainer.addView(createInAppKeyboardDrawer())
+
         // Persistent Bottom Navigation Bar
         rootContainer.addView(createBottomNav())
         mainFrame.addView(rootContainer)
@@ -638,23 +641,29 @@ class MainActivity : Activity() {
             bottomMargin = dp(4)
         })
 
-        // 2. Unified Top Strip (Tools Toggle | Candidate Suggestions | Mic)
+        // 2. Unified Top Strip (Tools Toggle | Candidate Suggestions / Tools Strip | Mic)
+        var showcaseToolsMode = false
         val strip = LinearLayout(this@MainActivity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(-1, dp(34))
         }
 
-        val toolsIcon = ImageView(this@MainActivity).apply {
+        val toolsToggleIcon = ImageView(this@MainActivity).apply {
             setImageResource(R.drawable.ic_kb_tools)
             imageTintList = ColorStateList.valueOf(textSecondary)
             scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setPadding(dp(2), dp(2), dp(2), dp(2))
         }
-        strip.addView(toolsIcon, LinearLayout.LayoutParams(dp(28), dp(28)))
 
-        val suggestions = LinearLayout(this@MainActivity).apply {
+        val centerFrame = FrameLayout(this@MainActivity).apply {
+            layoutParams = LinearLayout.LayoutParams(0, -1, 1f)
+        }
+
+        val suggestionsStrip = LinearLayout(this@MainActivity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            layoutParams = FrameLayout.LayoutParams(-1, -1)
         }
 
         val cand1 = TextView(this@MainActivity).apply {
@@ -662,10 +671,11 @@ class MainActivity : Activity() {
             textSize = 12f
             setTextColor(textSecondary)
             gravity = Gravity.CENTER
+            setOnClickListener { vibrateInApp(10L); playInAppSound(); Toast.makeText(this@MainActivity, "Selected word: the", Toast.LENGTH_SHORT).show() }
         }
-        suggestions.addView(cand1, LinearLayout.LayoutParams(0, -1, 1f))
+        suggestionsStrip.addView(cand1, LinearLayout.LayoutParams(0, -1, 1f))
 
-        suggestions.addView(View(this@MainActivity).apply {
+        suggestionsStrip.addView(View(this@MainActivity).apply {
             setBackgroundColor(dividerColor)
         }, LinearLayout.LayoutParams(dp(1), dp(14)))
 
@@ -675,10 +685,11 @@ class MainActivity : Activity() {
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
+            setOnClickListener { vibrateInApp(10L); playInAppSound(); Toast.makeText(this@MainActivity, "Selected word: keyboard", Toast.LENGTH_SHORT).show() }
         }
-        suggestions.addView(cand2, LinearLayout.LayoutParams(0, -1, 1.3f))
+        suggestionsStrip.addView(cand2, LinearLayout.LayoutParams(0, -1, 1.3f))
 
-        suggestions.addView(View(this@MainActivity).apply {
+        suggestionsStrip.addView(View(this@MainActivity).apply {
             setBackgroundColor(dividerColor)
         }, LinearLayout.LayoutParams(dp(1), dp(14)))
 
@@ -687,10 +698,68 @@ class MainActivity : Activity() {
             textSize = 12f
             setTextColor(textSecondary)
             gravity = Gravity.CENTER
+            setOnClickListener { vibrateInApp(10L); playInAppSound(); Toast.makeText(this@MainActivity, "Selected word: smart", Toast.LENGTH_SHORT).show() }
         }
-        suggestions.addView(cand3, LinearLayout.LayoutParams(0, -1, 1f))
-        strip.addView(suggestions, LinearLayout.LayoutParams(0, -1, 1f))
+        suggestionsStrip.addView(cand3, LinearLayout.LayoutParams(0, -1, 1f))
 
+        val toolsStrip = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = FrameLayout.LayoutParams(-1, -1)
+            visibility = View.GONE
+        }
+
+        val toolIcons = listOf(
+            Triple(R.drawable.ic_kb_emoji, "Emoji Panel") { Toast.makeText(this@MainActivity, "Emoji Tool Activated", Toast.LENGTH_SHORT).show() },
+            Triple(R.drawable.ic_kb_clipboard, "Clipboard") { Toast.makeText(this@MainActivity, "Clipboard Tool Activated", Toast.LENGTH_SHORT).show() },
+            Triple(R.drawable.ic_kb_edit, "Text Editor") { Toast.makeText(this@MainActivity, "Text Editor Tool Activated", Toast.LENGTH_SHORT).show() },
+            Triple(R.drawable.ic_kb_palette, "Switch Theme") {
+                val names = allThemes.map { it.name }
+                val curr = prefs.getString("theme", "Material You Dark Slate")
+                val next = names[(names.indexOf(curr) + 1) % names.size]
+                prefs.edit().putString("theme", next).apply()
+                renderHomeScreen()
+            },
+            Triple(R.drawable.ic_kb_settings, "Settings") { navigateTo(Screen.SOUND_HAPTICS) }
+        )
+
+        toolIcons.forEach { (iconRes, name, action) ->
+            val toolBtn = ImageView(this@MainActivity).apply {
+                setImageResource(iconRes)
+                imageTintList = ColorStateList.valueOf(textSecondary)
+                scaleType = ImageView.ScaleType.CENTER_INSIDE
+                setPadding(dp(4), dp(2), dp(4), dp(2))
+                setOnClickListener {
+                    vibrateInApp(12L)
+                    playInAppSound()
+                    action()
+                }
+            }
+            toolsStrip.addView(toolBtn, LinearLayout.LayoutParams(0, -1, 1f))
+        }
+
+        centerFrame.addView(suggestionsStrip)
+        centerFrame.addView(toolsStrip)
+
+        toolsToggleIcon.setOnClickListener {
+            vibrateInApp(12L)
+            playInAppSound()
+            showcaseToolsMode = !showcaseToolsMode
+            if (showcaseToolsMode) {
+                toolsToggleIcon.setImageResource(R.drawable.ic_kb_chevron_left)
+                toolsToggleIcon.imageTintList = ColorStateList.valueOf(accent)
+                suggestionsStrip.visibility = View.GONE
+                toolsStrip.visibility = View.VISIBLE
+            } else {
+                toolsToggleIcon.setImageResource(R.drawable.ic_kb_tools)
+                toolsToggleIcon.imageTintList = ColorStateList.valueOf(textSecondary)
+                suggestionsStrip.visibility = View.VISIBLE
+                toolsStrip.visibility = View.GONE
+            }
+        }
+
+        strip.addView(toolsToggleIcon, LinearLayout.LayoutParams(dp(28), dp(28)))
+        strip.addView(centerFrame)
         val micIcon = ImageView(this@MainActivity).apply {
             setImageResource(R.drawable.ic_kb_mic)
             imageTintList = ColorStateList.valueOf(textSecondary)
@@ -1707,4 +1776,240 @@ class MainActivity : Activity() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
     private fun dp(value: Float): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun ThemeDescriptor.toThemeColors(): LatinKeyboardView.ThemeColors {
+        return LatinKeyboardView.ThemeColors(
+            bg = bg,
+            keySurface = keySurface,
+            keyBorder = border,
+            keyPressed = surface,
+            keyFunc = cardSurface,
+            keyFuncBorder = borderLight,
+            accent = accent,
+            accentBorder = accentBorder,
+            textPrimary = textPrimary,
+            textSecondary = textSecondary,
+            divider = dividerColor
+        )
+    }
+
+    private fun createInAppKeyboardDrawer(): View {
+        val themeDesc = getActiveThemeDescriptor()
+        var isDrawerToolsMode = false
+        var isDrawerExpanded = true
+
+        val drawerRoot = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val cornerR = dp(16).toFloat()
+            background = GradientDrawable().apply {
+                setColor(themeDesc.bg)
+                cornerRadii = floatArrayOf(
+                    cornerR, cornerR,
+                    cornerR, cornerR,
+                    0f, 0f,
+                    0f, 0f
+                )
+                setStroke(dp(1), border)
+            }
+            elevation = dp(12).toFloat()
+            setPadding(dp(8), dp(4), dp(8), dp(6))
+        }
+
+        // 1. Top Grabber Handle & Header Toggle
+        val headerRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(2), dp(4), dp(2))
+        }
+
+        val grabberPill = View(this).apply {
+            background = flatPill(dividerColor, dividerColor, 3)
+        }
+        val grabberContainer = LinearLayout(this).apply {
+            gravity = Gravity.CENTER
+            addView(grabberPill, LinearLayout.LayoutParams(dp(36), dp(4)))
+        }
+        headerRow.addView(grabberContainer, LinearLayout.LayoutParams(0, -2, 1f))
+
+        val toggleExpandBtn = TextView(this).apply {
+            text = "⌨ CrazeKeyboard VW Toolbar"
+            textSize = 11.5f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(accent)
+            background = flatPill(surface, border, 10)
+            setPadding(dp(8), dp(3), dp(8), dp(3))
+        }
+        headerRow.addView(toggleExpandBtn)
+        drawerRoot.addView(headerRow)
+
+        // 2. Keyboard Body Container (Top Strip Toolbar + Keypad)
+        val bodyContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        toggleExpandBtn.setOnClickListener {
+            vibrateInApp(10L)
+            playInAppSound()
+            isDrawerExpanded = !isDrawerExpanded
+            bodyContainer.visibility = if (isDrawerExpanded) View.VISIBLE else View.GONE
+            toggleExpandBtn.text = if (isDrawerExpanded) "⌨ CrazeKeyboard VW Toolbar" else "⌨ Show CrazeKeyboard VW"
+        }
+
+        // Top Strip Toolbar
+        val topStrip = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(-1, dp(38))
+            setBackgroundColor(themeDesc.bg)
+        }
+
+        val toolsToggleBtn = ImageView(this).apply {
+            setImageResource(R.drawable.ic_kb_tools)
+            imageTintList = ColorStateList.valueOf(textSecondary)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setPadding(dp(6), dp(6), dp(6), dp(6))
+        }
+
+        val centerFrame = FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(0, -1, 1f)
+        }
+
+        val suggestionsStrip = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = FrameLayout.LayoutParams(-1, -1)
+        }
+
+        val cand1 = TextView(this).apply {
+            text = "the"
+            textSize = 13f
+            setTextColor(textSecondary)
+            gravity = Gravity.CENTER
+            setOnClickListener { vibrateInApp(10L); playInAppSound(); Toast.makeText(this@MainActivity, "Word selected: the", Toast.LENGTH_SHORT).show() }
+        }
+        suggestionsStrip.addView(cand1, LinearLayout.LayoutParams(0, -1, 1f))
+
+        suggestionsStrip.addView(View(this).apply {
+            setBackgroundColor(dividerColor)
+        }, LinearLayout.LayoutParams(dp(1), dp(16)))
+
+        val cand2 = TextView(this).apply {
+            text = "keyboard"
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            setOnClickListener { vibrateInApp(10L); playInAppSound(); Toast.makeText(this@MainActivity, "Word selected: keyboard", Toast.LENGTH_SHORT).show() }
+        }
+        suggestionsStrip.addView(cand2, LinearLayout.LayoutParams(0, -1, 1.3f))
+
+        suggestionsStrip.addView(View(this).apply {
+            setBackgroundColor(dividerColor)
+        }, LinearLayout.LayoutParams(dp(1), dp(16)))
+
+        val cand3 = TextView(this).apply {
+            text = "smart"
+            textSize = 13f
+            setTextColor(textSecondary)
+            gravity = Gravity.CENTER
+            setOnClickListener { vibrateInApp(10L); playInAppSound(); Toast.makeText(this@MainActivity, "Word selected: smart", Toast.LENGTH_SHORT).show() }
+        }
+        suggestionsStrip.addView(cand3, LinearLayout.LayoutParams(0, -1, 1f))
+
+        val toolsStrip = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = FrameLayout.LayoutParams(-1, -1)
+            visibility = View.GONE
+        }
+
+        val toolIcons = listOf(
+            Triple(R.drawable.ic_kb_emoji, "Emoji") { Toast.makeText(this@MainActivity, "Emoji Toolbar Tool", Toast.LENGTH_SHORT).show() },
+            Triple(R.drawable.ic_kb_clipboard, "Clipboard") { Toast.makeText(this@MainActivity, "Clipboard Toolbar Tool", Toast.LENGTH_SHORT).show() },
+            Triple(R.drawable.ic_kb_edit, "Text Edit") { Toast.makeText(this@MainActivity, "Text Editor Toolbar Tool", Toast.LENGTH_SHORT).show() },
+            Triple(R.drawable.ic_kb_palette, "Theme") {
+                val names = allThemes.map { it.name }
+                val curr = prefs.getString("theme", "Material You Dark Slate")
+                val next = names[(names.indexOf(curr) + 1) % names.size]
+                prefs.edit().putString("theme", next).apply()
+                renderHomeScreen()
+            },
+            Triple(R.drawable.ic_kb_settings, "Settings") { navigateTo(Screen.SOUND_HAPTICS) }
+        )
+
+        toolIcons.forEach { (iconRes, name, action) ->
+            val toolBtn = ImageView(this).apply {
+                setImageResource(iconRes)
+                imageTintList = ColorStateList.valueOf(textSecondary)
+                scaleType = ImageView.ScaleType.CENTER_INSIDE
+                setPadding(dp(8), dp(6), dp(8), dp(6))
+                setOnClickListener {
+                    vibrateInApp(12L)
+                    playInAppSound()
+                    action()
+                }
+            }
+            toolsStrip.addView(toolBtn, LinearLayout.LayoutParams(0, -1, 1f))
+        }
+
+        centerFrame.addView(suggestionsStrip)
+        centerFrame.addView(toolsStrip)
+
+        toolsToggleBtn.setOnClickListener {
+            vibrateInApp(12L)
+            playInAppSound()
+            isDrawerToolsMode = !isDrawerToolsMode
+            if (isDrawerToolsMode) {
+                toolsToggleBtn.setImageResource(R.drawable.ic_kb_chevron_left)
+                toolsToggleBtn.imageTintList = ColorStateList.valueOf(accent)
+                suggestionsStrip.visibility = View.GONE
+                toolsStrip.visibility = View.VISIBLE
+            } else {
+                toolsToggleBtn.setImageResource(R.drawable.ic_kb_tools)
+                toolsToggleBtn.imageTintList = ColorStateList.valueOf(textSecondary)
+                suggestionsStrip.visibility = View.VISIBLE
+                toolsStrip.visibility = View.GONE
+            }
+        }
+
+        val micBtn = ImageView(this).apply {
+            setImageResource(R.drawable.ic_kb_mic)
+            imageTintList = ColorStateList.valueOf(textSecondary)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setPadding(dp(6), dp(6), dp(6), dp(6))
+            setOnClickListener {
+                vibrateInApp(12L)
+                playInAppSound()
+                Toast.makeText(this@MainActivity, "Voice Dictation Active", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        topStrip.addView(toolsToggleBtn, LinearLayout.LayoutParams(dp(36), dp(36)))
+        topStrip.addView(centerFrame)
+        topStrip.addView(micBtn, LinearLayout.LayoutParams(dp(36), dp(36)))
+
+        bodyContainer.addView(topStrip)
+
+        // LatinKeyboardView Keypad
+        val kbView = LatinKeyboardView(this).apply {
+            this.theme = themeDesc.toThemeColors()
+            this.listener = object : LatinKeyboardView.OnKeyboardActionListener {
+                override fun onKey(code: String) {
+                    vibrateInApp(10L)
+                    playInAppSound()
+                }
+                override fun onSecondaryKey(subCode: String) {}
+                override fun onSecondaryReplace(oldCode: String, newSubCode: String) {}
+                override fun onKeyActionDown(code: String) { vibrateInApp(8L); playInAppSound() }
+                override fun onKeyActionUp(code: String) {}
+                override fun onSpaceDrag(isRight: Boolean) {}
+                override fun onBackspaceSwipe() {}
+                override fun onDeleteWord() {}
+            }
+        }
+        bodyContainer.addView(kbView)
+        drawerRoot.addView(bodyContainer)
+
+        return drawerRoot
+    }
 }
