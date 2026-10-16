@@ -5,7 +5,10 @@ plugins {
 
 // Use the cached CI debug keystore when present. If a developer has no keystore yet,
 // keep Android Gradle Plugin's normal local debug-signing behavior.
-val stableDebugKeystore = file("${System.getProperty("user.home")}/.android/debug.keystore")
+val stableDebugKeystore = file(
+    System.getenv("CRAZE_DEBUG_KEYSTORE")
+        ?: "${System.getProperty("user.home")}/.android/debug.keystore"
+)
 
 android {
     signingConfigs {
