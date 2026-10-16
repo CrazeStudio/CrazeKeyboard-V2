@@ -131,6 +131,8 @@ class LatinKeyboardView @JvmOverloads constructor(
         invalidate()
     }
 
+    fun findKeyByCode(code: String): LatinKey? = allKeys.firstOrNull { it.code == code }
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
         val defaultH = dp(keyboardHeightDp)
@@ -148,7 +150,7 @@ class LatinKeyboardView @JvmOverloads constructor(
 
         val padX = dp(keySpacingXDp)
         val padY = dp(keySpacingYDp)
-        val bottomSafePad = dp(5)
+        val bottomSafePad = dp(16)
         val numRows = rows.size
         val availableH = height - bottomSafePad - (padY * (numRows + 1))
         val rowH = availableH / numRows.toFloat()
@@ -390,15 +392,9 @@ class LatinKeyboardView @JvmOverloads constructor(
                     val tracker = PointerTracker(pointerId, key, x, y)
 
                     if (key.code == "⌫") {
-                        // Instant tactile action & delete 1 char on down
+                        // Instant tactile action & delete 1 char on down; repeating backspace is managed by listener
                         listener?.onKeyActionDown("⌫")
                         tracker.committed = true
-                        tracker.longPressRunnable = Runnable {
-                            tracker.isLongPressed = true
-                            listener?.onDeleteWord()
-                            invalidate()
-                        }
-                        postDelayed(tracker.longPressRunnable, 420)
                     } else if (key.code == "⇧" || key.code == "?123" || key.code == "=\\<" || key.code == "ABC") {
                         commitKey(key)
                         tracker.committed = true

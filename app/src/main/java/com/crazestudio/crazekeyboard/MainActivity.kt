@@ -60,6 +60,7 @@ class MainActivity : Activity() {
     private lateinit var mainFrame: FrameLayout
     private lateinit var rootContainer: LinearLayout
     private lateinit var contentContainer: LinearLayout
+    private var bottomNavView: View? = null
 
     private var activeThemeCategory = "All"
     private var themeSearchQuery = ""
@@ -228,14 +229,27 @@ class MainActivity : Activity() {
         scroll.addView(contentContainer)
         rootContainer.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
-        // On-Screen Interactive CrazeKeyboard VW Toolbar & Keypad
-        rootContainer.addView(createInAppKeyboardDrawer())
-
         // Persistent Bottom Navigation Bar
-        rootContainer.addView(createBottomNav())
+        bottomNavView = createBottomNav()
+        rootContainer.addView(bottomNavView)
         mainFrame.addView(rootContainer)
 
         setContentView(mainFrame)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
+            mainFrame.setOnApplyWindowInsetsListener { view, insets ->
+                @Suppress("DEPRECATION")
+                val top = insets.systemWindowInsetTop
+                @Suppress("DEPRECATION")
+                val bottom = insets.systemWindowInsetBottom
+                @Suppress("DEPRECATION")
+                val left = insets.systemWindowInsetLeft
+                @Suppress("DEPRECATION")
+                val right = insets.systemWindowInsetRight
+                view.setPadding(left, top, right, bottom)
+                insets
+            }
+        }
     }
 
     private fun playInAppSound() {
@@ -343,11 +357,10 @@ class MainActivity : Activity() {
         currentScreen = screen
         contentContainer.removeAllViews()
 
-        // Recreate bottom nav to update active tab highlight
-        if (rootContainer.childCount > 1) {
-            rootContainer.removeViewAt(1)
-            rootContainer.addView(createBottomNav())
-        }
+        // Recreate bottom nav to update active tab highlight cleanly
+        bottomNavView?.let { rootContainer.removeView(it) }
+        bottomNavView = createBottomNav()
+        rootContainer.addView(bottomNavView)
 
         when (screen) {
             Screen.HOME -> renderHomeScreen()
@@ -683,7 +696,7 @@ class MainActivity : Activity() {
             text = "keyboard"
             textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.WHITE)
+            setTextColor(activeThemeDesc.textPrimary)
             gravity = Gravity.CENTER
             setOnClickListener { vibrateInApp(10L); playInAppSound(); Toast.makeText(this@MainActivity, "Selected word: keyboard", Toast.LENGTH_SHORT).show() }
         }
@@ -999,6 +1012,153 @@ class MainActivity : Activity() {
         }
         searchBox.addView(searchIcon, LinearLayout.LayoutParams(dp(20), dp(20)))
 
+        val themesContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
+        fun populateThemeList() {
+            themesContainer.removeAllViews()
+            val currentActiveTheme = prefs.getString("theme", "Material You Dark Slate") ?: "Material You Dark Slate"
+            val filtered = allThemes.filter { t ->
+                val matchCat = (activeThemeCategory == "All" || t.category == activeThemeCategory)
+                val matchQuery = themeSearchQuery.isEmpty() || t.name.contains(themeSearchQuery, ignoreCase = true)
+                matchCat && matchQuery
+            }
+
+            if (filtered.isEmpty()) {
+                themesContainer.addView(card {
+                    addView(label("No themes found matching \"$themeSearchQuery\"", 14f, textMuted, false).apply {
+                        gravity = Gravity.CENTER
+                        setPadding(0, dp(18), 0, dp(18))
+                    })
+                })
+                return
+            }
+
+            filtered.forEach { theme ->
+                val isCurrent = theme.name == currentActiveTheme
+                themesContainer.addView(card {
+                    // Miniature Keyboard Visual Preview Bar
+                    val previewBox = LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        background = flatPill(theme.bg, Color.argb(40, 255, 255, 255), 10)
+                        setPadding(dp(10), dp(8), dp(10), dp(8))
+                    }
+
+                    // Sample key row
+                    val sampleRow1 = LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER
+                    }
+                    listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p").forEach { k ->
+                        sampleRow1.addView(TextView(this@MainActivity).apply {
+                            text = k
+                            textSize = 10f
+                            setTextColor(theme.textPrimary)
+                            gravity = Gravity.CENTER
+                            background = flatPill(theme.keySurface, Color.argb(30, 255, 255, 255), 4)
+                        }, LinearLayout.LayoutParams(0, dp(22), 1f).apply { setMargins(dp(1), dp(1), dp(1), dp(1)) })
+                    }
+                    previewBox.addView(sampleRow1)
+
+                    // Sample bottom row with accent enter key
+                    val sampleRow2 = LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER
+                        setPadding(0, dp(3), 0, 0)
+                    }
+                    sampleRow2.addView(TextView(this@MainActivity).apply {
+                        text = "?123"
+                        textSize = 9f
+                        setTextColor(theme.textPrimary)
+                        gravity = Gravity.CENTER
+                        background = flatPill(theme.keySurface, Color.argb(30, 255, 255, 255), 4)
+                    }, LinearLayout.LayoutParams(0, dp(22), 1.5f).apply { setMargins(dp(1), 0, dp(1), 0) })
+
+                    sampleRow2.addView(TextView(this@MainActivity).apply {
+                        text = "space"
+                        textSize = 9f
+                        setTextColor(Color.argb(160, Color.red(theme.textPrimary), Color.green(theme.textPrimary), Color.blue(theme.textPrimary)))
+                        gravity = Gravity.CENTER
+                        background = flatPill(theme.keySurface, Color.argb(30, 255, 255, 255), 4)
+                    }, LinearLayout.LayoutParams(0, dp(22), 5f).apply { setMargins(dp(1), 0, dp(1), 0) })
+
+                    sampleRow2.addView(TextView(this@MainActivity).apply {
+                        text = "↵"
+                        textSize = 11f
+                        setTextColor(Color.WHITE)
+                        gravity = Gravity.CENTER
+                        background = flatPill(theme.accent, theme.accent, 4)
+                    }, LinearLayout.LayoutParams(0, dp(22), 1.5f).apply { setMargins(dp(1), 0, dp(1), 0) })
+                    previewBox.addView(sampleRow2)
+
+                    addView(previewBox)
+
+                    // Theme Details
+                    val titleRow = LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding(0, dp(10), 0, dp(2))
+                    }
+                    titleRow.addView(label(theme.name, 17f, textPrimary, true), LinearLayout.LayoutParams(0, -2, 1f))
+                    titleRow.addView(TextView(this@MainActivity).apply {
+                        text = theme.category
+                        textSize = 10f
+                        setTextColor(accent)
+                        background = flatPill(surface, border, 8)
+                        setPadding(dp(8), dp(3), dp(8), dp(3))
+                    })
+                    addView(titleRow)
+
+                    addView(label(theme.description, 13f, textSecondary, false).apply { setPadding(0, 0, 0, dp(10)) })
+
+                    // Swatch Dots
+                    val swatchRow = LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding(0, 0, 0, dp(10))
+                    }
+                    listOf(theme.bg, theme.keySurface, theme.accent).forEach { col ->
+                        swatchRow.addView(View(this@MainActivity).apply {
+                            background = flatPill(col, border, 10)
+                        }, LinearLayout.LayoutParams(dp(18), dp(18)).apply { setMargins(0, 0, dp(8), 0) })
+                    }
+                    swatchRow.addView(label("Canvas • Keycap • Accent", 11.5f, textMuted, false))
+                    addView(swatchRow)
+
+                    // Action Buttons Row
+                    val btnRow = LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                    }
+
+                    val applyBtn = Button(this@MainActivity).apply {
+                        text = if (isCurrent) "Active Theme" else "Apply Theme"
+                        isAllCaps = false
+                        textSize = 12.5f
+                        setTextColor(Color.WHITE)
+                        background = flatPill(if (isCurrent) greenActive else accent, if (isCurrent) greenActive else accentBorder, 12)
+                        setOnClickListener {
+                            prefs.edit().putString("theme", theme.name).apply()
+                            populateThemeList()
+                        }
+                    }
+                    btnRow.addView(applyBtn, LinearLayout.LayoutParams(0, dp(40), 1f).apply { rightMargin = dp(6) })
+
+                    val testBtn = Button(this@MainActivity).apply {
+                        text = "Test Typing"
+                        isAllCaps = false
+                        textSize = 12.5f
+                        setTextColor(textPrimary)
+                        background = flatPill(surface, border, 12)
+                        setOnClickListener {
+                            prefs.edit().putString("theme", theme.name).apply()
+                            navigateTo(Screen.TEST_PLAYGROUND)
+                        }
+                    }
+                    btnRow.addView(testBtn, LinearLayout.LayoutParams(0, dp(40), 1f))
+                    addView(btnRow)
+                })
+            }
+        }
+
         val searchInput = EditText(this).apply {
             hint = "Search themes by name..."
             setHintTextColor(textMuted)
@@ -1011,6 +1171,7 @@ class MainActivity : Activity() {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                     themeSearchQuery = s?.toString().orEmpty()
+                    populateThemeList()
                 }
                 override fun afterTextChanged(s: Editable?) {}
             })
@@ -1019,138 +1180,8 @@ class MainActivity : Activity() {
         contentContainer.addView(searchBox)
         contentContainer.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(-1, dp(12)) })
 
-        // Filter themes
-        val currentActiveTheme = prefs.getString("theme", "Material You Dark Slate") ?: "Material You Dark Slate"
-        val filtered = allThemes.filter { t ->
-            val matchCat = (activeThemeCategory == "All" || t.category == activeThemeCategory)
-            val matchQuery = themeSearchQuery.isEmpty() || t.name.contains(themeSearchQuery, ignoreCase = true)
-            matchCat && matchQuery
-        }
-
-        filtered.forEach { theme ->
-            val isCurrent = theme.name == currentActiveTheme
-            contentContainer.addView(card {
-                // Miniature Keyboard Visual Preview Bar
-                val previewBox = LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.VERTICAL
-                    background = flatPill(theme.bg, Color.argb(40, 255, 255, 255), 10)
-                    setPadding(dp(10), dp(8), dp(10), dp(8))
-                }
-
-                // Sample key row
-                val sampleRow1 = LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER
-                }
-                listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p").forEach { k ->
-                    sampleRow1.addView(TextView(this@MainActivity).apply {
-                        text = k
-                        textSize = 10f
-                        setTextColor(theme.textPrimary)
-                        gravity = Gravity.CENTER
-                        background = flatPill(theme.keySurface, Color.argb(30, 255, 255, 255), 4)
-                    }, LinearLayout.LayoutParams(0, dp(22), 1f).apply { setMargins(dp(1), dp(1), dp(1), dp(1)) })
-                }
-                previewBox.addView(sampleRow1)
-
-                // Sample bottom row with accent enter key
-                val sampleRow2 = LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER
-                    setPadding(0, dp(3), 0, 0)
-                }
-                sampleRow2.addView(TextView(this@MainActivity).apply {
-                    text = "?123"
-                    textSize = 9f
-                    setTextColor(theme.textPrimary)
-                    gravity = Gravity.CENTER
-                    background = flatPill(theme.keySurface, Color.argb(30, 255, 255, 255), 4)
-                }, LinearLayout.LayoutParams(0, dp(22), 1.5f).apply { setMargins(dp(1), 0, dp(1), 0) })
-
-                sampleRow2.addView(TextView(this@MainActivity).apply {
-                    text = "space"
-                    textSize = 9f
-                    setTextColor(Color.argb(160, Color.red(theme.textPrimary), Color.green(theme.textPrimary), Color.blue(theme.textPrimary)))
-                    gravity = Gravity.CENTER
-                    background = flatPill(theme.keySurface, Color.argb(30, 255, 255, 255), 4)
-                }, LinearLayout.LayoutParams(0, dp(22), 5f).apply { setMargins(dp(1), 0, dp(1), 0) })
-
-                sampleRow2.addView(TextView(this@MainActivity).apply {
-                    text = "↵"
-                    textSize = 11f
-                    setTextColor(Color.WHITE)
-                    gravity = Gravity.CENTER
-                    background = flatPill(theme.accent, theme.accent, 4)
-                }, LinearLayout.LayoutParams(0, dp(22), 1.5f).apply { setMargins(dp(1), 0, dp(1), 0) })
-                previewBox.addView(sampleRow2)
-
-                addView(previewBox)
-
-                // Theme Details
-                val titleRow = LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(0, dp(10), 0, dp(2))
-                }
-                titleRow.addView(label(theme.name, 17f, textPrimary, true), LinearLayout.LayoutParams(0, -2, 1f))
-                titleRow.addView(TextView(this@MainActivity).apply {
-                    text = theme.category
-                    textSize = 10f
-                    setTextColor(accent)
-                    background = flatPill(surface, border, 8)
-                    setPadding(dp(8), dp(3), dp(8), dp(3))
-                })
-                addView(titleRow)
-
-                addView(label(theme.description, 13f, textSecondary, false).apply { setPadding(0, 0, 0, dp(10)) })
-
-                // Swatch Dots
-                val swatchRow = LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(0, 0, 0, dp(10))
-                }
-                listOf(theme.bg, theme.keySurface, theme.accent).forEach { col ->
-                    swatchRow.addView(View(this@MainActivity).apply {
-                        background = flatPill(col, border, 10)
-                    }, LinearLayout.LayoutParams(dp(18), dp(18)).apply { setMargins(0, 0, dp(8), 0) })
-                }
-                swatchRow.addView(label("Canvas • Keycap • Accent", 11.5f, textMuted, false))
-                addView(swatchRow)
-
-                // Action Buttons Row
-                val btnRow = LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                }
-
-                val applyBtn = Button(this@MainActivity).apply {
-                    text = if (isCurrent) "Active Theme" else "Apply Theme"
-                    isAllCaps = false
-                    textSize = 12.5f
-                    setTextColor(Color.WHITE)
-                    background = flatPill(if (isCurrent) greenActive else accent, if (isCurrent) greenActive else accentBorder, 12)
-                    setOnClickListener {
-                        prefs.edit().putString("theme", theme.name).apply()
-                        renderThemesScreen()
-                    }
-                }
-                btnRow.addView(applyBtn, LinearLayout.LayoutParams(0, dp(40), 1f).apply { rightMargin = dp(6) })
-
-                val testBtn = Button(this@MainActivity).apply {
-                    text = "Test Typing"
-                    isAllCaps = false
-                    textSize = 12.5f
-                    setTextColor(textPrimary)
-                    background = flatPill(surface, border, 12)
-                    setOnClickListener {
-                        prefs.edit().putString("theme", theme.name).apply()
-                        navigateTo(Screen.TEST_PLAYGROUND)
-                    }
-                }
-                btnRow.addView(testBtn, LinearLayout.LayoutParams(0, dp(40), 1f))
-                addView(btnRow)
-            })
-        }
+        contentContainer.addView(themesContainer)
+        populateThemeList()
     }
 
     // =========================================================================
@@ -1280,6 +1311,63 @@ class MainActivity : Activity() {
         }
         searchBox.addView(searchIcon, LinearLayout.LayoutParams(dp(20), dp(20)))
 
+        val languagesContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
+        fun populateLanguagesList() {
+            languagesContainer.removeAllViews()
+            val currentActiveLang = prefs.getString("language", "English (US)") ?: "English (US)"
+            val filtered = languages.filter {
+                languageSearchQuery.isEmpty() || it.first.contains(languageSearchQuery, ignoreCase = true) || it.second.contains(languageSearchQuery, ignoreCase = true)
+            }
+
+            if (filtered.isEmpty()) {
+                languagesContainer.addView(card {
+                    addView(label("No languages found matching \"$languageSearchQuery\"", 14f, textMuted, false).apply {
+                        gravity = Gravity.CENTER
+                        setPadding(0, dp(18), 0, dp(18))
+                    })
+                })
+                return
+            }
+
+            filtered.forEach { (name, subtitle, flagDrawableRes) ->
+                val isCurrent = name == currentActiveLang
+                languagesContainer.addView(card {
+                    val row = LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                    }
+
+                    val flagView = ImageView(this@MainActivity).apply {
+                        setImageResource(flagDrawableRes)
+                        scaleType = ImageView.ScaleType.FIT_CENTER
+                    }
+                    row.addView(flagView, LinearLayout.LayoutParams(dp(32), dp(22)).apply { rightMargin = dp(12) })
+
+                    val textCol = LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        addView(label(name, 16f, textPrimary, true))
+                        addView(label(subtitle, 12f, textSecondary, false))
+                    }
+                    row.addView(textCol, LinearLayout.LayoutParams(0, -2, 1f))
+
+                    val selectBtn = Button(this@MainActivity).apply {
+                        text = if (isCurrent) "Active" else "Select"
+                        textSize = 12f
+                        isAllCaps = false
+                        setTextColor(Color.WHITE)
+                        background = flatPill(if (isCurrent) greenActive else accent, if (isCurrent) greenActive else accentBorder, 12)
+                        setOnClickListener {
+                            prefs.edit().putString("language", name).apply()
+                            populateLanguagesList()
+                        }
+                    }
+                    row.addView(selectBtn, LinearLayout.LayoutParams(-2, dp(36)))
+                    addView(row)
+                })
+            }
+        }
+
         val searchInput = EditText(this).apply {
             hint = "Search language..."
             setHintTextColor(textMuted)
@@ -1292,6 +1380,7 @@ class MainActivity : Activity() {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                     languageSearchQuery = s?.toString().orEmpty()
+                    populateLanguagesList()
                 }
                 override fun afterTextChanged(s: Editable?) {}
             })
@@ -1300,46 +1389,8 @@ class MainActivity : Activity() {
         contentContainer.addView(searchBox)
         contentContainer.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(-1, dp(12)) })
 
-        val filtered = languages.filter {
-            languageSearchQuery.isEmpty() || it.first.contains(languageSearchQuery, ignoreCase = true)
-        }
-
-        filtered.forEach { (name, subtitle, flagDrawableRes) ->
-            val isCurrent = name == activeLang
-            contentContainer.addView(card {
-                val row = LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                }
-
-                val flagView = ImageView(this@MainActivity).apply {
-                    setImageResource(flagDrawableRes)
-                    scaleType = ImageView.ScaleType.FIT_CENTER
-                }
-                row.addView(flagView, LinearLayout.LayoutParams(dp(32), dp(22)).apply { rightMargin = dp(12) })
-
-                val textCol = LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.VERTICAL
-                    addView(label(name, 16f, textPrimary, true))
-                    addView(label(subtitle, 12f, textSecondary, false))
-                }
-                row.addView(textCol, LinearLayout.LayoutParams(0, -2, 1f))
-
-                val selectBtn = Button(this@MainActivity).apply {
-                    text = if (isCurrent) "Active" else "Select"
-                    textSize = 12f
-                    isAllCaps = false
-                    setTextColor(Color.WHITE)
-                    background = flatPill(if (isCurrent) greenActive else accent, if (isCurrent) greenActive else accentBorder, 12)
-                    setOnClickListener {
-                        prefs.edit().putString("language", name).apply()
-                        renderLanguagesScreen()
-                    }
-                }
-                row.addView(selectBtn, LinearLayout.LayoutParams(-2, dp(36)))
-                addView(row)
-            })
-        }
+        contentContainer.addView(languagesContainer)
+        populateLanguagesList()
     }
 
     // =========================================================================
@@ -1602,7 +1653,7 @@ class MainActivity : Activity() {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(10), 0, 0, 0)
                 addView(label("CrazeKeyboard V2", 18f, textPrimary, true))
-                addView(label("Version 2.1 (Build 2026.10) • Gboard Architecture", 12f, textSecondary, false))
+                addView(label("Version 2.0.0 (Build 2026.10) • Gboard Architecture", 12f, textSecondary, false))
             }
             titleRow.addView(tCol)
             addView(titleRow)
@@ -1777,239 +1828,4 @@ class MainActivity : Activity() {
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
     private fun dp(value: Float): Int = (value * resources.displayMetrics.density).toInt()
 
-    private fun ThemeDescriptor.toThemeColors(): LatinKeyboardView.ThemeColors {
-        return LatinKeyboardView.ThemeColors(
-            bg = bg,
-            keySurface = keySurface,
-            keyBorder = border,
-            keyPressed = surface,
-            keyFunc = cardSurface,
-            keyFuncBorder = borderLight,
-            accent = accent,
-            accentBorder = accentBorder,
-            textPrimary = textPrimary,
-            textSecondary = textSecondary,
-            divider = dividerColor
-        )
-    }
-
-    private fun createInAppKeyboardDrawer(): View {
-        val themeDesc = getActiveThemeDescriptor()
-        var isDrawerToolsMode = false
-        var isDrawerExpanded = true
-
-        val drawerRoot = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            val cornerR = dp(16).toFloat()
-            background = GradientDrawable().apply {
-                setColor(themeDesc.bg)
-                cornerRadii = floatArrayOf(
-                    cornerR, cornerR,
-                    cornerR, cornerR,
-                    0f, 0f,
-                    0f, 0f
-                )
-                setStroke(dp(1), border)
-            }
-            elevation = dp(12).toFloat()
-            setPadding(dp(8), dp(4), dp(8), dp(6))
-        }
-
-        // 1. Top Grabber Handle & Header Toggle
-        val headerRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(4), dp(2), dp(4), dp(2))
-        }
-
-        val grabberPill = View(this).apply {
-            background = flatPill(dividerColor, dividerColor, 3)
-        }
-        val grabberContainer = LinearLayout(this).apply {
-            gravity = Gravity.CENTER
-            addView(grabberPill, LinearLayout.LayoutParams(dp(36), dp(4)))
-        }
-        headerRow.addView(grabberContainer, LinearLayout.LayoutParams(0, -2, 1f))
-
-        val toggleExpandBtn = TextView(this).apply {
-            text = "⌨ CrazeKeyboard VW Toolbar"
-            textSize = 11.5f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(accent)
-            background = flatPill(surface, border, 10)
-            setPadding(dp(8), dp(3), dp(8), dp(3))
-        }
-        headerRow.addView(toggleExpandBtn)
-        drawerRoot.addView(headerRow)
-
-        // 2. Keyboard Body Container (Top Strip Toolbar + Keypad)
-        val bodyContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-
-        toggleExpandBtn.setOnClickListener {
-            vibrateInApp(10L)
-            playInAppSound()
-            isDrawerExpanded = !isDrawerExpanded
-            bodyContainer.visibility = if (isDrawerExpanded) View.VISIBLE else View.GONE
-            toggleExpandBtn.text = if (isDrawerExpanded) "⌨ CrazeKeyboard VW Toolbar" else "⌨ Show CrazeKeyboard VW"
-        }
-
-        // Top Strip Toolbar
-        val topStrip = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(-1, dp(38))
-            setBackgroundColor(themeDesc.bg)
-        }
-
-        val toolsToggleBtn = ImageView(this).apply {
-            setImageResource(R.drawable.ic_kb_tools)
-            imageTintList = ColorStateList.valueOf(textSecondary)
-            scaleType = ImageView.ScaleType.CENTER_INSIDE
-            setPadding(dp(6), dp(6), dp(6), dp(6))
-        }
-
-        val centerFrame = FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(0, -1, 1f)
-        }
-
-        val suggestionsStrip = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            layoutParams = FrameLayout.LayoutParams(-1, -1)
-        }
-
-        val cand1 = TextView(this).apply {
-            text = "the"
-            textSize = 13f
-            setTextColor(textSecondary)
-            gravity = Gravity.CENTER
-            setOnClickListener { vibrateInApp(10L); playInAppSound(); Toast.makeText(this@MainActivity, "Word selected: the", Toast.LENGTH_SHORT).show() }
-        }
-        suggestionsStrip.addView(cand1, LinearLayout.LayoutParams(0, -1, 1f))
-
-        suggestionsStrip.addView(View(this).apply {
-            setBackgroundColor(dividerColor)
-        }, LinearLayout.LayoutParams(dp(1), dp(16)))
-
-        val cand2 = TextView(this).apply {
-            text = "keyboard"
-            textSize = 14f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            setOnClickListener { vibrateInApp(10L); playInAppSound(); Toast.makeText(this@MainActivity, "Word selected: keyboard", Toast.LENGTH_SHORT).show() }
-        }
-        suggestionsStrip.addView(cand2, LinearLayout.LayoutParams(0, -1, 1.3f))
-
-        suggestionsStrip.addView(View(this).apply {
-            setBackgroundColor(dividerColor)
-        }, LinearLayout.LayoutParams(dp(1), dp(16)))
-
-        val cand3 = TextView(this).apply {
-            text = "smart"
-            textSize = 13f
-            setTextColor(textSecondary)
-            gravity = Gravity.CENTER
-            setOnClickListener { vibrateInApp(10L); playInAppSound(); Toast.makeText(this@MainActivity, "Word selected: smart", Toast.LENGTH_SHORT).show() }
-        }
-        suggestionsStrip.addView(cand3, LinearLayout.LayoutParams(0, -1, 1f))
-
-        val toolsStrip = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            layoutParams = FrameLayout.LayoutParams(-1, -1)
-            visibility = View.GONE
-        }
-
-        val toolIcons = listOf(
-            Triple(R.drawable.ic_kb_emoji, "Emoji") { Toast.makeText(this@MainActivity, "Emoji Toolbar Tool", Toast.LENGTH_SHORT).show() },
-            Triple(R.drawable.ic_kb_clipboard, "Clipboard") { Toast.makeText(this@MainActivity, "Clipboard Toolbar Tool", Toast.LENGTH_SHORT).show() },
-            Triple(R.drawable.ic_kb_edit, "Text Edit") { Toast.makeText(this@MainActivity, "Text Editor Toolbar Tool", Toast.LENGTH_SHORT).show() },
-            Triple(R.drawable.ic_kb_palette, "Theme") {
-                val names = allThemes.map { it.name }
-                val curr = prefs.getString("theme", "Material You Dark Slate")
-                val next = names[(names.indexOf(curr) + 1) % names.size]
-                prefs.edit().putString("theme", next).apply()
-                renderHomeScreen()
-            },
-            Triple(R.drawable.ic_kb_settings, "Settings") { navigateTo(Screen.SOUND_HAPTICS) }
-        )
-
-        toolIcons.forEach { (iconRes, name, action) ->
-            val toolBtn = ImageView(this).apply {
-                setImageResource(iconRes)
-                imageTintList = ColorStateList.valueOf(textSecondary)
-                scaleType = ImageView.ScaleType.CENTER_INSIDE
-                setPadding(dp(8), dp(6), dp(8), dp(6))
-                setOnClickListener {
-                    vibrateInApp(12L)
-                    playInAppSound()
-                    action()
-                }
-            }
-            toolsStrip.addView(toolBtn, LinearLayout.LayoutParams(0, -1, 1f))
-        }
-
-        centerFrame.addView(suggestionsStrip)
-        centerFrame.addView(toolsStrip)
-
-        toolsToggleBtn.setOnClickListener {
-            vibrateInApp(12L)
-            playInAppSound()
-            isDrawerToolsMode = !isDrawerToolsMode
-            if (isDrawerToolsMode) {
-                toolsToggleBtn.setImageResource(R.drawable.ic_kb_chevron_left)
-                toolsToggleBtn.imageTintList = ColorStateList.valueOf(accent)
-                suggestionsStrip.visibility = View.GONE
-                toolsStrip.visibility = View.VISIBLE
-            } else {
-                toolsToggleBtn.setImageResource(R.drawable.ic_kb_tools)
-                toolsToggleBtn.imageTintList = ColorStateList.valueOf(textSecondary)
-                suggestionsStrip.visibility = View.VISIBLE
-                toolsStrip.visibility = View.GONE
-            }
-        }
-
-        val micBtn = ImageView(this).apply {
-            setImageResource(R.drawable.ic_kb_mic)
-            imageTintList = ColorStateList.valueOf(textSecondary)
-            scaleType = ImageView.ScaleType.CENTER_INSIDE
-            setPadding(dp(6), dp(6), dp(6), dp(6))
-            setOnClickListener {
-                vibrateInApp(12L)
-                playInAppSound()
-                Toast.makeText(this@MainActivity, "Voice Dictation Active", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        topStrip.addView(toolsToggleBtn, LinearLayout.LayoutParams(dp(36), dp(36)))
-        topStrip.addView(centerFrame)
-        topStrip.addView(micBtn, LinearLayout.LayoutParams(dp(36), dp(36)))
-
-        bodyContainer.addView(topStrip)
-
-        // LatinKeyboardView Keypad
-        val kbView = LatinKeyboardView(this).apply {
-            this.theme = themeDesc.toThemeColors()
-            this.listener = object : LatinKeyboardView.OnKeyboardActionListener {
-                override fun onKey(code: String) {
-                    vibrateInApp(10L)
-                    playInAppSound()
-                }
-                override fun onSecondaryKey(subCode: String) {}
-                override fun onSecondaryReplace(oldCode: String, newSubCode: String) {}
-                override fun onKeyActionDown(code: String) { vibrateInApp(8L); playInAppSound() }
-                override fun onKeyActionUp(code: String) {}
-                override fun onSpaceDrag(isRight: Boolean) {}
-                override fun onBackspaceSwipe() {}
-                override fun onDeleteWord() {}
-            }
-        }
-        bodyContainer.addView(kbView)
-        drawerRoot.addView(bodyContainer)
-
-        return drawerRoot
-    }
 }

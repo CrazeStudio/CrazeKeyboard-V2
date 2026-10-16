@@ -31,6 +31,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 
 class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboardActionListener {
 
@@ -59,11 +60,16 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
     private var keyboardView: LatinKeyboardView? = null
     private var panelContainer: FrameLayout? = null
     private var floatingHandleBar: View? = null
+    private var dividerLine: View? = null
 
     private var currentMode = KeyboardMode.NORMAL
     private var shifted = false
     private var capsLock = false
     private var symbols = false
+    private var lastThemeName = ""
+    private var lastKeyHeight = -1
+    private var lastLanguage = ""
+    private val clipboardHistory = mutableListOf<String>()
     private var moreSymbols = false
     private var bengali = false
     private var lastSpaceTime = 0L
@@ -301,23 +307,43 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
         )
     )
 
-    override fun onCreateCandidatesView(): View? {
-        return null
+    override fun onCreate() {
+        super.onCreate()
+        LatinDictionary.init(this)
     }
 
-    open fun onEvaluateCandidatesViewShown(): Boolean {
-        return false
+    override fun onCreateCandidatesView(): View? {
+        return null
     }
 
     override fun onConfigureWindow(win: Window, isFullscreen: Boolean, isCandidatesOnly: Boolean) {
         super.onConfigureWindow(win, isFullscreen, isCandidatesOnly)
         val themeBg = getThemeColors().bg
-        win.setBackgroundDrawable(ColorDrawable(themeBg))
+        // Transparent window background ensures the rounded top independent layer sheet cleanly floats above the app
+        win.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         win.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         win.setDimAmount(0f)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             win.navigationBarColor = themeBg
         }
+    }
+
+    override fun onEvaluateFullscreenMode(): Boolean {
+        // Prevent IME from taking over the full display; maintain independent attached layer
+        return false
+    }
+
+    override fun onComputeInsets(outInsets: Insets) {
+        super.onComputeInsets(outInsets)
+        val container = rootContainer ?: return
+        val loc = IntArray(2)
+        container.getLocationInWindow(loc)
+        val top = loc[1]
+        if (top > 0) {
+            outInsets.contentTopInsets = top
+            outInsets.visibleTopInsets = top
+        }
+        outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_CONTENT
     }
 
     override fun onCreateInputView(): View {
@@ -342,9 +368,25 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
             elevation = dp(12).toFloat()
             clipChildren = false
             clipToPadding = false
+            setPadding(0, dp(4), 0, dp(12))
         }
 
-        // 1. Physically Attached Unified Suggestions & Tools Top Strip
+        // 1. Top Grabber Handle Pill (Attached at the top of the independent layer)
+        floatingHandleBar = View(this).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(theme.divider)
+                cornerRadius = dp(3).toFloat()
+            }
+        }
+        val grabberContainer = LinearLayout(this).apply {
+            gravity = Gravity.CENTER
+            setPadding(0, dp(2), 0, dp(4))
+            addView(floatingHandleBar, LinearLayout.LayoutParams(dp(36), dp(4)))
+        }
+        rootContainer!!.addView(grabberContainer, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        // 2. Physically Attached Unified Suggestions & Tools Top Strip
         buildUnifiedTopStrip()
         topStripLayout?.let { strip ->
             (strip.parent as? ViewGroup)?.removeView(strip)
@@ -352,13 +394,13 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
             rootContainer!!.addView(strip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44)))
         }
 
-        // 2. Subtle Hairline Divider between Toolbar and Keycaps
-        val dividerLine = View(this).apply {
+        // 3. Subtle Hairline Divider between Toolbar and Keycaps
+        dividerLine = View(this).apply {
             setBackgroundColor(theme.divider)
         }
         rootContainer!!.addView(dividerLine, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)))
 
-        // 3. Panel Container hosting Keyboard View or Emoji / Clipboard panel
+        // 4. Panel Container hosting Keyboard View or Emoji / Clipboard panel
         panelContainer = FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             clipChildren = false
@@ -384,9 +426,55 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         setCandidatesViewShown(false)
+        updateClipboardHistory()
+
+        val currentThemeName = getThemeName()
+        val currentKeyHeight = prefs.getInt("pref_key_height", 226)
+        val currentLanguage = prefs.getString("language", "English (US)") ?: "English (US)"
+
+        if (currentThemeName != lastThemeName || currentKeyHeight != lastKeyHeight || currentLanguage != lastLanguage) {
+            lastThemeName = currentThemeName
+            lastKeyHeight = currentKeyHeight
+            lastLanguage = currentLanguage
+            setInputView(onCreateInputView())
+        } else {
+            applyTheme()
+            keyboardView?.loadPreferences(prefs)
+        }
+
+        // Handle numeric / PIN / phone / password input types automatically
+        val inputType = info?.inputType ?: EditorInfo.TYPE_CLASS_TEXT
+        val clazz = inputType and EditorInfo.TYPE_MASK_CLASS
+        val variation = inputType and EditorInfo.TYPE_MASK_VARIATION
+
+        if (clazz == EditorInfo.TYPE_CLASS_NUMBER ||
+            clazz == EditorInfo.TYPE_CLASS_PHONE ||
+            clazz == EditorInfo.TYPE_CLASS_DATETIME ||
+            variation == EditorInfo.TYPE_NUMBER_VARIATION_PASSWORD) {
+            symbols = true
+            moreSymbols = false
+        } else {
+            symbols = false
+            moreSymbols = false
+        }
+
         checkAutoCapitalization()
         updateKeyboardLayout()
         updateSuggestions()
+    }
+
+    private fun updateClipboardHistory() {
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
+        val clip = cm.primaryClip
+        if (clip != null && clip.itemCount > 0) {
+            val text = clip.getItemAt(0)?.text?.toString()?.trim()
+            if (!text.isNullOrEmpty() && !clipboardHistory.contains(text)) {
+                clipboardHistory.add(0, text)
+                if (clipboardHistory.size > 15) {
+                    clipboardHistory.removeLast()
+                }
+            }
+        }
     }
 
     // Unified 40dp Gboard-style top strip: seamlessly toggles between word suggestions and quick tools
@@ -443,14 +531,16 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
         suggestionDividers.clear()
 
         // 3 Candidate words: Left, Center (Primary Bold White), Right
+        val defaultWords = listOf("the", "keyboard", "smart")
         for (i in 0 until 3) {
             val tv = TextView(this).apply {
+                text = defaultWords[i]
                 textSize = if (i == 1) 14.5f else 13.5f
                 typeface = if (i == 1) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
                 gravity = Gravity.CENTER
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
-                setTextColor(if (i == 1) Color.WHITE else theme.textSecondary)
+                setTextColor(if (i == 1) theme.textPrimary else theme.textSecondary)
                 val normal = GradientDrawable().apply {
                     setColor(Color.TRANSPARENT)
                     cornerRadius = dp(8).toFloat()
@@ -621,7 +711,7 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
 
         val before = currentInputConnection?.getTextBeforeCursor(40, 0)?.toString().orEmpty()
         val token = before.substringAfterLast(' ').substringAfterLast('\n')
-        val words = LatinDictionary.getSuggestions(token, 3)
+        val words = LatinDictionary.getSuggestions(token, 3, before)
 
         // Seamless text word suggestions:
         // Slot 0: Left secondary suggestion
@@ -642,7 +732,7 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
                 slotCenter?.apply {
                     text = centerWord
                     visibility = View.VISIBLE
-                    setTextColor(Color.WHITE)
+                    setTextColor(theme.textPrimary)
                     typeface = Typeface.DEFAULT_BOLD
                     setOnClickListener {
                         vibrate(10)
@@ -688,7 +778,7 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
                 slotCenter?.apply {
                     text = centerWord
                     visibility = View.VISIBLE
-                    setTextColor(Color.WHITE)
+                    setTextColor(theme.textPrimary)
                     typeface = Typeface.DEFAULT_BOLD
                     setOnClickListener {
                         vibrate(10)
@@ -719,7 +809,7 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
                 slotCenter?.apply {
                     text = centerWord
                     visibility = View.VISIBLE
-                    setTextColor(Color.WHITE)
+                    setTextColor(theme.textPrimary)
                     typeface = Typeface.DEFAULT_BOLD
                     setOnClickListener {
                         vibrate(10)
@@ -747,6 +837,7 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
             conn.deleteSurroundingText(prefix.length, 0)
         }
         conn.commitText("$word ", 1)
+        LatinDictionary.learnWord(word)
         checkAutoCapitalization()
         updateSuggestions()
     }
@@ -755,9 +846,14 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
         if (!prefs.getBoolean("autocap", true)) return
         val before = currentInputConnection?.getTextBeforeCursor(2, 0)?.toString().orEmpty()
         val shouldCap = before.isEmpty() || before.endsWith(". ") || before.endsWith("\n") || before.endsWith("? ") || before.endsWith("! ")
-        if (shouldCap && !shifted) {
+        if (shouldCap && !shifted && !capsLock) {
             shifted = true
             syncShiftState()
+            updateKeyboardLayout()
+        } else if (!shouldCap && shifted && !capsLock) {
+            shifted = false
+            syncShiftState()
+            updateKeyboardLayout()
         }
     }
 
@@ -765,7 +861,6 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
         val kv = keyboardView ?: return
         kv.isShifted = shifted
         kv.isCapsLock = capsLock
-        // Fast update shift key icon without recreating entire key structures
         val shiftKey = kv.findKeyByCode("⇧")
         if (shiftKey != null) {
             shiftKey.iconRes = if (capsLock) R.drawable.ic_kb_shift_caps else R.drawable.ic_kb_shift
@@ -773,13 +868,8 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
         }
     }
 
-    private fun LatinKeyboardView.findKeyByCode(code: String): LatinKey? {
-        // Simple search across rows
-        val all = mutableListOf<LatinKey>()
-        for (i in 0 until 4) {
-            // Checked via invalidate
-        }
-        return null
+    private fun findKeyByCode(code: String): LatinKey? {
+        return keyboardView?.findKeyByCode(code)
     }
 
     private fun getActionIcon(): Int {
@@ -793,13 +883,67 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
         }
     }
 
+    private fun cycleLanguage() {
+        vibrate(12)
+        val langs = listOf("English (US)", "Español", "Français", "Deutsch", "বাংলা (Bengali)")
+        val current = prefs.getString("language", "English (US)") ?: "English (US)"
+        val next = langs[(langs.indexOf(current) + 1) % langs.size]
+        prefs.edit().putString("language", next).apply()
+        Toast.makeText(this, next, Toast.LENGTH_SHORT).show()
+        updateKeyboardLayout()
+        updateSuggestions()
+    }
+
+    private fun getRow4(langLabel: String): List<LatinKey> {
+        val editorInfo = currentInputEditorInfo
+        val inputType = editorInfo?.inputType ?: EditorInfo.TYPE_CLASS_TEXT
+        val variation = inputType and EditorInfo.TYPE_MASK_VARIATION
+
+        val isEmail = variation == EditorInfo.TYPE_TEXT_VARIATION_EMAIL_ADDRESS ||
+                variation == EditorInfo.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS
+        val isUri = variation == EditorInfo.TYPE_TEXT_VARIATION_URI
+
+        val actionIcon = getActionIcon()
+
+        return when {
+            isEmail -> listOf(
+                LatinKey("?123", label = "?123", isFunctional = true, weight = 1.3f),
+                LatinKey("lang", iconRes = R.drawable.ic_kb_globe, isFunctional = true, weight = 1f),
+                LatinKey("@", label = "@", weight = 1f),
+                LatinKey("space", label = langLabel, isSpace = true, weight = 3.6f),
+                LatinKey(".", label = ".", subLabel = ".com", weight = 1.1f),
+                LatinKey("↵", iconRes = actionIcon, isAction = true, weight = 1.3f)
+            )
+            isUri -> listOf(
+                LatinKey("?123", label = "?123", isFunctional = true, weight = 1.3f),
+                LatinKey("lang", iconRes = R.drawable.ic_kb_globe, isFunctional = true, weight = 1f),
+                LatinKey("/", label = "/", weight = 1f),
+                LatinKey("space", label = langLabel, isSpace = true, weight = 3.4f),
+                LatinKey(".com", label = ".com", weight = 1.4f),
+                LatinKey("↵", iconRes = actionIcon, isAction = true, weight = 1.3f)
+            )
+            else -> listOf(
+                LatinKey("?123", label = "?123", isFunctional = true, weight = 1.3f),
+                LatinKey("lang", iconRes = R.drawable.ic_kb_globe, isFunctional = true, weight = 1f),
+                LatinKey("☻", iconRes = R.drawable.ic_kb_emoji, isFunctional = true, weight = 1f),
+                LatinKey("space", label = langLabel, isSpace = true, weight = 3.8f),
+                LatinKey(".", label = ".", subLabel = ">", weight = 1.1f),
+                LatinKey("↵", iconRes = actionIcon, isAction = true, weight = 1.3f)
+            )
+        }
+    }
+
     private fun updateKeyboardLayout() {
         val kv = keyboardView ?: return
         kv.isShifted = shifted
         kv.isCapsLock = capsLock
+        val lang = prefs.getString("language", "English (US)") ?: "English (US)"
         val rows = when {
             symbols -> buildSymbolsRows()
-            bengali -> buildBengaliRows()
+            lang == "বাংলা (Bengali)" -> buildBengaliRows()
+            lang == "Español" -> buildSpanishRows()
+            lang == "Français" -> buildFrenchRows()
+            lang == "Deutsch" -> buildGermanRows()
             else -> buildLatinRows()
         }
         kv.setKeyRows(rows)
@@ -828,15 +972,88 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
         }
         row3.add(LatinKey("⌫", label = "⌫", iconRes = R.drawable.ic_kb_backspace, isFunctional = true, weight = 1.6f))
 
-        val row4 = listOf(
-            LatinKey("?123", label = "?123", isFunctional = true, weight = 1.4f),
-            LatinKey(",", label = ",", subLabel = "<", weight = 1f),
-            LatinKey("☻", iconRes = R.drawable.ic_kb_emoji, isFunctional = true, weight = 1f),
-            LatinKey("space", label = "space", isSpace = true, weight = 4.2f),
-            LatinKey(".", label = ".", subLabel = ">", weight = 1f),
-            LatinKey("↵", iconRes = getActionIcon(), isAction = true, weight = 1.4f)
-        )
+        val row4 = getRow4("English")
+        return listOf(row1, row2, row3, row4)
+    }
 
+    private fun buildSpanishRows(): List<List<LatinKey>> {
+        val r1Keys = listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p")
+        val r1Subs = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
+        val row1 = r1Keys.mapIndexed { i, k ->
+            LatinKey(k, label = k, subLabel = r1Subs[i], weight = 1f)
+        }
+
+        val r2Keys = listOf("a", "s", "d", "f", "g", "h", "j", "k", "l", "ñ")
+        val r2Subs = listOf("@", "#", "$", "%", "&", "-", "+", "(", ")", "¿")
+        val row2 = r2Keys.mapIndexed { i, k ->
+            LatinKey(k, label = k, subLabel = r2Subs[i], weight = 1f)
+        }
+
+        val r3Keys = listOf("z", "x", "c", "v", "b", "n", "m")
+        val r3Subs = listOf("*", "\"", "'", ":", ";", "!", "?")
+        val shiftIcon = if (capsLock) R.drawable.ic_kb_shift_caps else R.drawable.ic_kb_shift
+        val row3 = mutableListOf<LatinKey>()
+        row3.add(LatinKey("⇧", label = "⇧", iconRes = shiftIcon, isFunctional = true, weight = 1.3f))
+        r3Keys.forEachIndexed { i, k ->
+            row3.add(LatinKey(k, label = k, subLabel = r3Subs[i], weight = 1f))
+        }
+        row3.add(LatinKey("⌫", label = "⌫", iconRes = R.drawable.ic_kb_backspace, isFunctional = true, weight = 1.5f))
+
+        val row4 = getRow4("Español")
+        return listOf(row1, row2, row3, row4)
+    }
+
+    private fun buildFrenchRows(): List<List<LatinKey>> {
+        val r1Keys = listOf("a", "z", "e", "r", "t", "y", "u", "i", "o", "p")
+        val r1Subs = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
+        val row1 = r1Keys.mapIndexed { i, k ->
+            LatinKey(k, label = k, subLabel = r1Subs[i], weight = 1f)
+        }
+
+        val r2Keys = listOf("q", "s", "d", "f", "g", "h", "j", "k", "l", "m")
+        val r2Subs = listOf("@", "#", "$", "%", "&", "-", "+", "(", ")", "ç")
+        val row2 = r2Keys.mapIndexed { i, k ->
+            LatinKey(k, label = k, subLabel = r2Subs[i], weight = 1f)
+        }
+
+        val r3Keys = listOf("w", "x", "c", "v", "b", "n", "'")
+        val r3Subs = listOf("*", "\"", "é", "è", "à", "ù", "?")
+        val shiftIcon = if (capsLock) R.drawable.ic_kb_shift_caps else R.drawable.ic_kb_shift
+        val row3 = mutableListOf<LatinKey>()
+        row3.add(LatinKey("⇧", label = "⇧", iconRes = shiftIcon, isFunctional = true, weight = 1.3f))
+        r3Keys.forEachIndexed { i, k ->
+            row3.add(LatinKey(k, label = k, subLabel = r3Subs[i], weight = 1f))
+        }
+        row3.add(LatinKey("⌫", label = "⌫", iconRes = R.drawable.ic_kb_backspace, isFunctional = true, weight = 1.5f))
+
+        val row4 = getRow4("Français")
+        return listOf(row1, row2, row3, row4)
+    }
+
+    private fun buildGermanRows(): List<List<LatinKey>> {
+        val r1Keys = listOf("q", "w", "e", "r", "t", "z", "u", "i", "o", "p", "ü")
+        val r1Subs = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "ß")
+        val row1 = r1Keys.mapIndexed { i, k ->
+            LatinKey(k, label = k, subLabel = r1Subs[i], weight = 1f)
+        }
+
+        val r2Keys = listOf("a", "s", "d", "f", "g", "h", "j", "k", "l", "ö", "ä")
+        val r2Subs = listOf("@", "#", "$", "%", "&", "-", "+", "(", ")", "/", "€")
+        val row2 = r2Keys.mapIndexed { i, k ->
+            LatinKey(k, label = k, subLabel = r2Subs[i], weight = 1f)
+        }
+
+        val r3Keys = listOf("y", "x", "c", "v", "b", "n", "m")
+        val r3Subs = listOf("*", "\"", "'", ":", ";", "!", "?")
+        val shiftIcon = if (capsLock) R.drawable.ic_kb_shift_caps else R.drawable.ic_kb_shift
+        val row3 = mutableListOf<LatinKey>()
+        row3.add(LatinKey("⇧", label = "⇧", iconRes = shiftIcon, isFunctional = true, weight = 1.4f))
+        r3Keys.forEachIndexed { i, k ->
+            row3.add(LatinKey(k, label = k, subLabel = r3Subs[i], weight = 1f))
+        }
+        row3.add(LatinKey("⌫", label = "⌫", iconRes = R.drawable.ic_kb_backspace, isFunctional = true, weight = 1.6f))
+
+        val row4 = getRow4("Deutsch")
         return listOf(row1, row2, row3, row4)
     }
 
@@ -887,14 +1104,7 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
         listOf("ত", "থ", "দ", "ধ", "ন", "প", "ব").forEach { row3.add(LatinKey(it, label = it, weight = 1f)) }
         row3.add(LatinKey("⌫", label = "⌫", iconRes = R.drawable.ic_kb_backspace, isFunctional = true, weight = 1.6f))
 
-        val row4 = listOf(
-            LatinKey("?123", label = "?123", isFunctional = true, weight = 1.4f),
-            LatinKey(",", label = ",", weight = 1f),
-            LatinKey("☻", iconRes = R.drawable.ic_kb_emoji, isFunctional = true, weight = 1f),
-            LatinKey("space", label = "বাংলা", isSpace = true, weight = 4.2f),
-            LatinKey(".", label = ".", weight = 1f),
-            LatinKey("↵", iconRes = getActionIcon(), isAction = true, weight = 1.4f)
-        )
+        val row4 = getRow4("বাংলা")
         return listOf(row1, row2, row3, row4)
     }
 
@@ -908,7 +1118,6 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
 
         when (code) {
             "⌫" -> {
-                // Handled on touch down; if triggered directly:
                 deleteCharOrSelection()
             }
             "↵" -> {
@@ -927,12 +1136,25 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
                         sendDownUpKeyEvents(KeyEvent.KEYCODE_ENTER)
                     }
                 }
+                checkAutoCapitalization()
+                updateSuggestions()
             }
             "⇧" -> {
-                if (shifted) capsLock = !capsLock
-                shifted = !shifted
-                keyboardView?.isShifted = shifted
-                keyboardView?.isCapsLock = capsLock
+                when {
+                    capsLock -> {
+                        capsLock = false
+                        shifted = false
+                    }
+                    shifted -> {
+                        capsLock = true
+                        shifted = false
+                    }
+                    else -> {
+                        shifted = true
+                        capsLock = false
+                    }
+                }
+                syncShiftState()
                 updateKeyboardLayout()
             }
             "?123" -> {
@@ -950,9 +1172,16 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
                 moreSymbols = false
                 updateKeyboardLayout()
             }
+            "lang" -> {
+                cycleLanguage()
+            }
+            ".com" -> {
+                conn.commitText(".com", 1)
+                updateSuggestions()
+            }
             "space" -> {
                 val now = System.currentTimeMillis()
-                if (now - lastSpaceTime < 350) {
+                if (prefs.getBoolean("double_space_period", true) && now - lastSpaceTime < 350) {
                     val before = conn.getTextBeforeCursor(2, 0)?.toString().orEmpty()
                     if (before.endsWith(" ")) {
                         conn.deleteSurroundingText(1, 0)
@@ -973,7 +1202,9 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
                 showGboardEmojiPanel()
             }
             else -> {
-                val text = if (!bengali && !symbols && (shifted || capsLock) && code.length == 1) {
+                val lang = prefs.getString("language", "English (US)") ?: "English (US)"
+                val isLatinScript = lang != "বাংলা (Bengali)"
+                val text = if (isLatinScript && !symbols && (shifted || capsLock) && code.length == 1) {
                     code.uppercase()
                 } else code
                 conn.commitText(text, 1)
@@ -1018,7 +1249,9 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
                 setStripMode(StripMode.SUGGESTIONS)
             }
             deleteCharOrSelection()
-            startRepeatBackspace()
+            if (prefs.getBoolean("repeat_backspace", true)) {
+                startRepeatBackspace()
+            }
         }
     }
 
@@ -1029,6 +1262,7 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
     }
 
     override fun onSpaceDrag(isRight: Boolean) {
+        if (!prefs.getBoolean("space_glide", true)) return
         vibrate(6)
         if (isRight) {
             sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_RIGHT)
@@ -1042,6 +1276,7 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
         deleteWordBeforeCursor()
         vibrate(16)
         playSound()
+        checkAutoCapitalization()
         updateSuggestions()
     }
 
@@ -1049,6 +1284,7 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
         deleteWordBeforeCursor()
         vibrate(16)
         playSound()
+        checkAutoCapitalization()
         updateSuggestions()
     }
 
@@ -1060,6 +1296,7 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
         } else {
             conn.deleteSurroundingText(1, 0)
         }
+        checkAutoCapitalization()
         updateSuggestions()
     }
 
@@ -1351,7 +1588,7 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
             textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
+            setTextColor(theme.textPrimary)
             background = GradientDrawable().apply {
                 setColor(theme.accent)
                 cornerRadius = dp(8).toFloat()
@@ -1429,24 +1666,34 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
             gravity = Gravity.CENTER
         }
         header.addView(title, LinearLayout.LayoutParams(0, -2, 1f))
-        root.addView(header)
 
-        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clipList = mutableListOf<String>()
-        val clip = cm.primaryClip
-        if (clip != null) {
-            for (i in 0 until clip.itemCount) {
-                val t = clip.getItemAt(i)?.text?.toString()
-                if (!t.isNullOrBlank()) clipList.add(t)
+        val clearBtn = TextView(this).apply {
+            text = "Clear"
+            textSize = 12f
+            setTextColor(theme.accent)
+            background = GradientDrawable().apply {
+                setColor(theme.keyFunc)
+                cornerRadius = dp(8).toFloat()
+            }
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            setOnClickListener {
+                vibrate(10)
+                clipboardHistory.clear()
+                showClipboardPanel()
             }
         }
+        header.addView(clearBtn, LinearLayout.LayoutParams(-2, dp(36)))
+        root.addView(header)
+
+        updateClipboardHistory()
+        val clipList = clipboardHistory.toList()
 
         val scroll = ScrollView(this).apply { layoutParams = LinearLayout.LayoutParams(-1, dp(180)) }
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(4), dp(4), dp(4)) }
 
         if (clipList.isEmpty()) {
             val emptyTv = TextView(this).apply {
-                text = "Clipboard is empty\nCopy text from any app to quickly paste here."
+                text = "Clipboard history is empty\nCopy text from any app to quickly paste here."
                 textSize = 14f
                 setTextColor(theme.textMuted)
                 gravity = Gravity.CENTER
@@ -1487,7 +1734,7 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
 
     private fun applyTheme() {
         val t = getThemeColors()
-        try { window?.window?.setBackgroundDrawable(ColorDrawable(t.bg)) } catch (_: Exception) {}
+        try { window?.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT)) } catch (_: Exception) {}
         
         val cornerR = dp(18).toFloat()
         val layerBg = GradientDrawable().apply {
@@ -1515,6 +1762,10 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
             for (i in 0 until container.childCount) {
                 (container.getChildAt(i) as? ImageView)?.imageTintList = ColorStateList.valueOf(t.textSecondary)
             }
+        }
+        dividerLine?.setBackgroundColor(t.divider)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            try { window?.window?.navigationBarColor = t.bg } catch (_: Exception) {}
         }
         keyboardView?.theme = t
         keyboardView?.loadPreferences(prefs)
