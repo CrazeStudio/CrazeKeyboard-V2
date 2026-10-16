@@ -47,7 +47,7 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
         TOOLS
     }
 
-    private var stripMode = StripMode.SUGGESTIONS
+    private var stripMode = StripMode.TOOLS
     private var rootContainer: LinearLayout? = null
     private var topStripLayout: LinearLayout? = null
     private var toggleToolsButton: ImageView? = null
@@ -420,6 +420,12 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
         updateKeyboardLayout()
         updateSuggestions()
 
+        // Record the configuration used to build this view. This prevents the first
+        // onStartInputView() callback from needlessly creating a second input view.
+        lastThemeName = getThemeName()
+        lastKeyHeight = prefs.getInt("pref_key_height", 226)
+        lastLanguage = prefs.getString("language", "English (US)") ?: "English (US)"
+
         return rootContainer!!
     }
 
@@ -649,9 +655,7 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
             setMargins(dp(1), 0, dp(1), 0)
         })
 
-        // Re-apply the current mode after rebuilding the strip. Input views can be
-        // recreated when the theme, language, or key height changes; without this,
-        // the newly-created tools row stays GONE even when TOOLS was selected.
+        // Apply the initial mode only after both candidate and tool containers exist.
         setStripMode(stripMode)
         topStripLayout?.minimumHeight = dp(44)
         topStripLayout?.visibility = View.VISIBLE
