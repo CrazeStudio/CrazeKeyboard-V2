@@ -99,15 +99,15 @@ class LatinKeyboardView @JvmOverloads constructor(
     var showSecondarySymbols: Boolean = true
     var keyboardHeightDp: Int = 226
     var keyRadiusDp: Float = 7.5f
-    var keySpacingXDp: Float = 3f
-    var keySpacingYDp: Float = 4f
+    var keySpacingXDp: Float = 2f
+    var keySpacingYDp: Float = 2f
     var keyStrokeWidthDp: Float = 0.8f
 
     fun loadPreferences(prefs: android.content.SharedPreferences) {
         keyboardHeightDp = prefs.getInt("pref_key_height", 226)
         keyRadiusDp = prefs.getFloat("pref_key_radius", 7.5f)
-        keySpacingXDp = prefs.getFloat("pref_key_spacing_x", 3f)
-        keySpacingYDp = prefs.getFloat("pref_key_spacing_y", 4f)
+        keySpacingXDp = prefs.getFloat("pref_key_spacing_x", 2f)
+        keySpacingYDp = prefs.getFloat("pref_key_spacing_y", 2f)
         keyStrokeWidthDp = prefs.getFloat("pref_key_stroke", 0.8f)
         showSecondarySymbols = prefs.getBoolean("longpress", true)
         showPopups = prefs.getBoolean("popups", true)
@@ -167,15 +167,14 @@ class LatinKeyboardView @JvmOverloads constructor(
     private fun layoutKeys(width: Int, height: Int) {
         if (rows.isEmpty() || width <= 0 || height <= 0) return
 
-        val padX = dp(keySpacingXDp)
+        // Compact Gboard-like key spacing. Android already positions the IME above
+        // the navigation bar; extra bottom padding here creates an unnecessary gap.
+        val padX = dp(keySpacingXDp.coerceIn(1f, 4f))
         val numRows = rows.size
         if (numRows == 0) return
 
-        // Scale vertical spacing down on short displays so key bounds stay inside
-        // the measured keyboard and remain aligned with the visible touch surface.
-        val padY = minOf(dp(keySpacingYDp), (height / (numRows * 2 + 1)).coerceAtLeast(0))
-        val bottomSafePad = minOf(dp(16), (height / 8).coerceAtLeast(0))
-        val availableH = (height - bottomSafePad - (padY * (numRows + 1))).coerceAtLeast(1)
+        val padY = minOf(dp(keySpacingYDp.coerceIn(1f, 3f)), (height / (numRows * 3)).coerceAtLeast(0))
+        val availableH = (height - padY * (numRows + 1)).coerceAtLeast(1)
         val rowH = availableH / numRows.toFloat()
 
         for ((rIndex, row) in rows.withIndex()) {
