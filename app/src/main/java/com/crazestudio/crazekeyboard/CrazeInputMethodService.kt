@@ -334,15 +334,10 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
     }
 
     override fun onComputeInsets(outInsets: Insets) {
+        // Let InputMethodService calculate the visible/content insets from the actual
+        // measured input view. Window coordinates from getLocationInWindow() are not
+        // a reliable substitute across IME windows and gesture-navigation modes.
         super.onComputeInsets(outInsets)
-        val container = rootContainer ?: return
-        val loc = IntArray(2)
-        container.getLocationInWindow(loc)
-        val top = loc[1]
-        if (top > 0) {
-            outInsets.contentTopInsets = top
-            outInsets.visibleTopInsets = top
-        }
         outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_CONTENT
     }
 
@@ -420,6 +415,10 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
         updateKeyboardLayout()
         updateSuggestions()
 
+        // Reconcile the strip only after every root child has been attached. This
+        // prevents toolbar visibility or ordering from depending on view-build timing.
+        ensureTopStripVisible()
+
         // Record the configuration used to build this view. This prevents the first
         // onStartInputView() callback from needlessly creating a second input view.
         lastThemeName = getThemeName()
@@ -447,6 +446,14 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
             applyTheme()
             keyboardView?.loadPreferences(prefs)
         }
+
+        // A new editor must not inherit a stale emoji/clipboard/edit panel from the
+        // previous editor. Restore the normal key view before measuring the IME.
+        if (currentMode != KeyboardMode.NORMAL) {
+            currentMode = KeyboardMode.NORMAL
+            showStandardKeyboard()
+        }
+        ensureTopStripVisible()
 
         // Handle numeric / PIN / phone / password input types automatically
         val inputType = info?.inputType ?: EditorInfo.TYPE_CLASS_TEXT
@@ -481,6 +488,40 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
                 }
             }
         }
+    }
+
+    /**
+     * Keeps the toolbar as a real child of the returned IME root and repairs its
+     * layout parameters if the view was rebuilt or reparented. All geometry here is
+     * density-independent so it scales with the device.
+     */
+    private fun ensureTopStripVisible() {
+        val root = rootContainer ?: return
+        val strip = topStripLayout ?: return
+
+        val currentParent = strip.parent as? ViewGroup
+        if (currentParent !== root) {
+            currentParent?.removeView(strip)
+            val dividerIndex = dividerLine?.let { root.indexOfChild(it) } ?: -1
+            val insertAt = if (dividerIndex >= 0) dividerIndex else minOf(1, root.childCount)
+            root.addView(
+                strip,
+                insertAt,
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44))
+            )
+        } else {
+            strip.layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(44)
+            )
+        }
+
+        strip.minimumHeight = dp(44)
+        strip.visibility = View.VISIBLE
+        centerContentFrame?.visibility = View.VISIBLE
+        centerContentFrame?.layoutParams = LinearLayout.LayoutParams(0, dp(40), 1f)
+        setStripMode(stripMode)
+        root.requestLayout()
     }
 
     // Unified 40dp Gboard-style top strip: seamlessly toggles between word suggestions and quick tools
@@ -660,7 +701,6 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
         topStripLayout?.minimumHeight = dp(44)
         topStripLayout?.visibility = View.VISIBLE
 
-        // Keep the toolbar attached to rootContainer; detaching it here hides all toolbar controls.
     }
 
     private fun setStripMode(mode: StripMode) {
