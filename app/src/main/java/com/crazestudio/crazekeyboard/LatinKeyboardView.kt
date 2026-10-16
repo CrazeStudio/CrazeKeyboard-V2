@@ -134,10 +134,29 @@ class LatinKeyboardView @JvmOverloads constructor(
     fun findKeyByCode(code: String): LatinKey? = allKeys.firstOrNull { it.code == code }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val w = MeasureSpec.getSize(widthMeasureSpec)
-        val defaultH = dp(keyboardHeightDp)
-        setMeasuredDimension(w, defaultH)
-        layoutKeys(w, defaultH)
+        // Respect the available IME window size instead of forcing the preferred
+        // key height. InputMethodService can provide AT_MOST/EXACTLY specs when the
+        // navigation bar, display size, or app window reduces the available space.
+        val widthMode = MeasureSpec.getMode(widthMeasureSpec)
+        val widthSize = MeasureSpec.getSize(widthMeasureSpec)
+        val desiredWidth = if (widthMode == MeasureSpec.UNSPECIFIED) {
+            resources.displayMetrics.widthPixels
+        } else {
+            widthSize
+        }
+        val measuredWidth = resolveSize(desiredWidth, widthMeasureSpec)
+
+        val heightMode = MeasureSpec.getMode(heightMeasureSpec)
+        val heightSize = MeasureSpec.getSize(heightMeasureSpec)
+        val desiredHeight = dp(keyboardHeightDp).coerceAtLeast(dp(1))
+        val measuredHeight = when (heightMode) {
+            MeasureSpec.EXACTLY -> heightSize
+            MeasureSpec.AT_MOST -> minOf(desiredHeight, heightSize)
+            else -> desiredHeight
+        }.coerceAtLeast(0)
+
+        setMeasuredDimension(measuredWidth, measuredHeight)
+        layoutKeys(measuredWidth, measuredHeight)
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -149,10 +168,14 @@ class LatinKeyboardView @JvmOverloads constructor(
         if (rows.isEmpty() || width <= 0 || height <= 0) return
 
         val padX = dp(keySpacingXDp)
-        val padY = dp(keySpacingYDp)
-        val bottomSafePad = dp(16)
         val numRows = rows.size
-        val availableH = height - bottomSafePad - (padY * (numRows + 1))
+        if (numRows == 0) return
+
+        // Scale vertical spacing down on short displays so key bounds stay inside
+        // the measured keyboard and remain aligned with the visible touch surface.
+        val padY = minOf(dp(keySpacingYDp), (height / (numRows * 2 + 1)).coerceAtLeast(0))
+        val bottomSafePad = minOf(dp(16), (height / 8).coerceAtLeast(0))
+        val availableH = (height - bottomSafePad - (padY * (numRows + 1))).coerceAtLeast(1)
         val rowH = availableH / numRows.toFloat()
 
         for ((rIndex, row) in rows.withIndex()) {
