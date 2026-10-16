@@ -8,3 +8,5 @@ build/
 captures/
 .externalNativeBuild/
 .cxx/
+# CI-generated debug keystore (never commit signing material)
+.ci/debug.keystore
