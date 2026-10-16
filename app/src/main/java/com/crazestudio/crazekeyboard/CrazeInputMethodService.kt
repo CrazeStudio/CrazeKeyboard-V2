@@ -660,7 +660,7 @@ class CrazeInputMethodService : InputMethodService(), LatinKeyboardView.OnKeyboa
         topStripLayout?.minimumHeight = dp(44)
         topStripLayout?.visibility = View.VISIBLE
 
-        (topStripLayout?.parent as? ViewGroup)?.removeView(topStripLayout)
+        // Keep the toolbar attached to rootContainer; detaching it here hides all toolbar controls.
     }
 
     private fun setStripMode(mode: StripMode) {
