@@ -13,6 +13,8 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 20
+    env:
+      CRAZE_DEBUG_KEYSTORE: ${{ github.workspace }}/.ci/debug.keystore
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,15 +32,15 @@ jobs:
       - name: Cache debug signing key
         uses: actions/cache@v4
         with:
-          path: ~/.android/debug.keystore
+          path: .ci/debug.keystore
           key: craze-keyboard-debug-keystore-v1-${{ runner.os }}
       - name: Ensure stable debug signing key exists
         shell: bash
         run: |
-          mkdir -p "$HOME/.android"
-          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+          mkdir -p "$(dirname "$CRAZE_DEBUG_KEYSTORE")"
+          if [ ! -f "$CRAZE_DEBUG_KEYSTORE" ]; then
             keytool -genkeypair -noprompt \
-              -keystore "$HOME/.android/debug.keystore" \
+              -keystore "$CRAZE_DEBUG_KEYSTORE" \
               -storepass android \
               -keypass android \
               -alias androiddebugkey \
