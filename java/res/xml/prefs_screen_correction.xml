@@ -19,6 +19,7 @@
     xmlns:latin="http://schemas.android.com/apk/res/com.android.inputmethod.latin"
     android:title="@string/settings_screen_correction"
     android:key="screen_correction">
+    <PreferenceCategory android:title="@string/settings_category_dictionaries">
     <PreferenceScreen
         android:key="edit_personal_dictionary"
         android:title="@string/edit_personal_dictionary">
@@ -35,6 +36,8 @@
                 android:value="@string/dictionary_pack_client_id" />
         </intent>
     </PreferenceScreen>
+    </PreferenceCategory>
+    <PreferenceCategory android:title="@string/settings_category_suggestions">
     <CheckBoxPreference
         android:key="pref_key_block_potentially_offensive"
         android:title="@string/prefs_block_potentially_offensive_title"
@@ -71,4 +74,5 @@
         android:summary="@string/bigram_prediction_summary"
         android:defaultValue="true"
         android:persistent="true" />
+    </PreferenceCategory>
 </PreferenceScreen>

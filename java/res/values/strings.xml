@@ -49,7 +49,32 @@
     <!-- Settings screen title for advanced settings [CHAR LIMIT=33] -->
     <string name="settings_screen_advanced">Advanced</string>
     <!-- Settings screen title for keyboard theme settings [CHAR LIMIT=33] -->
-    <string name="settings_screen_theme">Theme</string>
+    <string name="settings_screen_theme">Keyboard theme</string>
+    <string name="keyboard_settings_welcome_title">CrazeKeyboard</string>
+    <string name="keyboard_settings_welcome_summary">Personalize your keyboard, suggestions, gestures and key feedback.</string>
+    <string name="settings_summary_preferences">Typing behavior, shortcuts and key feedback</string>
+    <string name="settings_summary_accounts">Privacy and optional dictionary sync options</string>
+    <string name="settings_summary_appearance">Themes, custom layouts and split keyboard</string>
+    <string name="settings_summary_gesture">Swipe typing, previews and gesture trails</string>
+    <string name="settings_summary_correction">Suggested words, auto-correction and dictionaries</string>
+    <string name="settings_summary_advanced">Key timing and additional typing controls</string>
+    <string name="settings_summary_theme">Choose the Craze Silver or Craze Midnight palette</string>
+    <string name="settings_summary_custom_layouts">Manage language and keyboard layout variants</string>
+    <string name="enable_split_keyboard_summary">Separate the keyboard into two halves on supported large screens</string>
+    <string name="settings_category_typing">Typing behavior</string>
+    <string name="settings_category_key_feedback">Key feedback</string>
+    <string name="settings_category_dictionaries">Dictionaries and tools</string>
+    <string name="settings_category_suggestions">Suggestions and correction</string>
+    <string name="vibrate_on_keypress_summary">Vibrate gently when a key is pressed</string>
+    <string name="sound_on_keypress_summary">Play a click sound as you type</string>
+    <string name="popup_on_keypress_summary">Show a larger preview above the pressed key</string>
+    <string name="voice_input_summary">Show the voice input shortcut when available</string>
+    <string name="keyboard_tools">Keyboard tools</string>
+    <string name="keyboard_tool_paste">Paste from clipboard</string>
+    <string name="keyboard_tool_select_all">Select all text</string>
+    <string name="keyboard_tool_copy">Copy selected text</string>
+    <string name="keyboard_tool_cut">Cut selected text</string>
+    <string name="keyboard_tool_settings">CrazeKeyboard settings</string>
 
     <!--  Option for enabling or disabling the split keyboard layout. [CHAR LIMIT=65]-->
     <string name="enable_split_keyboard">Enable split keyboard</string>
@@ -352,9 +377,9 @@ mobile devices. [CHAR LIMIT=25] -->
     <!-- The keyboard theme name, Holo Blue. This is marked as translatable="false" because this is a proper name of system-wide UI Theme.  -->
     <string name="keyboard_theme_holo_blue" translatable="false">Holo Blue</string>
     <!-- The keyboard theme name, Material Dark. This is marked as translatable="false" because this is a proper name of system-wide UI Theme.  -->
-    <string name="keyboard_theme_material_dark" translatable="false">Material Dark</string>
+    <string name="keyboard_theme_material_dark" translatable="false">Craze Midnight</string>
     <!-- The keyboard theme name, Material Light. This is marked as translatable="false" because this is a proper name of system-wide UI Theme.  -->
-    <string name="keyboard_theme_material_light" translatable="false">Material Light</string>
+    <string name="keyboard_theme_material_light" translatable="false">Craze Silver</string>
 
     <!-- Title of the preference settings for custom input styles (language and keyboard layout pairs) [CHAR LIMIT=35]-->
     <string name="custom_input_styles_title">Custom input styles</string>
