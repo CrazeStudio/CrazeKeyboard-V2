@@ -33,6 +33,7 @@
         android:layout_width="match_parent"
         android:layout_height="@dimen/config_suggestions_strip_height"
         android:gravity="center_vertical"
+        android:clipToPadding="false"
         style="?attr/suggestionStripViewStyle" />
 
     <!-- To ensure that key preview popup is correctly placed when the current system locale is
@@ -41,5 +42,6 @@
         android:id="@+id/keyboard_view"
         android:layoutDirection="ltr"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content" />
+        android:layout_height="wrap_content"
+        android:clipToPadding="false" />
 </LinearLayout>
