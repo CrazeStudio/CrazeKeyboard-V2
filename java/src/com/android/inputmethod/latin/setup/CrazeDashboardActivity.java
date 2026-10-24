@@ -50,7 +50,7 @@ public final class CrazeDashboardActivity extends Activity {
     private static final int BG=0xFF111318, SURFACE=0xFF191C22, HIGH=0xFF252A32;
     private static final int INPUT=0xFF0D0F13, TEXT=0xFFF0F2F5, MUTED=0xFFA5ACB7;
     private static final int BORDER=0xFF343B45, CYAN=0xFFB8C1CC;
-    private static final int ORANGE=0xFF9AA4B2, ORANGE=0xFFFF8A24;
+    private static final int ORANGE=0xFFFF8A24;
 
     private int tab=KEYBOARD, page=KEYBOARD;
     private String playgroundText="";
