@@ -111,6 +111,11 @@
             </intent-filter>
         </activity>
 
+        <activity android:name="com.android.inputmethod.latin.setup.CrazeDashboardActivity"
+             android:theme="@style/CrazeDashboardTheme"
+             android:label="@string/keyboard_app_name"
+             android:exported="false"
+             android:windowSoftInputMode="adjustResize" />
         <activity android:name="com.android.inputmethod.latin.permissions.PermissionsActivity"
              android:theme="@android:style/Theme.Translucent.NoTitleBar"
              android:exported="false"

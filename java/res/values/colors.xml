@@ -84,4 +84,16 @@
     <color name="setup_welcome_video_margin_color">#FFCCCCCC</color>
     <!-- Accent color for the notification. We need to match this to the OS build -->
     <color name="notification_accent_color">#FFFF8A24</color>
+
+    <!-- Extra palette text colors for Craze dashboard keyboard presets. -->
+    <color name="craze_neon_key_text">#E8F9FF</color>
+    <color name="craze_neon_functional_text">#B8F0FF</color>
+    <color name="craze_neon_inactive_text">#84C5D7</color>
+    <color name="craze_neon_hint_text">#689BAE</color>
+    <color name="craze_neon_highlight">#4CD7F6</color>
+    <color name="craze_synth_key_text">#F4E9FF</color>
+    <color name="craze_synth_functional_text">#E7C8FF</color>
+    <color name="craze_synth_inactive_text">#BBA3D3</color>
+    <color name="craze_synth_hint_text">#967BB2</color>
+    <color name="craze_synth_highlight">#D0BCFF</color>
 </resources>
