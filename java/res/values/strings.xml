@@ -52,9 +52,9 @@
     <string name="settings_screen_theme">Keyboard theme</string>
     <string name="keyboard_settings_welcome_title">CrazeKeyboard</string>
     <string name="keyboard_settings_welcome_summary">Make typing yours: choose a theme, tune suggestions and autocorrect, configure swipe typing, and adjust key feedback.</string>
-    <string name="settings_summary_preferences">Typing behavior, shortcuts and key feedback</string>
+    <string name="settings_summary_preferences">Typing behavior, keyboard shortcuts, clipboard tools and key feedback</string>
     <string name="settings_summary_accounts">Privacy and optional dictionary sync options</string>
-    <string name="settings_summary_appearance">Craze Silver and Midnight themes, language layouts and split keyboard options</string>
+    <string name="settings_summary_appearance">Craze Silver and Midnight themes, key styling, language layouts and split keyboard options</string>
     <string name="settings_summary_gesture">Swipe typing, previews and gesture trails</string>
     <string name="settings_summary_correction">Control word suggestions, next-word prediction, auto-correction and dictionaries</string>
     <string name="settings_summary_advanced">Key timing and additional typing controls</string>
@@ -75,6 +75,7 @@
     <string name="keyboard_tool_copy">Copy selected text</string>
     <string name="keyboard_tool_cut">Cut selected text</string>
     <string name="keyboard_tool_settings">CrazeKeyboard settings</string>
+    <string name="keyboard_tool_emoji">Open emoji keyboard</string>
 
     <!--  Option for enabling or disabling the split keyboard layout. [CHAR LIMIT=65]-->
     <string name="enable_split_keyboard">Enable split keyboard</string>
@@ -165,7 +166,7 @@
     <!-- Option to enable showing suggestions -->
     <string name="prefs_show_suggestions">Show correction suggestions</string>
     <!-- Description for show suggestions -->
-    <string name="prefs_show_suggestions_summary">Display suggested words while typing</string>
+    <string name="prefs_show_suggestions_summary">Show word alternatives above the keyboard; tap to use one or long-press for more choices</string>
 
     <!-- Option to block potentially offensive words to be shown [CHAR_LIMIT=30] -->
     <string name="prefs_block_potentially_offensive_title">Block offensive words</string>
