@@ -27,6 +27,8 @@ import android.util.AttributeSet;
 import android.util.TypedValue;
 import android.view.GestureDetector;
 import android.view.LayoutInflater;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.View.OnClickListener;
@@ -35,6 +37,7 @@ import android.view.ViewGroup;
 import android.view.ViewParent;
 import android.view.accessibility.AccessibilityEvent;
 import android.widget.ImageButton;
+import android.widget.PopupMenu;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
 
@@ -61,12 +64,20 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
         public void showImportantNoticeContents();
         public void pickSuggestionManually(SuggestedWordInfo word);
         public void onCodeInput(int primaryCode, int x, int y, boolean isKeyRepeat);
+        public void onKeyboardToolSelected(int action);
     }
+
+    public static final int TOOL_ACTION_PASTE = 1;
+    public static final int TOOL_ACTION_SELECT_ALL = 2;
+    public static final int TOOL_ACTION_COPY = 3;
+    public static final int TOOL_ACTION_CUT = 4;
+    public static final int TOOL_ACTION_SETTINGS = 5;
 
     static final boolean DBG = DebugFlags.DEBUG_ENABLED;
     private static final float DEBUG_INFO_TEXT_SIZE_IN_DIP = 6.0f;
 
     private final ViewGroup mSuggestionsStrip;
+    private final ImageButton mToolsKey;
     private final ImageButton mVoiceKey;
     private final View mImportantNoticeStrip;
     MainKeyboardView mMainKeyboardView;
@@ -139,6 +150,7 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
         inflater.inflate(R.layout.suggestions_strip, this);
 
         mSuggestionsStrip = (ViewGroup)findViewById(R.id.suggestions_strip);
+        mToolsKey = (ImageButton)findViewById(R.id.suggestions_strip_tools_key);
         mVoiceKey = (ImageButton)findViewById(R.id.suggestions_strip_voice_key);
         mImportantNoticeStrip = findViewById(R.id.important_notice_strip);
         mStripVisibilityGroup = new StripVisibilityGroup(this, mSuggestionsStrip,
@@ -178,6 +190,7 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
         keyboardAttr.recycle();
         mVoiceKey.setImageDrawable(iconVoice);
         mVoiceKey.setOnClickListener(this);
+        mToolsKey.setOnClickListener(this);
     }
 
     /**
@@ -445,10 +458,39 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
         return true;
     }
 
+    private void showKeyboardToolsMenu() {
+        final PopupMenu popup = new PopupMenu(getContext(), mToolsKey);
+        popup.getMenu().add(Menu.NONE, TOOL_ACTION_PASTE, Menu.NONE,
+                R.string.keyboard_tool_paste);
+        popup.getMenu().add(Menu.NONE, TOOL_ACTION_SELECT_ALL, Menu.NONE,
+                R.string.keyboard_tool_select_all);
+        popup.getMenu().add(Menu.NONE, TOOL_ACTION_COPY, Menu.NONE,
+                R.string.keyboard_tool_copy);
+        popup.getMenu().add(Menu.NONE, TOOL_ACTION_CUT, Menu.NONE,
+                R.string.keyboard_tool_cut);
+        popup.getMenu().add(Menu.NONE, TOOL_ACTION_SETTINGS, Menu.NONE,
+                R.string.keyboard_tool_settings);
+        popup.setOnMenuItemClickListener(new PopupMenu.OnMenuItemClickListener() {
+            @Override
+            public boolean onMenuItemClick(final MenuItem item) {
+                if (mListener == null) {
+                    return false;
+                }
+                mListener.onKeyboardToolSelected(item.getItemId());
+                return true;
+            }
+        });
+        popup.show();
+    }
+
     @Override
     public void onClick(final View view) {
         AudioAndHapticFeedbackManager.getInstance().performHapticAndAudioFeedback(
                 Constants.CODE_UNSPECIFIED, this);
+        if (view == mToolsKey) {
+            showKeyboardToolsMenu();
+            return;
+        }
         if (view == mImportantNoticeStrip) {
             mListener.showImportantNoticeContents();
             return;

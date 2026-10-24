@@ -1667,6 +1667,37 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         updateStateAfterInputTransaction(completeInputTransaction);
     }
 
+    @Override
+    public void onKeyboardToolSelected(final int action) {
+        if (action == SuggestionStripView.TOOL_ACTION_SETTINGS) {
+            launchSettings(SettingsActivity.EXTRA_ENTRY_VALUE_SYSTEM_SETTINGS);
+            return;
+        }
+        final android.view.inputmethod.InputConnection inputConnection =
+                getCurrentInputConnection();
+        if (inputConnection == null) {
+            return;
+        }
+        final int contextMenuAction;
+        switch (action) {
+        case SuggestionStripView.TOOL_ACTION_PASTE:
+            contextMenuAction = android.R.id.paste;
+            break;
+        case SuggestionStripView.TOOL_ACTION_SELECT_ALL:
+            contextMenuAction = android.R.id.selectAll;
+            break;
+        case SuggestionStripView.TOOL_ACTION_COPY:
+            contextMenuAction = android.R.id.copy;
+            break;
+        case SuggestionStripView.TOOL_ACTION_CUT:
+            contextMenuAction = android.R.id.cut;
+            break;
+        default:
+            return;
+        }
+        inputConnection.performContextMenuAction(contextMenuAction);
+    }
+
     // This will show either an empty suggestion strip (if prediction is enabled) or
     // punctuation suggestions (if it's disabled).
     @Override
