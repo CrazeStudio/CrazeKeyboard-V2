@@ -36,7 +36,7 @@ android {
     useLibrary 'android.test.mock'
 
     defaultConfig {
-        applicationId 'com.crazestudio.cboard'
+        applicationId 'com.crazestudio.crazekeyboard'
         minSdk 21
         targetSdk 30
 
@@ -44,7 +44,7 @@ android {
         versionCode 30
         versionName '1.0'
 
-        testApplicationId 'com.crazestudio.cboard.tests'
+        testApplicationId 'com.crazestudio.crazekeyboard.tests'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
 
         ndk {
