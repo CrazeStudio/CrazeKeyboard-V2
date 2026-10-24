@@ -21,7 +21,7 @@
 <resources>
     <!-- Short name of the keyboard, shown in the input-method picker.
          Brand name: should not be translated. -->
-    <string name="english_ime_name">Cboard</string>
+    <string name="english_ime_name">CrazeKeyboard</string>
 
     <!-- Application name shown in system settings and on the launcher icon.
          Brand name: should not be translated. -->
