@@ -46,14 +46,14 @@ import java.util.List;
 
 /** Native, interactive companion screens for CrazeKeyboard. */
 public final class CrazeDashboardActivity extends Activity {
-    private static final int KEYBOARD=0, THEMES=1, AI=2, SETTINGS=3, HAPTICS=4;
-    private static final int BG=0xFF11131D, SURFACE=0xFF191B26, HIGH=0xFF282934;
-    private static final int INPUT=0xFF0C0E18, TEXT=0xFFE1E1F0, MUTED=0xFFA4A1B7;
-    private static final int BORDER=0xFF434154, PURPLE=0xFFD0BCFF, CYAN=0xFF4CD7F6;
-    private static final int PINK=0xFFFFB0CD, ORANGE=0xFFFF8A24;
+    private static final int KEYBOARD=0, THEMES=1, SETTINGS=2, HAPTICS=3;
+    private static final int BG=0xFF111318, SURFACE=0xFF191C22, HIGH=0xFF252A32;
+    private static final int INPUT=0xFF0D0F13, TEXT=0xFFF0F2F5, MUTED=0xFFA5ACB7;
+    private static final int BORDER=0xFF343B45, CYAN=0xFFB8C1CC;
+    private static final int PINK=0xFF9AA4B2, ORANGE=0xFFFF8A24;
 
     private int tab=KEYBOARD, page=KEYBOARD;
-    private String playgroundText="", promptText="";
+    private String playgroundText="";
     private SharedPreferences prefs;
     private FrameLayout pageHost;
     private TextView subtitle;
@@ -69,10 +69,8 @@ public final class CrazeDashboardActivity extends Activity {
         }
     }
     private final Preset[] presets = {
-        new Preset(3,"Craze Silver","Bright, clean keycaps",0xFFEEF1F5,0xFFFFFFFF,ORANGE,false),
-        new Preset(4,"Craze Midnight","Slate keys with orange accents",0xFF1D202B,0xFF292E3A,ORANGE,true),
-        new Preset(0,"Neon Cyan","Deep blue with electric cyan",0xFF0B1320,0xFF122233,CYAN,true),
-        new Preset(2,"Synthwave","Violet keys and neon pink",0xFF171020,0xFF30213F,PINK,true)
+        new Preset(3,"Craze Silver","Soft light keys with restrained orange accents",0xFFF0F2F5,0xFFFFFFFF,ORANGE,false),
+        new Preset(4,"Craze Midnight","Deep slate keys with warm orange accents",0xFF171A20,0xFF292E36,ORANGE,true)
     };
 
     @Override public void onCreate(Bundle state) {
@@ -114,9 +112,9 @@ public final class CrazeDashboardActivity extends Activity {
 
     private void buildNav(LinearLayout root) {
         LinearLayout nav=row(); nav.setPadding(dp(5),dp(6),dp(5),dp(6)); nav.setBackgroundColor(INPUT);
-        String[] icons={"⌨","◈","✦","☷"}, names={"Keyboard","Themes","AI Assist","Settings"};
-        navItems=new LinearLayout[4]; navIcons=new TextView[4]; navLabels=new TextView[4];
-        for(int i=0;i<4;i++){
+        String[] icons={"⌨","◈","☷"}, names={"Keyboard","Themes","Settings"};
+        navItems=new LinearLayout[3]; navIcons=new TextView[3]; navLabels=new TextView[3];
+        for(int i=0;i<3;i++){
             final int dest=i; LinearLayout item=col(); item.setGravity(Gravity.CENTER);
             item.setPadding(0,dp(6),0,dp(6));
             TextView icon=txt(icons[i],20,MUTED,true); icon.setGravity(Gravity.CENTER);
@@ -136,7 +134,6 @@ public final class CrazeDashboardActivity extends Activity {
         LinearLayout content=col(); content.setPadding(dp(15),dp(15),dp(15),dp(24));
         if(page==HAPTICS) buildHaptics(content);
         else if(tab==THEMES) buildThemes(content);
-        else if(tab==AI) buildAi(content);
         else if(tab==SETTINGS) buildSettings(content);
         else buildKeyboard(content);
         ScrollView scroll=new ScrollView(this); scroll.setFillViewport(false);
@@ -147,19 +144,18 @@ public final class CrazeDashboardActivity extends Activity {
 
     private void updateNav() {
         String label=page==HAPTICS?"HAPTICS & SOUNDS":
-            tab==THEMES?"THEME STUDIO":tab==AI?"AI ASSIST · PROMPT TOOLS":
-            tab==SETTINGS?"CONTROL CENTER":"KEYBOARD PLAYGROUND";
+            tab==THEMES?"THEME STUDIO":tab==SETTINGS?"SETTINGS":"KEYBOARD PLAYGROUND";
         subtitle.setText(label);
-        for(int i=0;i<4;i++){
+        for(int i=0;i<3;i++){
             boolean active=page!=HAPTICS&&tab==i;
             navItems[i].setBackground(bg(active?HIGH:Color.TRANSPARENT,13,active?BORDER:Color.TRANSPARENT));
-            navIcons[i].setTextColor(active?(i==AI?PINK:i==THEMES?PURPLE:CYAN):MUTED);
+            navIcons[i].setTextColor(active?(i==THEMES?ORANGE:CYAN):MUTED);
             navLabels[i].setTextColor(active?TEXT:MUTED);
         }
     }
 
     private void buildKeyboard(LinearLayout c) {
-        heading(c,"Keyboard. Reimagined.","A live stage for everyday typing.");
+        heading(c,"Your keyboard, your rules.","A live stage for everyday typing.");
         gap(c,14);
         LinearLayout stage=card(); stage.addView(pill("LIVE STAGE",CYAN,0xFF153744));
         gap(stage,10); stage.addView(txt("TRY YOUR KEYBOARD",10,MUTED,true)); gap(stage,6);
@@ -231,34 +227,6 @@ public final class CrazeDashboardActivity extends Activity {
         return card;
     }
 
-    private void buildAi(LinearLayout c) {
-        heading(c,"AI Assist Hub","Create reusable prompts for writing and learning.");
-        gap(c,12); LinearLayout info=card();info.addView(pill("OFFLINE PROMPT TOOLS",PINK,0xFF412035));gap(info,7);
-        info.addView(txt("An AI model is not connected in this build. Actions below create prompts locally; they do not pretend to generate AI answers or send your text anywhere.",12,MUTED,false));c.addView(info);gap(c,10);
-        LinearLayout box=card();box.addView(txt("YOUR TEXT",10,CYAN,true));gap(box,6);
-        final EditText edit=editor(promptText,"Paste a message, paragraph, or question…",4);box.addView(edit,new LinearLayout.LayoutParams(-1,-2));
-        edit.addTextChangedListener(new TextWatcher(){@Override public void beforeTextChanged(CharSequence s,int st,int n,int a){}
-            @Override public void onTextChanged(CharSequence s,int st,int before,int n){promptText=s.toString();}
-            @Override public void afterTextChanged(Editable e){}});
-        gap(box,9);box.addView(txt("BUILD A PROMPT",10,MUTED,true));gap(box,6);
-        addPrompt(box,edit,"Rewrite professionally","Rewrite the text below in a clear, professional tone. Preserve meaning and facts:");
-        gap(box,6);addPrompt(box,edit,"Explain simply","Explain the text below in simple, student-friendly language, with an example:");
-        gap(box,6);addPrompt(box,edit,"Summarize","Summarize the text below into concise bullet points. Do not invent details:");
-        gap(box,6);addPrompt(box,edit,"Write a friendly reply","Draft a warm, natural and concise reply to the following message:");
-        gap(box,9);LinearLayout actions=row();
-        addWeight(actions,button("Use playground text",HIGH,TEXT,new View.OnClickListener(){@Override public void onClick(View v){edit.setText(playgroundText);edit.setSelection(edit.length());}}));
-        gapX(actions,7);addWeight(actions,button("Copy prompt",PURPLE,0xFF30175A,new View.OnClickListener(){@Override public void onClick(View v){copy(edit.getText().toString());}}));
-        box.addView(actions);c.addView(box);
-    }
-
-    private void addPrompt(LinearLayout parent,final EditText edit,String title,final String instruction){
-        parent.addView(button(title,HIGH,TEXT,new View.OnClickListener(){@Override public void onClick(View v){
-            String text=edit.getText().toString().trim();if(text.length()==0){Toast.makeText(CrazeDashboardActivity.this,"Enter some text first.",Toast.LENGTH_SHORT).show();return;}
-            edit.setText(instruction+"\n\n"+text);edit.setSelection(edit.length());
-            Toast.makeText(CrazeDashboardActivity.this,"Prompt built locally; no AI response was generated.",Toast.LENGTH_SHORT).show();
-        }}));
-    }
-
     private void buildSettings(LinearLayout c) {
         heading(c,"Control Center","Configure the experience and device integration.");
         gap(c,12);LinearLayout state=card();boolean enabled=imeEnabled();
@@ -266,14 +234,14 @@ public final class CrazeDashboardActivity extends Activity {
         state.addView(txt(enabled?"Choose it as the current input method.":"Enable it in Android settings, then choose it in the input picker.",12,MUTED,false));gap(state,10);
         state.addView(button(enabled?"Choose keyboard":"Enable keyboard",CYAN,0xFF082933,new View.OnClickListener(){@Override public void onClick(View v){if(imeEnabled())pickKeyboard();else openImeSettings();}}));
         c.addView(state);gap(c,9);
-        settingRow(c,"◈","Theme Studio","Four working keyboard palettes",PURPLE,new View.OnClickListener(){@Override public void onClick(View v){tab=THEMES;page=THEMES;render();}});
+        settingRow(c,"◈","Theme Studio","Two focused keyboard themes",PURPLE,new View.OnClickListener(){@Override public void onClick(View v){tab=THEMES;page=THEMES;render();}});
         gap(c,8);settingRow(c,"◉","Haptics & Sounds","Actual vibration and click preferences",CYAN,new View.OnClickListener(){@Override public void onClick(View v){page=HAPTICS;render();}});
         gap(c,8);settingRow(c,"Aa","Typing preferences","Capitalization, spacing and key preview",PINK,new View.OnClickListener(){@Override public void onClick(View v){openFragment("com.android.inputmethod.latin.settings.PreferencesSettingsFragment");}});
         gap(c,8);settingRow(c,"文","Languages & layouts","Language and layout configuration",PURPLE,new View.OnClickListener(){@Override public void onClick(View v){openFragment("com.android.inputmethod.latin.settings.AppearanceSettingsFragment");}});
         gap(c,8);settingRow(c,"✎","Text correction","Suggestions and auto-correction",CYAN,new View.OnClickListener(){@Override public void onClick(View v){openFragment("com.android.inputmethod.latin.settings.CorrectionSettingsFragment");}});
         gap(c,8);settingRow(c,"⚙","All keyboard settings","Open the full native settings screen",TEXT,new View.OnClickListener(){@Override public void onClick(View v){startActivity(new Intent(CrazeDashboardActivity.this,SettingsActivity.class));}});
         gap(c,10);LinearLayout privacy=card();privacy.addView(txt("ON-DEVICE",10,CYAN,true));gap(privacy,4);
-        privacy.addView(txt("The typing playground and prompt builder run locally. Prompt text is not uploaded by these screens.",12,MUTED,false));c.addView(privacy);
+        privacy.addView(txt("Text entered in the keyboard preview stays in this local test screen; it is not sent to a remote prompt service.",12,MUTED,false));c.addView(privacy);
     }
 
     private void settingRow(LinearLayout parent,String icon,String title,String summary,int accent,View.OnClickListener click){
