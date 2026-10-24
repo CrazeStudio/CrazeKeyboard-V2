@@ -46,6 +46,10 @@ jobs:
             "build-tools;34.0.0" \
             "ndk;26.1.10909125"
 
+      - name: Normalize custom resource namespaces
+        run: |
+          find java/res -type f -name '*.xml' -print0 | xargs -0 sed -i 's#http://schemas.android.com/apk/res/com.android.inputmethod.latin#http://schemas.android.com/apk/res-auto#g'
+
       - name: Set up Gradle caching
         uses: gradle/actions/setup-gradle@v4
 
