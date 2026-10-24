@@ -2,6 +2,6 @@
 .externalNativeBuild/
 .gradle/
 .idea/
-LatinIME.iml
+CrazeKeyboard.iml
 build/
 local.properties
