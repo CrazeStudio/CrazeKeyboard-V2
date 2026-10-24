@@ -50,7 +50,7 @@ public final class CrazeDashboardActivity extends Activity {
     private static final int BG=0xFF111318, SURFACE=0xFF191C22, HIGH=0xFF252A32;
     private static final int INPUT=0xFF0D0F13, TEXT=0xFFF0F2F5, MUTED=0xFFA5ACB7;
     private static final int BORDER=0xFF343B45, CYAN=0xFFB8C1CC;
-    private static final int PINK=0xFF9AA4B2, ORANGE=0xFFFF8A24;
+    private static final int ORANGE=0xFF9AA4B2, ORANGE=0xFFFF8A24;
 
     private int tab=KEYBOARD, page=KEYBOARD;
     private String playgroundText="";
@@ -94,7 +94,7 @@ public final class CrazeDashboardActivity extends Activity {
         LinearLayout h=row();
         h.setPadding(dp(16),dp(10),dp(14),dp(10));
         TextView logo=txt("C",21,BG,true);
-        logo.setGravity(Gravity.CENTER); logo.setBackground(bg(PURPLE,11,PURPLE));
+        logo.setGravity(Gravity.CENTER); logo.setBackground(bg(ORANGE,11,ORANGE));
         h.addView(logo,new LinearLayout.LayoutParams(dp(36),dp(36)));
         LinearLayout brand=col(); brand.setPadding(dp(10),0,0,0);
         brand.addView(txt("CrazeKeyboard",17,TEXT,true));
@@ -175,7 +175,7 @@ public final class CrazeDashboardActivity extends Activity {
         gapX(actions,6);
         addWeight(actions,button("Copy",HIGH,TEXT,new View.OnClickListener(){@Override public void onClick(View v){copy(edit.getText().toString());}}));
         gapX(actions,6);
-        addWeight(actions,button("Open keyboard",PURPLE,0xFF30175A,new View.OnClickListener(){@Override public void onClick(View v){
+        addWeight(actions,button("Open keyboard",ORANGE,0xFF40230A,new View.OnClickListener(){@Override public void onClick(View v){
             edit.requestFocus(); InputMethodManager m=(InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);
             if(m!=null)m.showSoftInput(edit,InputMethodManager.SHOW_IMPLICIT);
         }}));
@@ -184,7 +184,7 @@ public final class CrazeDashboardActivity extends Activity {
 
         LinearLayout status=card(); boolean enabled=imeEnabled();
         LinearLayout title=row(); title.addView(txt("Keyboard setup",15,TEXT,true),new LinearLayout.LayoutParams(0,-2,1f));
-        title.addView(pill(enabled?"ENABLED":"SETUP NEEDED",enabled?CYAN:PINK,enabled?0xFF153744:0xFF412035));
+        title.addView(pill(enabled?"ENABLED":"SETUP NEEDED",enabled?CYAN:ORANGE,enabled?0xFF153744:0xFF412035));
         status.addView(title); gap(status,5);
         status.addView(txt(enabled?"CrazeKeyboard is enabled. Choose it as your current input method.":"Enable CrazeKeyboard in Android settings before using it in other apps.",12,MUTED,false));
         gap(status,10); LinearLayout setup=row();
@@ -192,7 +192,7 @@ public final class CrazeDashboardActivity extends Activity {
         addWeight(setup,button("Choose input method",HIGH,TEXT,new View.OnClickListener(){@Override public void onClick(View v){pickKeyboard();}}));
         status.addView(setup); c.addView(status); gap(c,10);
         LinearLayout quick=row();
-        addWeight(quick,button("◈  Change theme",HIGH,PURPLE,new View.OnClickListener(){@Override public void onClick(View v){tab=THEMES;page=THEMES;render();}}));
+        addWeight(quick,button("◈  Change theme",HIGH,ORANGE,new View.OnClickListener(){@Override public void onClick(View v){tab=THEMES;page=THEMES;render();}}));
         gapX(quick,8);
         addWeight(quick,button("◉  Haptics & sound",HIGH,CYAN,new View.OnClickListener(){@Override public void onClick(View v){page=HAPTICS;render();}}));
         c.addView(quick);
@@ -234,14 +234,14 @@ public final class CrazeDashboardActivity extends Activity {
         state.addView(txt(enabled?"Choose it as the current input method.":"Enable it in Android settings, then choose it in the input picker.",12,MUTED,false));gap(state,10);
         state.addView(button(enabled?"Choose keyboard":"Enable keyboard",CYAN,0xFF082933,new View.OnClickListener(){@Override public void onClick(View v){if(imeEnabled())pickKeyboard();else openImeSettings();}}));
         c.addView(state);gap(c,9);
-        settingRow(c,"◈","Theme Studio","Two focused keyboard themes",PURPLE,new View.OnClickListener(){@Override public void onClick(View v){tab=THEMES;page=THEMES;render();}});
+        settingRow(c,"◈","Theme Studio","Two focused keyboard themes",ORANGE,new View.OnClickListener(){@Override public void onClick(View v){tab=THEMES;page=THEMES;render();}});
         gap(c,8);settingRow(c,"◉","Haptics & Sounds","Actual vibration and click preferences",CYAN,new View.OnClickListener(){@Override public void onClick(View v){page=HAPTICS;render();}});
-        gap(c,8);settingRow(c,"Aa","Typing preferences","Capitalization, spacing and key preview",PINK,new View.OnClickListener(){@Override public void onClick(View v){openFragment("com.android.inputmethod.latin.settings.PreferencesSettingsFragment");}});
-        gap(c,8);settingRow(c,"文","Languages & layouts","Language and layout configuration",PURPLE,new View.OnClickListener(){@Override public void onClick(View v){openFragment("com.android.inputmethod.latin.settings.AppearanceSettingsFragment");}});
+        gap(c,8);settingRow(c,"Aa","Typing preferences","Capitalization, spacing and key preview",ORANGE,new View.OnClickListener(){@Override public void onClick(View v){openFragment("com.android.inputmethod.latin.settings.PreferencesSettingsFragment");}});
+        gap(c,8);settingRow(c,"文","Languages & layouts","Language and layout configuration",ORANGE,new View.OnClickListener(){@Override public void onClick(View v){openFragment("com.android.inputmethod.latin.settings.AppearanceSettingsFragment");}});
         gap(c,8);settingRow(c,"✎","Text correction","Suggestions and auto-correction",CYAN,new View.OnClickListener(){@Override public void onClick(View v){openFragment("com.android.inputmethod.latin.settings.CorrectionSettingsFragment");}});
         gap(c,8);settingRow(c,"⚙","All keyboard settings","Open the full native settings screen",TEXT,new View.OnClickListener(){@Override public void onClick(View v){startActivity(new Intent(CrazeDashboardActivity.this,SettingsActivity.class));}});
         gap(c,10);LinearLayout privacy=card();privacy.addView(txt("ON-DEVICE",10,CYAN,true));gap(privacy,4);
-        privacy.addView(txt("Text entered in the keyboard preview stays in this local test screen; it is not sent to a remote prompt service.",12,MUTED,false));c.addView(privacy);
+        privacy.addView(txt("Your test text stays on this device in this preview screen.",12,MUTED,false));c.addView(privacy);
     }
 
     private void settingRow(LinearLayout parent,String icon,String title,String summary,int accent,View.OnClickListener click){
@@ -263,7 +263,7 @@ public final class CrazeDashboardActivity extends Activity {
         switchRow(toggles,"Key preview popups","Preview above each pressed key",Settings.PREF_POPUP_ON,getResources().getBoolean(R.bool.config_default_key_preview_popup));
         c.addView(toggles);gap(c,11);
 
-        LinearLayout vib=card();LinearLayout vh=row();vh.addView(txt("TAP DURATION",10,PURPLE,true),new LinearLayout.LayoutParams(0,-2,1f));
+        LinearLayout vib=card();LinearLayout vh=row();vh.addView(txt("TAP DURATION",10,ORANGE,true),new LinearLayout.LayoutParams(0,-2,1f));
         final int max=Math.max(1,Math.min(100,getResources().getInteger(R.integer.config_max_vibration_duration)));
         int initial=Settings.readKeypressVibrationDuration(prefs,getResources());
         final TextView vValue=txt(initial<0?"System default":initial+" ms",11,TEXT,true);vh.addView(vValue);vib.addView(vh);gap(vib,5);
@@ -272,18 +272,18 @@ public final class CrazeDashboardActivity extends Activity {
         vBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){@Override public void onProgressChanged(SeekBar b,int val,boolean user){vValue.setText(val+" ms");if(user)prefs.edit().putInt(Settings.PREF_VIBRATION_DURATION_SETTINGS,val).apply();}@Override public void onStartTrackingTouch(SeekBar b){}@Override public void onStopTrackingTouch(SeekBar b){}});
         c.addView(vib);gap(c,11);
 
-        LinearLayout sound=card();LinearLayout sh=row();sh.addView(txt("SOUND LEVEL",10,PINK,true),new LinearLayout.LayoutParams(0,-2,1f));
+        LinearLayout sound=card();LinearLayout sh=row();sh.addView(txt("SOUND LEVEL",10,ORANGE,true),new LinearLayout.LayoutParams(0,-2,1f));
         int volume=Math.max(0,Math.min(100,Math.round(Settings.readKeypressSoundVolume(prefs,getResources())*100f)));
         final TextView soundValue=txt(volume+"%",11,TEXT,true);sh.addView(soundValue);sound.addView(sh);gap(sound,5);
         SeekBar sBar=new SeekBar(this);sBar.setMax(100);sBar.setProgress(volume);sound.addView(sBar);
         sBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){@Override public void onProgressChanged(SeekBar b,int val,boolean user){soundValue.setText(val+"%");if(user)prefs.edit().putFloat(Settings.PREF_KEYPRESS_SOUND_VOLUME,val/100f).apply();}@Override public void onStartTrackingTouch(SeekBar b){}@Override public void onStopTrackingTouch(SeekBar b){}});
         gap(sound,8);LinearLayout tests=row();
         addWeight(tests,button("Test vibration",HIGH,CYAN,new View.OnClickListener(){@Override public void onClick(View v){testVibration();}}));
-        gapX(tests,7);addWeight(tests,button("Test click",HIGH,PINK,new View.OnClickListener(){@Override public void onClick(View v){testSound();}}));
+        gapX(tests,7);addWeight(tests,button("Test click",HIGH,ORANGE,new View.OnClickListener(){@Override public void onClick(View v){testSound();}}));
         sound.addView(tests);c.addView(sound);gap(c,10);
         LinearLayout pad=card();pad.addView(txt("Test tap pad",14,TEXT,true));gap(pad,4);
         pad.addView(txt("Feel the selected duration. Sound obeys Android's sound and ringer settings.",11,MUTED,false));gap(pad,8);
-        pad.addView(button("●  Tap to test feedback",0xFF302347,PURPLE,new View.OnClickListener(){@Override public void onClick(View v){testVibration();testSound();}}));c.addView(pad);
+        pad.addView(button("●  Tap to test feedback",0xFF40230A,ORANGE,new View.OnClickListener(){@Override public void onClick(View v){testVibration();testSound();}}));c.addView(pad);
     }
 
     private void switchRow(LinearLayout parent,String title,String summary,final String key,boolean defaultValue){
