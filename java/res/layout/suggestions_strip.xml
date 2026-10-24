@@ -69,7 +69,6 @@
         android:contentDescription="@string/keyboard_tools"
         android:src="@drawable/ic_keyboard_tools"
         android:scaleType="centerInside"
-        android:padding="8dp"
         android:tint="#FFFF8A24"
         style="?attr/suggestionWordStyle" />
     <ImageButton
