@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Craze Aurora palette: used by the craze_*_lxx_{light,dark} drawables. -->
+    <color name="aurora_light_panel_top">#F2F4FA</color>
+    <color name="aurora_light_panel_bottom">#E8EBF4</color>
+    <color name="aurora_light_key">#FFFFFF</color>
+    <color name="aurora_light_key_edge">#C9D0E2</color>
+    <color name="aurora_light_func">#DDE2F0</color>
+    <color name="aurora_light_func_edge">#C0C8DD</color>
+    <color name="aurora_light_pressed">#FFE6CF</color>
+    <color name="aurora_light_pressed_edge">#F5B880</color>
+    <color name="aurora_light_selected">#FFD7AE</color>
+    <color name="aurora_light_space">#FFFFFF</color>
+    <color name="aurora_light_sugg_panel">#F8F9FD</color>
+    <color name="aurora_light_sugg_line">#E1E5F1</color>
+    <color name="aurora_light_accent_top">#FF9A3C</color>
+    <color name="aurora_light_accent_bottom">#FF6A2B</color>
+    <color name="aurora_light_accent_edge">#D2551A</color>
+    <color name="aurora_light_sugg_pressed">#FFE6CF</color>
+    <color name="aurora_dark_panel_top">#151927</color>
+    <color name="aurora_dark_panel_bottom">#0F121C</color>
+    <color name="aurora_dark_key">#2A3042</color>
+    <color name="aurora_dark_key_edge">#0B0D14</color>
+    <color name="aurora_dark_func">#1D2232</color>
+    <color name="aurora_dark_func_edge">#090B11</color>
+    <color name="aurora_dark_pressed">#4B3524</color>
+    <color name="aurora_dark_pressed_edge">#2C1D10</color>
+    <color name="aurora_dark_selected">#5E3B1C</color>
+    <color name="aurora_dark_space">#323950</color>
+    <color name="aurora_dark_sugg_panel">#1A1E2D</color>
+    <color name="aurora_dark_sugg_line">#262C40</color>
+    <color name="aurora_dark_accent_top">#FF9A3C</color>
+    <color name="aurora_dark_accent_bottom">#FF6A2B</color>
+    <color name="aurora_dark_accent_edge">#8F3A12</color>
+    <color name="aurora_dark_sugg_pressed">#4B3524</color>
+</resources>

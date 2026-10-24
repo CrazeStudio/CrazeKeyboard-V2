@@ -1,1 +1,17 @@
-<?xml version="1.0" encoding="utf-8"?><resources xmlns:android="http://schemas.android.com/apk/res/android"><style name="CrazeDashboardTheme" parent="@android:style/Theme.Material.NoActionBar"><item name="android:fontFamily">sans</item><item name="android:colorAccent">#FFFF8A24</item><item name="android:colorControlActivated">#FFFF8A24</item><item name="android:colorControlHighlight">#33FF8A24</item><item name="android:statusBarColor">#11131D</item><item name="android:navigationBarColor">#0C0E18</item><item name="android:windowLightStatusBar">false</item><item name="android:windowBackground">#11131D</item><item name="android:windowActionModeOverlay">true</item></style></resources>
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Craze Aurora settings / setup theme -->
+    <style name="CrazeDashboardTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:colorAccent">#FFFF8A24</item>
+        <item name="android:colorControlActivated">#FFFF8A24</item>
+        <item name="android:colorControlHighlight">#33FF8A24</item>
+        <item name="android:statusBarColor">#0F121C</item>
+        <item name="android:navigationBarColor">#0F121C</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowBackground">#0F121C</item>
+        <item name="android:textColorPrimary">#F2F4FF</item>
+        <item name="android:textColorSecondary">#A9B0C8</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+</resources>
