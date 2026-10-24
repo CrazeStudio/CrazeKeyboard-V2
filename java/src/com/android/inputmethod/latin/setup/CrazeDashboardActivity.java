@@ -337,7 +337,7 @@ public final class CrazeDashboardActivity extends Activity {
         new Handler().postDelayed(new Runnable(){@Override public void run(){tone.release();}},120);
     }
     private void openFragment(String name){Intent i=new Intent(this,SettingsActivity.class);i.putExtra(PreferenceActivity.EXTRA_SHOW_FRAGMENT,name);i.putExtra(PreferenceActivity.EXTRA_NO_HEADERS,true);startActivity(i);}
-    private void openImeSettings(){try{startActivity(new Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS));}catch(Exception e){startActivity(new Intent(Settings.ACTION_SETTINGS));}}
+    private void openImeSettings(){try{startActivity(new Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS));}catch(Exception e){startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS));}}
     private boolean imeEnabled(){InputMethodManager m=(InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);if(m==null)return false;List<InputMethodInfo> list=m.getEnabledInputMethodList();for(InputMethodInfo info:list)if(getPackageName().equals(info.getPackageName()))return true;return false;}
     private void pickKeyboard(){InputMethodManager m=(InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);if(m!=null)m.showInputMethodPicker();}
     private void copy(String value){if(value==null||value.trim().length()==0){Toast.makeText(this,"There is no text to copy yet.",Toast.LENGTH_SHORT).show();return;}ClipboardManager cb=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);if(cb!=null){cb.setPrimaryClip(ClipData.newPlainText("CrazeKeyboard",value));Toast.makeText(this,"Copied to clipboard.",Toast.LENGTH_SHORT).show();}}
