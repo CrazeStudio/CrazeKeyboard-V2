@@ -51,12 +51,12 @@
     <!-- Settings screen title for keyboard theme settings [CHAR LIMIT=33] -->
     <string name="settings_screen_theme">Keyboard theme</string>
     <string name="keyboard_settings_welcome_title">CrazeKeyboard</string>
-    <string name="keyboard_settings_welcome_summary">Personalize your keyboard, suggestions, gestures and key feedback.</string>
+    <string name="keyboard_settings_welcome_summary">Make typing yours: choose a theme, tune suggestions and autocorrect, configure swipe typing, and adjust key feedback.</string>
     <string name="settings_summary_preferences">Typing behavior, shortcuts and key feedback</string>
     <string name="settings_summary_accounts">Privacy and optional dictionary sync options</string>
-    <string name="settings_summary_appearance">Themes, custom layouts and split keyboard</string>
+    <string name="settings_summary_appearance">Craze Silver and Midnight themes, language layouts and split keyboard options</string>
     <string name="settings_summary_gesture">Swipe typing, previews and gesture trails</string>
-    <string name="settings_summary_correction">Suggested words, auto-correction and dictionaries</string>
+    <string name="settings_summary_correction">Control word suggestions, next-word prediction, auto-correction and dictionaries</string>
     <string name="settings_summary_advanced">Key timing and additional typing controls</string>
     <string name="settings_summary_theme">Choose the Craze Silver or Craze Midnight palette</string>
     <string name="settings_summary_custom_layouts">Manage language and keyboard layout variants</string>
