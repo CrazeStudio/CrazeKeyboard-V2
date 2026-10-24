@@ -72,6 +72,7 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
     public static final int TOOL_ACTION_COPY = 3;
     public static final int TOOL_ACTION_CUT = 4;
     public static final int TOOL_ACTION_SETTINGS = 5;
+    public static final int TOOL_ACTION_EMOJI = 6;
 
     static final boolean DBG = DebugFlags.DEBUG_ENABLED;
     private static final float DEBUG_INFO_TEXT_SIZE_IN_DIP = 6.0f;
@@ -468,6 +469,8 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
                 R.string.keyboard_tool_copy);
         popup.getMenu().add(Menu.NONE, TOOL_ACTION_CUT, Menu.NONE,
                 R.string.keyboard_tool_cut);
+        popup.getMenu().add(Menu.NONE, TOOL_ACTION_EMOJI, Menu.NONE,
+                R.string.keyboard_tool_emoji);
         popup.getMenu().add(Menu.NONE, TOOL_ACTION_SETTINGS, Menu.NONE,
                 R.string.keyboard_tool_settings);
         popup.setOnMenuItemClickListener(new PopupMenu.OnMenuItemClickListener() {
