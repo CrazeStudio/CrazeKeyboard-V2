@@ -1669,6 +1669,11 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
 
     @Override
     public void onKeyboardToolSelected(final int action) {
+        if (action == SuggestionStripView.TOOL_ACTION_EMOJI) {
+            onCodeInput(Constants.CODE_EMOJI, Constants.SUGGESTION_STRIP_COORDINATE,
+                    Constants.SUGGESTION_STRIP_COORDINATE, false /* isKeyRepeat */);
+            return;
+        }
         if (action == SuggestionStripView.TOOL_ACTION_SETTINGS) {
             launchSettings(SettingsActivity.EXTRA_ENTRY_VALUE_SYSTEM_SETTINGS);
             return;
