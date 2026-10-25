@@ -19,16 +19,18 @@ package com.android.inputmethod.latin.suggestions;
 import android.content.Context;
 import android.content.res.Resources;
 import android.content.res.TypedArray;
+import android.content.res.ColorStateList;
 import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import androidx.core.view.ViewCompat;
 import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.util.TypedValue;
 import android.view.GestureDetector;
 import android.view.LayoutInflater;
-import android.view.Menu;
-import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.View.OnClickListener;
@@ -37,12 +39,14 @@ import android.view.ViewGroup;
 import android.view.ViewParent;
 import android.view.accessibility.AccessibilityEvent;
 import android.widget.ImageButton;
-import android.widget.PopupMenu;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
 
 import com.android.inputmethod.accessibility.AccessibilityUtils;
 import com.android.inputmethod.keyboard.Keyboard;
+import com.android.inputmethod.keyboard.KeyboardTheme;
 import com.android.inputmethod.keyboard.MainKeyboardView;
 import com.android.inputmethod.keyboard.MoreKeysPanel;
 import com.android.inputmethod.latin.AudioAndHapticFeedbackManager;
@@ -94,6 +98,8 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
     Listener mListener;
     private SuggestedWords mSuggestedWords = SuggestedWords.getEmptyInstance();
     private int mStartIndexOfMoreSuggestions;
+    private boolean mToolsMenuOpen;
+    private boolean mIsRtlLanguage;
 
     private final SuggestionStripLayoutHelper mLayoutHelper;
     private final StripVisibilityGroup mStripVisibilityGroup;
@@ -212,6 +218,7 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
 
     public void setSuggestions(final SuggestedWords suggestedWords, final boolean isRtlLanguage) {
         clear();
+        mIsRtlLanguage = isRtlLanguage;
         mStripVisibilityGroup.setLayoutDirection(isRtlLanguage);
         mSuggestedWords = suggestedWords;
         mStartIndexOfMoreSuggestions = mLayoutHelper.layoutAndReturnStartIndexOfMoreSuggestions(
@@ -249,6 +256,9 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
     }
 
     public void clear() {
+        mToolsMenuOpen = false;
+        mToolsKey.setImageResource(R.drawable.ic_keyboard_tools);
+        mToolsKey.setContentDescription(getResources().getString(R.string.keyboard_tools));
         mSuggestionsStrip.removeAllViews();
         removeAllDebugInfoViews();
         mStripVisibilityGroup.showSuggestionsStrip();
@@ -459,31 +469,81 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
         return true;
     }
 
-    private void showKeyboardToolsMenu() {
-        final PopupMenu popup = new PopupMenu(getContext(), mToolsKey);
-        popup.getMenu().add(Menu.NONE, TOOL_ACTION_PASTE, Menu.NONE,
-                R.string.keyboard_tool_paste);
-        popup.getMenu().add(Menu.NONE, TOOL_ACTION_SELECT_ALL, Menu.NONE,
-                R.string.keyboard_tool_select_all);
-        popup.getMenu().add(Menu.NONE, TOOL_ACTION_COPY, Menu.NONE,
-                R.string.keyboard_tool_copy);
-        popup.getMenu().add(Menu.NONE, TOOL_ACTION_CUT, Menu.NONE,
-                R.string.keyboard_tool_cut);
-        popup.getMenu().add(Menu.NONE, TOOL_ACTION_EMOJI, Menu.NONE,
-                R.string.keyboard_tool_emoji);
-        popup.getMenu().add(Menu.NONE, TOOL_ACTION_SETTINGS, Menu.NONE,
-                R.string.keyboard_tool_settings);
-        popup.setOnMenuItemClickListener(new PopupMenu.OnMenuItemClickListener() {
-            @Override
-            public boolean onMenuItemClick(final MenuItem item) {
-                if (mListener == null) {
-                    return false;
+    private void toggleKeyboardTools() {
+        if (mToolsMenuOpen) {
+            setSuggestions(mSuggestedWords, mIsRtlLanguage);
+            return;
+        }
+        mToolsMenuOpen = true;
+        mToolsKey.setImageResource(R.drawable.ic_keyboard_tools_close);
+        mToolsKey.setContentDescription(getResources().getString(R.string.close_keyboard_tools));
+        mSuggestionsStrip.removeAllViews();
+        mStripVisibilityGroup.showSuggestionsStrip();
+
+        addKeyboardTool(R.string.keyboard_tool_paste, R.drawable.ic_tool_paste,
+                TOOL_ACTION_PASTE);
+        addKeyboardTool(R.string.keyboard_tool_select_all, R.drawable.ic_tool_select_all,
+                TOOL_ACTION_SELECT_ALL);
+        addKeyboardTool(R.string.keyboard_tool_copy, R.drawable.ic_tool_copy,
+                TOOL_ACTION_COPY);
+        addKeyboardTool(R.string.keyboard_tool_cut, R.drawable.ic_tool_cut,
+                TOOL_ACTION_CUT);
+        addKeyboardTool(R.string.keyboard_tool_emoji, R.drawable.ic_tool_emoji,
+                TOOL_ACTION_EMOJI);
+        addKeyboardTool(R.string.keyboard_tool_settings, R.drawable.ic_tool_settings,
+                TOOL_ACTION_SETTINGS);
+    }
+
+    private int dp(final float value) {
+        return (int)(value * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    private void addKeyboardTool(final int labelRes, final int iconRes, final int action) {
+        final boolean dark = KeyboardTheme.getKeyboardTheme(getContext()).mThemeId
+                == KeyboardTheme.THEME_ID_LXX_DARK;
+        final int foreground = dark ? 0xFFE8EAED : 0xFF5F6368;
+        final int rippleColor = dark ? 0x33FFFFFF : 0x22000000;
+        final LinearLayout item = new LinearLayout(getContext());
+        item.setOrientation(LinearLayout.VERTICAL);
+        item.setGravity(android.view.Gravity.CENTER);
+        item.setPadding(dp(2), dp(2), dp(2), dp(2));
+        item.setContentDescription(getResources().getString(labelRes));
+        item.setClickable(true);
+        item.setFocusable(true);
+
+        final GradientDrawable mask = new GradientDrawable();
+        mask.setColor(Color.WHITE);
+        mask.setCornerRadius(dp(10));
+        item.setBackground(new RippleDrawable(ColorStateList.valueOf(rippleColor),
+                new ColorDrawable(Color.TRANSPARENT), mask));
+
+        final ImageView icon = new ImageView(getContext());
+        final Drawable drawable = getResources().getDrawable(iconRes).mutate();
+        drawable.setTint(foreground);
+        icon.setImageDrawable(drawable);
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(19), dp(19));
+        item.addView(icon, iconParams);
+
+        final TextView label = new TextView(getContext());
+        label.setText(labelRes);
+        label.setTextColor(foreground);
+        label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
+        label.setGravity(android.view.Gravity.CENTER);
+        label.setSingleLine(true);
+        label.setEllipsize(TextUtils.TruncateAt.END);
+        item.addView(label, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        item.setOnClickListener(new OnClickListener() {
+            @Override public void onClick(final View view) {
+                if (mListener != null) {
+                    mListener.onKeyboardToolSelected(action);
                 }
-                mListener.onKeyboardToolSelected(item.getItemId());
-                return true;
+                setSuggestions(mSuggestedWords, mIsRtlLanguage);
             }
         });
-        popup.show();
+        mSuggestionsStrip.addView(item, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.MATCH_PARENT, 1f));
     }
 
     @Override
@@ -491,7 +551,7 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
         AudioAndHapticFeedbackManager.getInstance().performHapticAndAudioFeedback(
                 Constants.CODE_UNSPECIFIED, this);
         if (view == mToolsKey) {
-            showKeyboardToolsMenu();
+            toggleKeyboardTools();
             return;
         }
         if (view == mImportantNoticeStrip) {

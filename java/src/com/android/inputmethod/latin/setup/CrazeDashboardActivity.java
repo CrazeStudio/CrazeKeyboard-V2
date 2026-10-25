@@ -47,6 +47,8 @@ import java.util.List;
 /** CrazeKeyboard "Aurora" companion app: playground, theme studio, settings and feedback tuning. */
 public final class CrazeDashboardActivity extends Activity {
     private static final int KEYBOARD = 0, THEMES = 1, SETTINGS = 2, HAPTICS = 3;
+    private static final int TYPING = 4, LAYOUTS = 5, CORRECTION = 6, ADVANCED = 7;
+    public static final String EXTRA_START_TAB = "craze_start_tab";
 
     // Craze Studio palette: warm paper surfaces, ink text, and a vivid ember accent.
     private static final int BG = 0xFFF4F5F8, SURFACE = 0xFFFFFFFF, HIGH = 0xFFEEF0F5;
@@ -83,6 +85,9 @@ public final class CrazeDashboardActivity extends Activity {
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        tab = Math.max(KEYBOARD, Math.min(SETTINGS,
+                getIntent().getIntExtra(EXTRA_START_TAB, KEYBOARD)));
+        page = tab;
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
         LinearLayout root = new LinearLayout(this);
@@ -157,6 +162,10 @@ public final class CrazeDashboardActivity extends Activity {
         LinearLayout content = col();
         content.setPadding(dp(16), dp(8), dp(16), dp(24));
         if (page == HAPTICS) buildHaptics(content);
+        else if (page == TYPING) buildTyping(content);
+        else if (page == LAYOUTS) buildLayouts(content);
+        else if (page == CORRECTION) buildCorrection(content);
+        else if (page == ADVANCED) buildAdvanced(content);
         else if (tab == THEMES) buildThemes(content);
         else if (tab == SETTINGS) buildSettings(content);
         else buildKeyboard(content);
@@ -324,20 +333,20 @@ public final class CrazeDashboardActivity extends Activity {
             @Override public void onClick(View v) { page = HAPTICS; render(); }
         });
         gap(c, 8);
-        settingRow(c, "Aa", "Typing preferences", "Capitalization, spacing and punctuation", ORANGE, new View.OnClickListener() {
-            @Override public void onClick(View v) { openFragment("com.android.inputmethod.latin.settings.PreferencesSettingsFragment"); }
+        settingRow(c, "Aa", "Typing preferences", "Capitalization, spacing and key feedback", ORANGE, new View.OnClickListener() {
+            @Override public void onClick(View v) { page = TYPING; render(); }
         });
         gap(c, 8);
-        settingRow(c, "文", "Languages & layouts", "Appearance and layout configuration", INDIGO, new View.OnClickListener() {
-            @Override public void onClick(View v) { openFragment("com.android.inputmethod.latin.settings.AppearanceSettingsFragment"); }
+        settingRow(c, "文", "Languages & layouts", "Keyboard shape and screen layout", INDIGO, new View.OnClickListener() {
+            @Override public void onClick(View v) { page = LAYOUTS; render(); }
         });
         gap(c, 8);
         settingRow(c, "✎", "Text correction", "Suggestions and auto-correction", ORANGE, new View.OnClickListener() {
-            @Override public void onClick(View v) { openFragment("com.android.inputmethod.latin.settings.CorrectionSettingsFragment"); }
+            @Override public void onClick(View v) { page = CORRECTION; render(); }
         });
         gap(c, 8);
-        settingRow(c, "⚙", "All keyboard settings", "Open the full native settings screen", TEXT, new View.OnClickListener() {
-            @Override public void onClick(View v) { startActivity(new Intent(CrazeDashboardActivity.this, SettingsActivity.class)); }
+        settingRow(c, "⚙", "More controls", "Gesture typing and advanced options", TEXT, new View.OnClickListener() {
+            @Override public void onClick(View v) { page = ADVANCED; render(); }
         });
         gap(c, 12);
         LinearLayout privacy = card();
@@ -345,6 +354,147 @@ public final class CrazeDashboardActivity extends Activity {
         gap(privacy, 4);
         privacy.addView(txt("Text typed in the playground never leaves this device.", 12, MUTED, false));
         c.addView(privacy);
+    }
+
+
+    private void buildTyping(LinearLayout c) {
+        c.addView(button("←  Settings", HIGH, MUTED, new View.OnClickListener() {
+            @Override public void onClick(View v) { page = SETTINGS; tab = SETTINGS; render(); }
+        }), new LinearLayout.LayoutParams(-2, -2));
+        gap(c, 12);
+        heading(c, "Typing preferences", "Make everyday typing feel right.");
+        gap(c, 14);
+        LinearLayout typing = card();
+        typing.addView(txt("TYPING", 10, INDIGO, true));
+        switchRow(typing, getString(R.string.auto_cap), getString(R.string.auto_cap_summary),
+                Settings.PREF_AUTO_CAP, true);
+        divider(typing);
+        switchRow(typing, getString(R.string.use_double_space_period),
+                getString(R.string.use_double_space_period_summary),
+                Settings.PREF_KEY_USE_DOUBLE_SPACE_PERIOD, true);
+        c.addView(typing);
+        gap(c, 12);
+        LinearLayout feedback = card();
+        feedback.addView(txt("KEY FEEDBACK", 10, INDIGO, true));
+        switchRow(feedback, getString(R.string.vibrate_on_keypress),
+                getString(R.string.vibrate_on_keypress_summary), Settings.PREF_VIBRATE_ON,
+                getResources().getBoolean(R.bool.config_default_vibration_enabled));
+        divider(feedback);
+        switchRow(feedback, getString(R.string.sound_on_keypress),
+                getString(R.string.sound_on_keypress_summary), Settings.PREF_SOUND_ON,
+                getResources().getBoolean(R.bool.config_default_sound_enabled));
+        divider(feedback);
+        switchRow(feedback, getString(R.string.popup_on_keypress),
+                getString(R.string.popup_on_keypress_summary), Settings.PREF_POPUP_ON,
+                getResources().getBoolean(R.bool.config_default_key_preview_popup));
+        divider(feedback);
+        switchRow(feedback, getString(R.string.voice_input),
+                getString(R.string.voice_input_summary), Settings.PREF_VOICE_INPUT_KEY, true);
+        c.addView(feedback);
+    }
+
+    private void buildLayouts(LinearLayout c) {
+        c.addView(button("←  Settings", HIGH, MUTED, new View.OnClickListener() {
+            @Override public void onClick(View v) { page = SETTINGS; tab = SETTINGS; render(); }
+        }), new LinearLayout.LayoutParams(-2, -2));
+        gap(c, 12);
+        heading(c, "Languages & layouts", "Choose a keyboard look and layout.");
+        gap(c, 14);
+        LinearLayout theme = card();
+        theme.addView(txt("KEYBOARD THEME", 10, INDIGO, true));
+        gap(theme, 6);
+        theme.addView(txt("Pick a light or dark keyboard style.", 12, MUTED, false));
+        gap(theme, 10);
+        theme.addView(primary("Open Theme Studio", new View.OnClickListener() {
+            @Override public void onClick(View v) { page = THEMES; tab = THEMES; render(); }
+        }));
+        c.addView(theme);
+        gap(c, 12);
+        LinearLayout layout = card();
+        layout.addView(txt("SCREEN LAYOUT", 10, INDIGO, true));
+        switchRow(layout, getString(R.string.enable_split_keyboard),
+                getString(R.string.enable_split_keyboard_summary), Settings.PREF_ENABLE_SPLIT_KEYBOARD,
+                false);
+        gap(layout, 8);
+        layout.addView(button("Custom input styles  ›", HIGH, TEXT, new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                openFragment("com.android.inputmethod.latin.settings.CustomInputStyleSettingsFragment");
+            }
+        }));
+        c.addView(layout);
+    }
+
+    private void buildCorrection(LinearLayout c) {
+        c.addView(button("←  Settings", HIGH, MUTED, new View.OnClickListener() {
+            @Override public void onClick(View v) { page = SETTINGS; tab = SETTINGS; render(); }
+        }), new LinearLayout.LayoutParams(-2, -2));
+        gap(c, 12);
+        heading(c, "Text correction", "Choose how CrazeKeyboard helps while you type.");
+        gap(c, 14);
+        LinearLayout suggestions = card();
+        suggestions.addView(txt("SUGGESTIONS", 10, INDIGO, true));
+        switchRow(suggestions, getString(R.string.prefs_show_suggestions),
+                getString(R.string.prefs_show_suggestions_summary), Settings.PREF_SHOW_SUGGESTIONS, true);
+        divider(suggestions);
+        switchRow(suggestions, getString(R.string.bigram_prediction),
+                getString(R.string.bigram_prediction_summary), Settings.PREF_BIGRAM_PREDICTIONS, true);
+        divider(suggestions);
+        switchRow(suggestions, getString(R.string.auto_correction),
+                getString(R.string.auto_correction_summary), Settings.PREF_AUTO_CORRECTION, true);
+        c.addView(suggestions);
+        gap(c, 12);
+        LinearLayout privacy = card();
+        privacy.addView(txt("PERSONALIZATION", 10, INDIGO, true));
+        switchRow(privacy, getString(R.string.use_personalized_dicts),
+                getString(R.string.use_personalized_dicts_summary),
+                Settings.PREF_KEY_USE_PERSONALIZED_DICTS, true);
+        divider(privacy);
+        switchRow(privacy, getString(R.string.use_contacts_dict),
+                getString(R.string.use_contacts_dict_summary), Settings.PREF_KEY_USE_CONTACTS_DICT, true);
+        divider(privacy);
+        switchRow(privacy, getString(R.string.prefs_block_potentially_offensive_title),
+                getString(R.string.prefs_block_potentially_offensive_summary),
+                Settings.PREF_BLOCK_POTENTIALLY_OFFENSIVE,
+                getResources().getBoolean(R.bool.config_block_potentially_offensive));
+        c.addView(privacy);
+        gap(c, 12);
+        c.addView(button("Personal dictionary  ›", HIGH, TEXT, new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                startActivity(new Intent(android.provider.Settings.ACTION_USER_DICTIONARY_SETTINGS));
+            }
+        }));
+    }
+
+    private void buildAdvanced(LinearLayout c) {
+        c.addView(button("←  Settings", HIGH, MUTED, new View.OnClickListener() {
+            @Override public void onClick(View v) { page = SETTINGS; tab = SETTINGS; render(); }
+        }), new LinearLayout.LayoutParams(-2, -2));
+        gap(c, 12);
+        heading(c, "More controls", "Tune gestures and keyboard behavior.");
+        gap(c, 14);
+        LinearLayout gestures = card();
+        gestures.addView(txt("GESTURE TYPING", 10, INDIGO, true));
+        switchRow(gestures, getString(R.string.gesture_input),
+                getString(R.string.gesture_input_summary), Settings.PREF_GESTURE_INPUT, true);
+        divider(gestures);
+        switchRow(gestures, getString(R.string.gesture_floating_preview_text),
+                getString(R.string.gesture_floating_preview_text_summary),
+                Settings.PREF_GESTURE_FLOATING_PREVIEW_TEXT, true);
+        divider(gestures);
+        switchRow(gestures, getString(R.string.gesture_preview_trail),
+                getString(R.string.gesture_preview_trail_summary), Settings.PREF_GESTURE_PREVIEW_TRAIL, true);
+        c.addView(gestures);
+        gap(c, 12);
+        LinearLayout controls = card();
+        controls.addView(txt("OTHER CONTROLS", 10, INDIGO, true));
+        switchRow(controls, getString(R.string.prefs_enable_emoji_alt_physical_key),
+                getString(R.string.prefs_enable_emoji_alt_physical_key_summary),
+                Settings.PREF_ENABLE_EMOJI_ALT_PHYSICAL_KEY, true);
+        divider(controls);
+        switchRow(controls, getString(R.string.show_setup_wizard_icon),
+                getString(R.string.show_setup_wizard_icon_summary),
+                Settings.PREF_SHOW_SETUP_WIZARD_ICON, false);
+        c.addView(controls);
     }
 
     private void buildHaptics(LinearLayout c) {
