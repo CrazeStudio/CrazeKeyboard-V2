@@ -23,6 +23,7 @@ import static com.android.inputmethod.latin.common.Constants.ImeOption.NO_MICROP
 import android.Manifest.permission;
 import android.app.ActivityOptions;
 import android.content.BroadcastReceiver;
+import android.content.ClipData;
 import android.content.Context;
 import android.content.ClipDescription;
 import android.content.ClipboardManager;
