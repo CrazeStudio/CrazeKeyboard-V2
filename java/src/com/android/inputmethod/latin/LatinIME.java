@@ -178,10 +178,14 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
                     keyboard.applyCBoardTheme();
                     keyboard.invalidateAllKeys();
                 }
-                if (mSuggestionStripView != null) mSuggestionStripView.applyCBoardTheme();
+                        if (mSuggestionStripView != null) mSuggestionStripView.applyCBoardTheme();
                 if (mInputView != null) {
                     CBoardToolbarView toolbar = mInputView.findViewById(R.id.cboard_toolbar);
                     if (toolbar != null) toolbar.applyCBoardTheme();
+                    applyCBoardTopBarTheme();
+                    com.android.inputmethod.keyboard.emoji.EmojiPalettesView emojiView =
+                            mInputView.findViewById(R.id.emoji_palettes_view);
+                    if (emojiView != null) emojiView.applyCBoardTheme();
                 }
             }
         }
@@ -847,6 +851,12 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         final MainKeyboardView keyboard = mKeyboardSwitcher.getMainKeyboardView();
         if (keyboard != null) { keyboard.applyCBoardTheme(); keyboard.invalidateAllKeys(); }
         if (mSuggestionStripView != null) mSuggestionStripView.applyCBoardTheme();
+        applyCBoardTopBarTheme();
+        if (mInputView != null) {
+            com.android.inputmethod.keyboard.emoji.EmojiPalettesView emojiView =
+                    mInputView.findViewById(R.id.emoji_palettes_view);
+            if (emojiView != null) emojiView.applyCBoardTheme();
+        }
     }
 
     @Override
@@ -908,8 +918,19 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         if (toolbar != null) {
             toolbar.setListener(this);
             toolbar.setVoiceEnabled(mSettings.getCurrent().mShowsVoiceInputKey);
-            toolbar.setGifEnabled(supportsGifInput(getCurrentInputEditorInfo()));
         }
+        if (mSuggestionStripView != null) {
+            mSuggestionStripView.setGifEnabled(supportsGifInput(getCurrentInputEditorInfo()));
+        }
+        android.widget.ImageButton tools = view.findViewById(R.id.cboard_tools_button);
+        if (tools != null) {
+            tools.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View button) {
+                    if (mSuggestionStripView != null) mSuggestionStripView.toggleCBoardTools();
+                }
+            });
+        }
+        applyCBoardTopBarTheme();
     }
 
     @Override
@@ -987,10 +1008,10 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         SettingsValues currentSettingsValues = mSettings.getCurrent();
         if (mInputView != null) {
             CBoardToolbarView toolbar = mInputView.findViewById(R.id.cboard_toolbar);
-            if (toolbar != null) {
-                toolbar.setVoiceEnabled(currentSettingsValues.mShowsVoiceInputKey);
-                toolbar.setGifEnabled(supportsGifInput(editorInfo));
-            }
+            if (toolbar != null) toolbar.setVoiceEnabled(currentSettingsValues.mShowsVoiceInputKey);
+        }
+        if (mSuggestionStripView != null) {
+            mSuggestionStripView.setGifEnabled(supportsGifInput(editorInfo));
         }
 
         if (editorInfo == null) {
@@ -1713,6 +1734,11 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
 
     @Override
     public void onKeyboardToolSelected(final int action) {
+        if (mSettings.getCurrent().mInputAttributes.mIsPasswordField
+                && (action == SuggestionStripView.TOOL_ACTION_CLIPBOARD
+                || action == SuggestionStripView.TOOL_ACTION_PASTE
+                || action == SuggestionStripView.TOOL_ACTION_COPY
+                || action == SuggestionStripView.TOOL_ACTION_CUT)) return;
         if (action == SuggestionStripView.TOOL_ACTION_CLIPBOARD) {
             showClipboardHistory();
             return;
@@ -1738,63 +1764,99 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
             requestHideSelf(0);
             return;
         }
-        final android.view.inputmethod.InputConnection inputConnection =
-                getCurrentInputConnection();
-        if (inputConnection == null) {
+        if (action == SuggestionStripView.TOOL_ACTION_GIF) {
+            launchGifPicker();
             return;
         }
-        if (action == SuggestionStripView.TOOL_ACTION_COPY
-                || action == SuggestionStripView.TOOL_ACTION_CUT) {
-            CharSequence selected = inputConnection.getSelectedText(0);
-            if (selected != null && selected.length() > 0) rememberClipboardText(selected.toString());
+        if (action == SuggestionStripView.TOOL_ACTION_VOICE) {
+            onCodeInput(Constants.CODE_SHORTCUT, Constants.SUGGESTION_STRIP_COORDINATE,
+                    Constants.SUGGESTION_STRIP_COORDINATE, false /* isKeyRepeat */);
+            return;
         }
-        final int contextMenuAction;
+        if (action == SuggestionStripView.TOOL_ACTION_TEXT) {
+            mSuggestionStripView.showKeyboardTools();
+            return;
+        }
+        if (action == SuggestionStripView.TOOL_ACTION_MORE) {
+            mSuggestionStripView.showMoreOptions();
+            return;
+        }
+
+        final android.view.inputmethod.InputConnection connection = getCurrentInputConnection();
+        if (connection == null) return;
         switch (action) {
-        case SuggestionStripView.TOOL_ACTION_PASTE:
-            contextMenuAction = android.R.id.paste;
-            break;
-        case SuggestionStripView.TOOL_ACTION_SELECT_ALL:
-            contextMenuAction = android.R.id.selectAll;
-            break;
+        case SuggestionStripView.TOOL_ACTION_PASTE: {
+            ClipboardManager clipboard = (ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+            if (clipboard != null && clipboard.hasPrimaryClip()) {
+                CharSequence text = clipboard.getPrimaryClip().getItemAt(0).coerceToText(this);
+                if (text != null) connection.commitText(text, 1);
+            }
+            return;
+        }
+        case SuggestionStripView.TOOL_ACTION_SELECT_ALL: {
+            if (!connection.performContextMenuAction(android.R.id.selectAll)) {
+                long now = android.os.SystemClock.uptimeMillis();
+                connection.sendKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_DOWN,
+                        KeyEvent.KEYCODE_A, 0, KeyEvent.META_CTRL_ON));
+                connection.sendKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_UP,
+                        KeyEvent.KEYCODE_A, 0, KeyEvent.META_CTRL_ON));
+            }
+            return;
+        }
         case SuggestionStripView.TOOL_ACTION_COPY:
-            contextMenuAction = android.R.id.copy;
-            break;
-        case SuggestionStripView.TOOL_ACTION_CUT:
-            contextMenuAction = android.R.id.cut;
-            break;
+        case SuggestionStripView.TOOL_ACTION_CUT: {
+            CharSequence selected = connection.getSelectedText(0);
+            if (selected != null && selected.length() > 0) {
+                ClipboardManager clipboard = (ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+                if (clipboard != null) clipboard.setPrimaryClip(
+                        ClipData.newPlainText("CBoard", selected));
+                rememberClipboardText(selected.toString());
+                if (action == SuggestionStripView.TOOL_ACTION_CUT) {
+                    connection.commitText("", 1);
+                }
+            } else {
+                connection.performContextMenuAction(action == SuggestionStripView.TOOL_ACTION_COPY
+                        ? android.R.id.copy : android.R.id.cut);
+            }
+            return;
+        }
         default:
             return;
         }
-        inputConnection.performContextMenuAction(contextMenuAction);
     }
 
     @Override
     public void onCBoardToolbarAction(final int action) {
-        switch (action) {
-        case CBoardToolbarView.NAVIGATION:
-            mRichImm.getInputMethodManager().showInputMethodPicker();
-            break;
-        case CBoardToolbarView.TEXT_TOOLS:
-            mSuggestionStripView.showKeyboardTools();
-            break;
-        case CBoardToolbarView.GIF:
-            Intent picker = new Intent(this, CBoardGifPickerActivity.class);
-            picker.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(picker);
-            break;
-        case CBoardToolbarView.CLIPBOARD:
-            showClipboardHistory();
-            break;
-        case CBoardToolbarView.SETTINGS:
-            launchSettings(SettingsActivity.EXTRA_ENTRY_VALUE_SYSTEM_SETTINGS);
-            break;
-        case CBoardToolbarView.MORE:
-            mSuggestionStripView.showMoreOptions();
-            break;
-        case CBoardToolbarView.VOICE:
+        if (action == CBoardToolbarView.MORE) {
+            if (mSuggestionStripView != null) mSuggestionStripView.toggleCBoardTools();
+        } else if (action == CBoardToolbarView.VOICE) {
             onCodeInput(Constants.CODE_SHORTCUT, Constants.SUGGESTION_STRIP_COORDINATE,
                     Constants.SUGGESTION_STRIP_COORDINATE, false /* isKeyRepeat */);
-            break;
+        }
+    }
+
+    private void launchGifPicker() {
+        if (!supportsGifInput(getCurrentInputEditorInfo())) return;
+        Intent picker = new Intent(this, CBoardGifPickerActivity.class);
+        picker.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(picker);
+    }
+
+    private void applyCBoardTopBarTheme() {
+        if (mInputView == null) return;
+        CBoardTheme colors = CBoardTheme.resolve(this);
+        View row = mInputView.findViewById(R.id.cboard_top_row);
+        if (row != null) row.setBackgroundColor(colors.panel);
+        android.widget.ImageButton tools = mInputView.findViewById(R.id.cboard_tools_button);
+        if (tools != null) {
+            tools.setImageTintList(android.content.res.ColorStateList.valueOf(colors.secondaryText));
+            android.graphics.drawable.GradientDrawable mask =
+                    new android.graphics.drawable.GradientDrawable();
+            mask.setColor(Color.WHITE);
+            mask.setCornerRadius(getResources().getDisplayMetrics().density * 14);
+            tools.setBackground(new android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(
+                            colors.dark ? 0x33FFFFFF : 0x22000000), null, mask));
         }
     }
 
@@ -1883,7 +1945,8 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         }
         ClipDescription description = new ClipDescription("CBoard GIF", new String[]{"image/gif"});
         InputContentInfo content = new InputContentInfo(uri, description, null);
-        boolean sent = getCurrentInputConnection().commitContent(content,
+        android.view.inputmethod.InputConnection connection = getCurrentInputConnection();
+        boolean sent = connection != null && connection.commitContent(content,
                 android.view.inputmethod.InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION,
                 null);
         if (!sent) android.widget.Toast.makeText(this, "Unable to send GIF to this field",

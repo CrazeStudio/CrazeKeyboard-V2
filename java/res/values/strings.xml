@@ -73,6 +73,9 @@
     <string name="close_keyboard_tools">Close keyboard tools</string>
     <string name="gesture_preview_trail_summary">Show a trail while gliding across the keys</string>
     <string name="keyboard_tool_paste">Paste from clipboard</string>
+    <string name="keyboard_tool_text">Text actions</string>
+    <string name="keyboard_tool_gif">GIF picker</string>
+    <string name="keyboard_tool_more">More tools</string>
     <string name="keyboard_tool_select_all">Select all text</string>
     <string name="keyboard_tool_copy">Copy selected text</string>
     <string name="keyboard_tool_cut">Cut selected text</string>

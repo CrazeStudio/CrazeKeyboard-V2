@@ -1,47 +1,46 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-/*
-**
-** Copyright 2014, The Android Open Source Project
-**
-** Licensed under the Apache License, Version 2.0 (the "License");
-** you may not use this file except in compliance with the License.
-** You may obtain a copy of the License at
-**
-**     http://www.apache.org/licenses/LICENSE-2.0
-**
-** Unless required by applicable law or agreed to in writing, software
-** distributed under the License is distributed on an "AS IS" BASIS,
-** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-** See the License for the specific language governing permissions and
-** limitations under the License.
-*/
--->
-
-<LinearLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="wrap_content"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_gravity="bottom"
-    android:orientation="vertical" >
+    android:orientation="vertical">
 
-    <com.android.inputmethod.latin.CBoardToolbarView
-        android:id="@+id/cboard_toolbar"
-        android:layout_width="match_parent"
-        android:layout_height="42dp" />
-
-    <!-- This independent layer shows word predictions and autocorrection. -->
-    <com.android.inputmethod.latin.suggestions.SuggestionStripView
-        android:id="@+id/suggestion_strip_view"
-        android:layoutDirection="ltr"
+    <!-- Suggestions, tool launcher and voice input share one compact top row. -->
+    <LinearLayout
+        android:id="@+id/cboard_top_row"
         android:layout_width="match_parent"
         android:layout_height="@dimen/config_suggestions_strip_height"
         android:gravity="center_vertical"
-        android:clipToPadding="false"
-        style="?attr/suggestionStripViewStyle" />
+        android:orientation="horizontal"
+        android:paddingLeft="5dp"
+        android:paddingRight="3dp">
 
-    <!-- To ensure that key preview popup is correctly placed when the current system locale is
-         one of RTL locales, layoutDirection="ltr" is needed in the SDK version 17+. -->
+        <ImageButton
+            android:id="@+id/cboard_tools_button"
+            android:layout_width="42dp"
+            android:layout_height="match_parent"
+            android:contentDescription="@string/keyboard_tools"
+            android:padding="10dp"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_cboard_tools"
+            />
+
+        <com.android.inputmethod.latin.suggestions.SuggestionStripView
+            android:id="@+id/suggestion_strip_view"
+            android:layoutDirection="ltr"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center_vertical"
+            android:clipToPadding="false"
+            style="?attr/suggestionStripViewStyle" />
+
+        <com.android.inputmethod.latin.CBoardToolbarView
+            android:id="@+id/cboard_toolbar"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent" />
+    </LinearLayout>
+
     <com.android.inputmethod.keyboard.MainKeyboardView
         android:id="@+id/keyboard_view"
         android:layoutDirection="ltr"

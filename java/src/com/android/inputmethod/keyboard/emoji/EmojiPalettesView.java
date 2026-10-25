@@ -22,6 +22,9 @@ import android.content.Context;
 import android.content.res.Resources;
 import android.content.res.TypedArray;
 import android.graphics.Color;
+import android.content.res.ColorStateList;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.preference.PreferenceManager;
 import androidx.viewpager.widget.ViewPager;
 import android.util.AttributeSet;
@@ -30,6 +33,7 @@ import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -46,6 +50,7 @@ import com.android.inputmethod.keyboard.internal.KeyDrawParams;
 import com.android.inputmethod.keyboard.internal.KeyVisualAttributes;
 import com.android.inputmethod.keyboard.internal.KeyboardIconsSet;
 import com.android.inputmethod.latin.AudioAndHapticFeedbackManager;
+import com.android.inputmethod.latin.CBoardTheme;
 import com.android.inputmethod.latin.R;
 import com.android.inputmethod.latin.RichInputMethodSubtype;
 import com.android.inputmethod.latin.common.Constants;
@@ -229,6 +234,78 @@ public final class EmojiPalettesView extends LinearLayout implements OnTabChange
         mSpacebar.setOnClickListener(this);
         mEmojiLayoutParams.setKeyProperties(mSpacebar);
         mSpacebarIcon = findViewById(R.id.emoji_keyboard_space_icon);
+        applyCBoardTheme();
+    }
+
+    public void applyCBoardTheme() {
+        final CBoardTheme colors = CBoardTheme.resolve(getContext());
+        setBackgroundColor(colors.panel);
+        updateEmojiTabStyle(colors);
+        if (mEmojiCategoryPageIndicatorView != null) {
+            mEmojiCategoryPageIndicatorView.setColors(colors.accent, colors.panel);
+        }
+        if (mDeleteKey != null) {
+            mDeleteKey.setBackground(rounded(colors.functionalKey, colors));
+            mDeleteKey.setImageTintList(ColorStateList.valueOf(colors.secondaryText));
+        }
+        if (mSpacebar != null) mSpacebar.setBackground(rounded(colors.key, colors));
+        if (mAlphabetKeyLeft != null) {
+            mAlphabetKeyLeft.setTextColor(colors.text);
+            mAlphabetKeyLeft.setBackground(rounded(colors.functionalKey, colors));
+        }
+        if (mAlphabetKeyRight != null) {
+            mAlphabetKeyRight.setTextColor(colors.text);
+            mAlphabetKeyRight.setBackground(rounded(colors.functionalKey, colors));
+        }
+        if (mEmojiPager != null) applyKeyboardTheme(mEmojiPager, colors);
+    }
+
+    private GradientDrawable rounded(final int color, final CBoardTheme theme) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(color);
+        drawable.setCornerRadius(getResources().getDisplayMetrics().density * 11);
+        drawable.setStroke((int)(getResources().getDisplayMetrics().density + .5f), theme.border);
+        return drawable;
+    }
+
+    private void updateEmojiTabStyle(final CBoardTheme colors) {
+        if (mTabHost == null) return;
+        final TabWidget widget = mTabHost.getTabWidget();
+        widget.setBackgroundColor(colors.panel);
+        final int selectedTab = mTabHost.getCurrentTab();
+        for (int i = 0; i < widget.getChildCount(); i++) {
+            final View tab = widget.getChildAt(i);
+            final boolean selected = i == selectedTab;
+            GradientDrawable mask = new GradientDrawable();
+            mask.setColor(Color.WHITE);
+            mask.setCornerRadius(getResources().getDisplayMetrics().density * 12);
+            tab.setBackground(new RippleDrawable(ColorStateList.valueOf(
+                    colors.dark ? 0x33FFFFFF : 0x22000000),
+                    rounded(selected ? colors.pressed : colors.panel, colors), mask));
+            tintEmojiTab(tab, selected ? colors.accent : colors.secondaryText);
+        }
+    }
+
+    private void tintEmojiTab(final View view, final int color) {
+        if (view instanceof ImageView) {
+            ((ImageView)view).setImageTintList(ColorStateList.valueOf(color));
+        } else if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup)view;
+            for (int i = 0; i < group.getChildCount(); i++) tintEmojiTab(group.getChildAt(i), color);
+        }
+    }
+
+    private void applyKeyboardTheme(final View view, final CBoardTheme colors) {
+        if (view instanceof KeyboardView) {
+            KeyboardView keyboard = (KeyboardView)view;
+            keyboard.applyCBoardTheme();
+            keyboard.invalidateAllKeys();
+        } else if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup)view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                applyKeyboardTheme(group.getChildAt(i), colors);
+            }
+        }
     }
 
     @Override
@@ -246,6 +323,7 @@ public final class EmojiPalettesView extends LinearLayout implements OnTabChange
         final int categoryId = mEmojiCategory.getCategoryId(tabId);
         setCurrentCategoryId(categoryId, false /* force */);
         updateEmojiCategoryPageIdView();
+        updateEmojiTabStyle(CBoardTheme.resolve(getContext()));
     }
 
     @Override
@@ -389,6 +467,7 @@ public final class EmojiPalettesView extends LinearLayout implements OnTabChange
         setupAlphabetKey(mAlphabetKeyRight, switchToAlphaLabel, params);
         mEmojiPager.setAdapter(mEmojiPalettesAdapter);
         mEmojiPager.setCurrentItem(mCurrentPagerPosition);
+        applyCBoardTheme();
     }
 
     public void stopEmojiPalettes() {
