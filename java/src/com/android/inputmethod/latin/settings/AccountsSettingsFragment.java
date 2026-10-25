@@ -257,7 +257,7 @@ public final class AccountsSettingsFragment extends SubScreenFragment {
             return;
         }
         boolean hasAccountsPermission = PermissionsUtil.checkAllPermissionsGranted(
-            getActivity(), Manifest.permission.READ_CONTACTS);
+            getActivity(), Manifest.permission.GET_ACCOUNTS);
 
         final String[] accountsForLogin = hasAccountsPermission ?
                 LoginAccountUtils.getAccountsForLogin(getActivity()) : new String[0];

@@ -16,7 +16,6 @@
 
 package com.android.inputmethod.latin;
 
-import android.Manifest;
 import android.content.Context;
 import android.text.TextUtils;
 import android.util.Log;
@@ -29,7 +28,6 @@ import com.android.inputmethod.latin.SuggestedWords.SuggestedWordInfo;
 import com.android.inputmethod.latin.common.ComposedData;
 import com.android.inputmethod.latin.common.Constants;
 import com.android.inputmethod.latin.common.StringUtils;
-import com.android.inputmethod.latin.permissions.PermissionsUtil;
 import com.android.inputmethod.latin.personalization.UserHistoryDictionary;
 import com.android.inputmethod.latin.settings.SettingsValuesForSuggestion;
 import com.android.inputmethod.latin.utils.ExecutorUtils;
@@ -79,7 +77,6 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
     static {
         DICT_TYPE_TO_CLASS.put(Dictionary.TYPE_USER_HISTORY, UserHistoryDictionary.class);
         DICT_TYPE_TO_CLASS.put(Dictionary.TYPE_USER, UserBinaryDictionary.class);
-        DICT_TYPE_TO_CLASS.put(Dictionary.TYPE_CONTACTS, ContactsBinaryDictionary.class);
     }
 
     private static final String DICT_FACTORY_METHOD_NAME = "getDictionary";
@@ -238,11 +235,6 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
     }
 
     @Override
-    public boolean usesContacts() {
-        return mDictionaryGroup.getSubDict(Dictionary.TYPE_CONTACTS) != null;
-    }
-
-    @Override
     public String getAccount() {
         return null;
     }
@@ -279,7 +271,6 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
     public void resetDictionaries(
             final Context context,
             final Locale newLocale,
-            final boolean useContactsDict,
             final boolean usePersonalizedDicts,
             final boolean forceReloadMainDictionary,
             @Nullable final String account,
@@ -290,12 +281,6 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
         final HashSet<String> subDictTypesToUse = new HashSet<>();
         subDictTypesToUse.add(Dictionary.TYPE_USER);
 
-        // Do not use contacts dictionary if we do not have permissions to read contacts.
-        final boolean contactsPermissionGranted = PermissionsUtil.checkAllPermissionsGranted(
-                context, Manifest.permission.READ_CONTACTS);
-        if (useContactsDict && contactsPermissionGranted) {
-            subDictTypesToUse.add(Dictionary.TYPE_CONTACTS);
-        }
         if (usePersonalizedDicts) {
             subDictTypesToUse.add(Dictionary.TYPE_USER_HISTORY);
         }
@@ -555,11 +540,8 @@ public class DictionaryFacilitatorImpl implements DictionaryFacilitator {
         final String secondWord;
         if (wasAutoCapitalized) {
             if (isValidSuggestionWord(word) && !isValidSuggestionWord(lowerCasedWord)) {
-                // If the word was auto-capitalized and exists only as a capitalized word in the
-                // dictionary, then we must not downcase it before registering it. For example,
-                // the name of the contacts in start-of-sentence position would come here with the
-                // wasAutoCapitalized flag: if we downcase it, we'd register a lower-case version
-                // of that contact's name which would end up popping in suggestions.
+                // If the word was auto-capitalized and exists only as a capitalized dictionary
+                // entry, retain that form in user history instead of learning a lowercase variant.
                 secondWord = word;
             } else {
                 // If however the word is not in the dictionary, or exists as a lower-case word

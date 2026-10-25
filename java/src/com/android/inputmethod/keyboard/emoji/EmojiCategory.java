@@ -378,8 +378,8 @@ final class EmojiCategory {
             }
 
             final Keyboard keyboard = mLayoutSet.getKeyboard(sCategoryElementId[categoryId]);
-            final Key[][] sortedKeys = sortKeysIntoPages(
-                    keyboard.getSortedKeys(), mMaxPageKeyCount);
+            final List<Key> supportedKeys = filterUnsupportedEmoji(keyboard.getSortedKeys());
+            final Key[][] sortedKeys = sortKeysIntoPages(supportedKeys, mMaxPageKeyCount);
             for (int pageId = 0; pageId < sortedKeys.length; ++pageId) {
                 final DynamicGridKeyboard tempKeyboard = new DynamicGridKeyboard(mPrefs,
                         mLayoutSet.getKeyboard(KeyboardId.ELEMENT_EMOJI_RECENTS),
@@ -436,6 +436,26 @@ final class EmojiCategory {
             retval[i / maxPageCount][i % maxPageCount] = keys.get(i);
         }
         return retval;
+    }
+
+
+    /** Keep glyphs that the device's installed emoji font can actually render. */
+    private static List<Key> filterUnsupportedEmoji(final List<Key> keys) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return keys;
+        final Paint paint = new Paint();
+        final ArrayList<Key> supported = new ArrayList<>(keys.size());
+        try {
+            for (final Key key : keys) {
+                String text = key.getOutputText();
+                if (text == null && key.getCode() > 0) {
+                    text = new String(Character.toChars(key.getCode()));
+                }
+                if (text == null || paint.hasGlyph(text)) supported.add(key);
+            }
+            return supported;
+        } catch (NoSuchMethodError unavailable) {
+            return keys;
+        }
     }
 
     private static boolean canShowFlagEmoji() {

@@ -18,12 +18,14 @@ package com.android.inputmethod.keyboard;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.res.Configuration;
 import android.os.Build;
 import android.os.Build.VERSION_CODES;
 import android.preference.PreferenceManager;
 import android.util.Log;
 
 import com.android.inputmethod.compat.BuildCompatUtils;
+import com.android.inputmethod.latin.CBoardTheme;
 import com.android.inputmethod.latin.R;
 
 import java.util.ArrayList;
@@ -169,6 +171,18 @@ public final class KeyboardTheme implements Comparable<KeyboardTheme> {
     public static KeyboardTheme getKeyboardTheme(final Context context) {
         final SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         final KeyboardTheme[] availableThemeArray = getAvailableThemeArray(context);
+        final String mode = prefs.getString(CBoardTheme.PREF_MODE, CBoardTheme.SYSTEM);
+        if (CBoardTheme.SYSTEM.equals(mode) || CBoardTheme.LIGHT.equals(mode)
+                || CBoardTheme.DARK.equals(mode) || CBoardTheme.CUSTOM.equals(mode)) {
+            final boolean systemDark = (context.getResources().getConfiguration().uiMode
+                    & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+            final boolean dark = CBoardTheme.DARK.equals(mode)
+                    || (CBoardTheme.SYSTEM.equals(mode) && systemDark)
+                    || (CBoardTheme.CUSTOM.equals(mode) && systemDark);
+            final KeyboardTheme selected = searchKeyboardThemeById(
+                    dark ? THEME_ID_LXX_DARK : THEME_ID_LXX_LIGHT, availableThemeArray);
+            if (selected != null) return selected;
+        }
         return getKeyboardTheme(prefs, BuildCompatUtils.EFFECTIVE_SDK_INT, availableThemeArray);
     }
 

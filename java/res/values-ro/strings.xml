@@ -21,8 +21,6 @@
 <resources xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
     <string name="english_ime_input_options" msgid="4262655277902459172">"Opțiuni de introducere text"</string>
-    <string name="use_contacts_for_spellchecking_option_title" msgid="5006788115094214047">"Verificare nume în agendă"</string>
-    <string name="use_contacts_for_spellchecking_option_summary" msgid="3637428873952490597">"Verificatorul ortografic utilizează intrări din lista de contacte"</string>
     <string name="vibrate_on_keypress" msgid="4198642474308147572">"Vibrare la apăsarea tastei"</string>
     <string name="sound_on_keypress" msgid="961585885443836044">"Sunet la apăsarea tastei"</string>
     <string name="popup_on_keypress" msgid="8957173605079893697">"Pop-up la apăsarea tastei"</string>
@@ -55,8 +53,6 @@
     <string name="key_preview_popup_dismiss_default_delay" msgid="5550664463804963104">"Prestabilit"</string>
     <string name="abbreviation_unit_milliseconds" msgid="3255301845626146979">"<xliff:g id="MILLISECONDS">%s</xliff:g> msec."</string>
     <string name="settings_system_default" msgid="677003402757146199">"Valoare prestabilită"</string>
-    <string name="use_contacts_dict" msgid="1625971825786907643">"Sugerați nume din Agendă"</string>
-    <string name="use_contacts_dict_summary" msgid="3820744038619192013">"Utilizați numele din Agendă pentru sugestii și corecții"</string>
     <string name="use_personalized_dicts" msgid="7400413665774169711">"Sugestii personalizate"</string>
     <string name="enable_metrics_logging" msgid="5113593293708535701">"Îmbunătățiți <xliff:g id="APPLICATION_NAME">%s</xliff:g>"</string>
     <string name="use_double_space_period" msgid="7172135098923900609">"Inserează punct spațiu"</string>

@@ -26,8 +26,6 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.DOWNLOAD_WITHOUT_NOTIFICATION"/>
     <uses-permission android:name="android.permission.GET_ACCOUNTS"/>
-    <uses-permission android:name="android.permission.READ_CONTACTS"/>
-    <uses-permission android:name="android.permission.READ_PROFILE"/>
     <uses-permission android:name="android.permission.READ_SYNC_SETTINGS"/>
     <uses-permission android:name="android.permission.READ_SYNC_STATS"/>
     <uses-permission android:name="android.permission.READ_USER_DICTIONARY"/>
@@ -103,7 +101,6 @@
              android:label="@string/keyboard_app_name"
              android:icon="@drawable/ic_launcher_keyboard"
              android:launchMode="singleTask"
-             android:noHistory="true"
              android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
@@ -116,6 +113,9 @@
              android:label="@string/keyboard_app_name"
              android:exported="false"
              android:windowSoftInputMode="adjustResize" />
+        <activity android:name="com.android.inputmethod.latin.setup.CBoardGifPickerActivity"
+             android:theme="@style/CrazeDashboardTheme"
+             android:exported="false" />
         <activity android:name="com.android.inputmethod.latin.permissions.PermissionsActivity"
              android:theme="@android:style/Theme.Translucent.NoTitleBar"
              android:exported="false"

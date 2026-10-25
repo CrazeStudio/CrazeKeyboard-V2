@@ -29,55 +29,10 @@
         android:layout_height="match_parent"
         android:paddingTop="3dp"
         android:paddingBottom="3dp"
-        android:layout_marginLeft="@dimen/config_suggestions_strip_horizontal_margin"
-        android:layout_marginRight="@dimen/config_suggestions_strip_horizontal_margin"
-        android:paddingLeft="@dimen/config_suggestions_strip_edge_key_width"
-        android:paddingRight="@dimen/config_suggestions_strip_edge_key_width"
+        android:layout_marginLeft="4dp"
+        android:layout_marginRight="4dp"
+        android:paddingLeft="2dp"
+        android:paddingRight="2dp"
         android:hapticFeedbackEnabled="false"
         android:soundEffectsEnabled="false" />
-    <!-- Provide audio and haptic feedback by ourselves based on the keyboard settings.
-         We just need to ignore the system's audio and haptic feedback settings. -->
-    <!-- Provide audio and haptic feedback by ourselves based on the keyboard settings.
-         We just need to ignore the system's audio and haptic feedback settings. -->
-    <LinearLayout
-        android:id="@+id/important_notice_strip"
-        android:orientation="horizontal"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:paddingTop="3dp"
-        android:paddingBottom="3dp"
-        android:layout_marginLeft="@dimen/config_suggestions_strip_horizontal_margin"
-        android:layout_marginRight="@dimen/config_suggestions_strip_horizontal_margin"
-        android:hapticFeedbackEnabled="false"
-        android:soundEffectsEnabled="false" >
-        <TextView
-            android:id="@+id/important_notice_title"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:padding="6sp"
-            android:textSize="16sp"
-            style="?attr/suggestionWordStyle" />
-    </LinearLayout>
-    <ImageButton
-        android:id="@+id/suggestions_strip_tools_key"
-        android:layout_width="@dimen/config_suggestions_strip_edge_key_width"
-        android:layout_height="fill_parent"
-        android:padding="8dp"
-        android:layout_alignParentLeft="true"
-        android:layout_alignParentStart="true"
-        android:layout_centerVertical="true"
-        android:contentDescription="@string/keyboard_tools"
-        android:src="@drawable/ic_keyboard_tools"
-        android:scaleType="centerInside"
-        android:tint="#FFFF8A24"
-        style="?attr/suggestionWordStyle" />
-    <ImageButton
-        android:id="@+id/suggestions_strip_voice_key"
-        android:layout_width="@dimen/config_suggestions_strip_edge_key_width"
-        android:layout_height="fill_parent"
-        android:layout_alignParentEnd="true"
-        android:layout_alignParentRight="true"
-        android:layout_centerVertical="true"
-        android:contentDescription="@string/spoken_description_mic"
-        style="?attr/suggestionWordStyle" />
 </merge>

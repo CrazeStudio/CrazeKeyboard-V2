@@ -1,17 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Craze Aurora settings / setup theme -->
-    <style name="CrazeDashboardTheme" parent="@android:style/Theme.Material.NoActionBar">
+    <style name="CrazeDashboardTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans-serif</item>
         <item name="android:colorAccent">#FFFF8A24</item>
         <item name="android:colorControlActivated">#FFFF8A24</item>
         <item name="android:colorControlHighlight">#33FF8A24</item>
-        <item name="android:statusBarColor">#0F121C</item>
-        <item name="android:navigationBarColor">#0F121C</item>
+        <item name="android:colorPrimary">#FFFFFFFF</item>
+        <item name="android:colorPrimaryDark">#FFEBEDF3</item>
+        <item name="android:statusBarColor">#FFF4F5F8</item>
+        <item name="android:navigationBarColor">#FFF4F5F8</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowBackground">#FFF4F5F8</item>
+        <item name="android:textColorPrimary">#FF202437</item>
+        <item name="android:textColorSecondary">#FF747B8D</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+    <style name="CrazeDashboardDarkTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:colorAccent">#FFB5A8</item>
+        <item name="android:colorControlActivated">#FFB5A8</item>
+        <item name="android:colorControlHighlight">#33FFFFFF</item>
+        <item name="android:colorPrimary">#FF202124</item>
+        <item name="android:colorPrimaryDark">#FF17181B</item>
+        <item name="android:statusBarColor">#FF17181B</item>
+        <item name="android:navigationBarColor">#FF17181B</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowBackground">#0F121C</item>
-        <item name="android:textColorPrimary">#F2F4FF</item>
-        <item name="android:textColorSecondary">#A9B0C8</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowBackground">#FF17181B</item>
+        <item name="android:textColorPrimary">#FFF1F3F4</item>
+        <item name="android:textColorSecondary">#FFBDC1C6</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>
 </resources>

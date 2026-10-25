@@ -16,46 +16,21 @@
 
 package com.android.inputmethod.latin.spellcheck;
 
-import com.android.inputmethod.latin.permissions.PermissionsManager;
-import com.android.inputmethod.latin.utils.FragmentUtils;
-
-import android.annotation.TargetApi;
+import android.app.Activity;
 import android.content.Intent;
-import android.os.Build;
 import android.os.Bundle;
-import android.preference.PreferenceActivity;
-import androidx.core.app.ActivityCompat;
 
-/**
- * Spell checker preference screen.
- */
-public final class SpellCheckerSettingsActivity extends PreferenceActivity
-        implements ActivityCompat.OnRequestPermissionsResultCallback {
-    private static final String DEFAULT_FRAGMENT = SpellCheckerSettingsFragment.class.getName();
+import com.android.inputmethod.latin.setup.CrazeDashboardActivity;
 
+/** Opens the keyboard's text correction settings from Android spell-checker settings. */
+public final class SpellCheckerSettingsActivity extends Activity {
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    protected void onCreate(final Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-    }
-
-    @Override
-    public Intent getIntent() {
-        final Intent modIntent = new Intent(super.getIntent());
-        modIntent.putExtra(EXTRA_SHOW_FRAGMENT, DEFAULT_FRAGMENT);
-        modIntent.putExtra(EXTRA_NO_HEADERS, true);
-        return modIntent;
-    }
-
-    @TargetApi(Build.VERSION_CODES.KITKAT)
-    @Override
-    public boolean isValidFragment(String fragmentName) {
-        return FragmentUtils.isValidFragment(fragmentName);
-    }
-
-    @Override
-    public void onRequestPermissionsResult(
-            int requestCode, String[] permissions, int[] grantResults) {
-        PermissionsManager.get(this).onRequestPermissionsResult(
-                requestCode, permissions, grantResults);
+        final Intent dashboard = new Intent(this, CrazeDashboardActivity.class);
+        dashboard.putExtra(CrazeDashboardActivity.EXTRA_START_TAB, 2);
+        dashboard.putExtra(CrazeDashboardActivity.EXTRA_START_PAGE, 6);
+        startActivity(dashboard);
+        finish();
     }
 }

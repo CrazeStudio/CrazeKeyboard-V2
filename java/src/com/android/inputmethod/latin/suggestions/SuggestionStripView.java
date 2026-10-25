@@ -18,17 +18,17 @@ package com.android.inputmethod.latin.suggestions;
 
 import android.content.Context;
 import android.content.res.Resources;
-import android.content.res.TypedArray;
+import android.content.res.ColorStateList;
 import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
-import androidx.core.view.ViewCompat;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.util.TypedValue;
 import android.view.GestureDetector;
 import android.view.LayoutInflater;
-import android.view.Menu;
-import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.View.OnClickListener;
@@ -36,35 +36,35 @@ import android.view.View.OnLongClickListener;
 import android.view.ViewGroup;
 import android.view.ViewParent;
 import android.view.accessibility.AccessibilityEvent;
-import android.widget.ImageButton;
-import android.widget.PopupMenu;
+import android.widget.ImageView;
+import android.widget.HorizontalScrollView;
+import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
 
 import com.android.inputmethod.accessibility.AccessibilityUtils;
 import com.android.inputmethod.keyboard.Keyboard;
+import com.android.inputmethod.keyboard.KeyboardTheme;
 import com.android.inputmethod.keyboard.MainKeyboardView;
 import com.android.inputmethod.keyboard.MoreKeysPanel;
 import com.android.inputmethod.latin.AudioAndHapticFeedbackManager;
+import com.android.inputmethod.latin.CBoardTheme;
 import com.android.inputmethod.latin.R;
 import com.android.inputmethod.latin.SuggestedWords;
 import com.android.inputmethod.latin.SuggestedWords.SuggestedWordInfo;
 import com.android.inputmethod.latin.common.Constants;
 import com.android.inputmethod.latin.define.DebugFlags;
-import com.android.inputmethod.latin.settings.Settings;
-import com.android.inputmethod.latin.settings.SettingsValues;
 import com.android.inputmethod.latin.suggestions.MoreSuggestionsView.MoreSuggestionsListener;
-import com.android.inputmethod.latin.utils.ImportantNoticeUtils;
 
 import java.util.ArrayList;
 
 public final class SuggestionStripView extends RelativeLayout implements OnClickListener,
         OnLongClickListener {
     public interface Listener {
-        public void showImportantNoticeContents();
         public void pickSuggestionManually(SuggestedWordInfo word);
         public void onCodeInput(int primaryCode, int x, int y, boolean isKeyRepeat);
         public void onKeyboardToolSelected(int action);
+        public void onClipboardItemSelected(String text);
     }
 
     public static final int TOOL_ACTION_PASTE = 1;
@@ -73,14 +73,19 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
     public static final int TOOL_ACTION_CUT = 4;
     public static final int TOOL_ACTION_SETTINGS = 5;
     public static final int TOOL_ACTION_EMOJI = 6;
+    public static final int TOOL_ACTION_CLIPBOARD = 7;
+    public static final int TOOL_ACTION_SWITCHER = 8;
+    public static final int TOOL_ACTION_THEME = 9;
+    public static final int TOOL_ACTION_HIDE = 10;
+    public static final int TOOL_ACTION_TEXT = 11;
+    public static final int TOOL_ACTION_GIF = 12;
+    public static final int TOOL_ACTION_VOICE = 13;
+    public static final int TOOL_ACTION_MORE = 14;
 
     static final boolean DBG = DebugFlags.DEBUG_ENABLED;
     private static final float DEBUG_INFO_TEXT_SIZE_IN_DIP = 6.0f;
 
     private final ViewGroup mSuggestionsStrip;
-    private final ImageButton mToolsKey;
-    private final ImageButton mVoiceKey;
-    private final View mImportantNoticeStrip;
     MainKeyboardView mMainKeyboardView;
 
     private final View mMoreSuggestionsContainer;
@@ -94,45 +99,15 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
     Listener mListener;
     private SuggestedWords mSuggestedWords = SuggestedWords.getEmptyInstance();
     private int mStartIndexOfMoreSuggestions;
+    private boolean mToolsMenuOpen;
+    private boolean mIsRtlLanguage;
+    private boolean mGifEnabled;
+    private LinearLayout mActionItems;
+    private LinearLayout mActionPanel;
+    private LinearLayout mActionGridRow;
+    private int mActionGridColumn;
 
     private final SuggestionStripLayoutHelper mLayoutHelper;
-    private final StripVisibilityGroup mStripVisibilityGroup;
-
-    private static class StripVisibilityGroup {
-        private final View mSuggestionStripView;
-        private final View mSuggestionsStrip;
-        private final View mImportantNoticeStrip;
-
-        public StripVisibilityGroup(final View suggestionStripView,
-                final ViewGroup suggestionsStrip, final View importantNoticeStrip) {
-            mSuggestionStripView = suggestionStripView;
-            mSuggestionsStrip = suggestionsStrip;
-            mImportantNoticeStrip = importantNoticeStrip;
-            showSuggestionsStrip();
-        }
-
-        public void setLayoutDirection(final boolean isRtlLanguage) {
-            final int layoutDirection = isRtlLanguage ? ViewCompat.LAYOUT_DIRECTION_RTL
-                    : ViewCompat.LAYOUT_DIRECTION_LTR;
-            ViewCompat.setLayoutDirection(mSuggestionStripView, layoutDirection);
-            ViewCompat.setLayoutDirection(mSuggestionsStrip, layoutDirection);
-            ViewCompat.setLayoutDirection(mImportantNoticeStrip, layoutDirection);
-        }
-
-        public void showSuggestionsStrip() {
-            mSuggestionsStrip.setVisibility(VISIBLE);
-            mImportantNoticeStrip.setVisibility(INVISIBLE);
-        }
-
-        public void showImportantNoticeStrip() {
-            mSuggestionsStrip.setVisibility(INVISIBLE);
-            mImportantNoticeStrip.setVisibility(VISIBLE);
-        }
-
-        public boolean isShowingImportantNoticeStrip() {
-            return mImportantNoticeStrip.getVisibility() == VISIBLE;
-        }
-    }
 
     /**
      * Construct a {@link SuggestionStripView} for showing suggestions to be picked by the user.
@@ -151,11 +126,6 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
         inflater.inflate(R.layout.suggestions_strip, this);
 
         mSuggestionsStrip = (ViewGroup)findViewById(R.id.suggestions_strip);
-        mToolsKey = (ImageButton)findViewById(R.id.suggestions_strip_tools_key);
-        mVoiceKey = (ImageButton)findViewById(R.id.suggestions_strip_voice_key);
-        mImportantNoticeStrip = findViewById(R.id.important_notice_strip);
-        mStripVisibilityGroup = new StripVisibilityGroup(this, mSuggestionsStrip,
-                mImportantNoticeStrip);
 
         for (int pos = 0; pos < SuggestedWords.MAX_SUGGESTIONS; pos++) {
             final TextView word = new TextView(context, null, R.attr.suggestionWordStyle);
@@ -185,13 +155,6 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
         mMoreSuggestionsSlidingDetector = new GestureDetector(
                 context, mMoreSuggestionsSlidingListener);
 
-        final TypedArray keyboardAttr = context.obtainStyledAttributes(attrs,
-                R.styleable.Keyboard, defStyle, R.style.SuggestionStripView);
-        final Drawable iconVoice = keyboardAttr.getDrawable(R.styleable.Keyboard_iconShortcutKey);
-        keyboardAttr.recycle();
-        mVoiceKey.setImageDrawable(iconVoice);
-        mVoiceKey.setOnClickListener(this);
-        mToolsKey.setOnClickListener(this);
     }
 
     /**
@@ -206,52 +169,111 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
     public void updateVisibility(final boolean shouldBeVisible, final boolean isFullscreenMode) {
         final int visibility = shouldBeVisible ? VISIBLE : (isFullscreenMode ? GONE : INVISIBLE);
         setVisibility(visibility);
-        final SettingsValues currentSettingsValues = Settings.getInstance().getCurrent();
-        mVoiceKey.setVisibility(currentSettingsValues.mShowsVoiceInputKey ? VISIBLE : INVISIBLE);
     }
 
     public void setSuggestions(final SuggestedWords suggestedWords, final boolean isRtlLanguage) {
         clear();
-        mStripVisibilityGroup.setLayoutDirection(isRtlLanguage);
+        mIsRtlLanguage = isRtlLanguage;
+        final int layoutDirection = isRtlLanguage ? View.LAYOUT_DIRECTION_RTL
+                : View.LAYOUT_DIRECTION_LTR;
+        setLayoutDirection(layoutDirection);
+        mSuggestionsStrip.setLayoutDirection(layoutDirection);
         mSuggestedWords = suggestedWords;
         mStartIndexOfMoreSuggestions = mLayoutHelper.layoutAndReturnStartIndexOfMoreSuggestions(
                 getContext(), mSuggestedWords, mSuggestionsStrip, this);
-        mStripVisibilityGroup.showSuggestionsStrip();
+        mSuggestionsStrip.setVisibility(VISIBLE);
+        applyCBoardTheme();
+    }
+
+    public void applyCBoardTheme() {
+        final CBoardTheme colors = CBoardTheme.resolve(getContext());
+        setBackgroundColor(colors.panel);
+        mSuggestionsStrip.setBackgroundColor(colors.panel);
+        if (mToolsMenuOpen) {
+            if (mActionPanel != null) {
+                mActionPanel.setBackgroundColor(colors.panel);
+                applyToolPanelTheme(mActionPanel, colors);
+            }
+        } else {
+            for (int i = 0; i < mWordViews.size(); i++) {
+                final TextView word = mWordViews.get(i);
+                word.setTextColor(i == 1 ? colors.text : colors.secondaryText);
+                word.setGravity(android.view.Gravity.CENTER);
+                if (i == 1) {
+                    final GradientDrawable selected = new GradientDrawable();
+                    selected.setColor(colors.key);
+                    selected.setCornerRadius(dp(18));
+                    selected.setStroke(dp(1), colors.border);
+                    word.setBackground(selected);
+                    word.setPadding(dp(7), 0, dp(7), 0);
+                } else {
+                    word.setBackground(null);
+                    word.setPadding(dp(6), 0, dp(6), 0);
+                }
+            }
+            for (View divider : mDividerViews) {
+                divider.setBackgroundColor(colors.border);
+                divider.setAlpha(.6f);
+            }
+        }
+    }
+
+    private void applyToolPanelTheme(final ViewGroup container, final CBoardTheme colors) {
+        for (int i = 0; i < container.getChildCount(); i++) {
+            final View child = container.getChildAt(i);
+            if (child instanceof ImageView) {
+                ((ImageView)child).setImageTintList(ColorStateList.valueOf(colors.secondaryText));
+            } else if (child instanceof TextView) {
+                final TextView text = (TextView)child;
+                if (Boolean.TRUE.equals(text.getTag())) {
+                    text.setTextColor(colors.text);
+                    final GradientDrawable card = new GradientDrawable();
+                    card.setColor(colors.key);
+                    card.setCornerRadius(dp(11));
+                    card.setStroke(dp(1), colors.border);
+                    text.setBackground(card);
+                } else if (getResources().getString(R.string.close_keyboard_tools)
+                        .contentEquals(text.getContentDescription())) {
+                    text.setTextColor(colors.secondaryText);
+                    final GradientDrawable mask = new GradientDrawable();
+                    mask.setColor(Color.WHITE);
+                    mask.setCornerRadius(dp(12));
+                    text.setBackground(new RippleDrawable(ColorStateList.valueOf(
+                            colors.dark ? 0x33FFFFFF : 0x22000000),
+                            new ColorDrawable(Color.TRANSPARENT), mask));
+                } else if ("GIF".contentEquals(text.getText())) {
+                    text.setTextColor(colors.accent);
+                } else {
+                    text.setTextColor(colors.text);
+                }
+            } else if (child instanceof LinearLayout && child.isClickable()
+                    && child.getTag() instanceof Integer) {
+                child.setBackground(createToolTileBackground(colors));
+            }
+            if (child instanceof ViewGroup) applyToolPanelTheme((ViewGroup)child, colors);
+        }
     }
 
     public void setMoreSuggestionsHeight(final int remainingHeight) {
         mLayoutHelper.setMoreSuggestionsHeight(remainingHeight);
     }
 
-    // This method checks if we should show the important notice (checks on permanent storage if
-    // it has been shown once already or not, and if in the setup wizard). If applicable, it shows
-    // the notice. In all cases, it returns true if it was shown, false otherwise.
-    public boolean maybeShowImportantNoticeTitle() {
-        final SettingsValues currentSettingsValues = Settings.getInstance().getCurrent();
-        if (!ImportantNoticeUtils.shouldShowImportantNotice(getContext(), currentSettingsValues)) {
-            return false;
-        }
-        if (getWidth() <= 0) {
-            return false;
-        }
-        final String importantNoticeTitle = ImportantNoticeUtils.getSuggestContactsNoticeTitle(
-                getContext());
-        if (TextUtils.isEmpty(importantNoticeTitle)) {
-            return false;
-        }
-        if (isShowingMoreSuggestionPanel()) {
-            dismissMoreSuggestionsPanel();
-        }
-        mLayoutHelper.layoutImportantNotice(mImportantNoticeStrip, importantNoticeTitle);
-        mStripVisibilityGroup.showImportantNoticeStrip();
-        mImportantNoticeStrip.setOnClickListener(this);
-        return true;
-    }
-
     public void clear() {
+        mToolsMenuOpen = false;
         mSuggestionsStrip.removeAllViews();
+        mActionPanel = null;
+        mActionItems = null;
+        mActionGridRow = null;
+        mActionGridColumn = 0;
+        if (mMainKeyboardView != null) mMainKeyboardView.setVisibility(VISIBLE);
+        final ViewGroup.LayoutParams stripParams = getLayoutParams();
+        if (stripParams != null) {
+            stripParams.height = getResources().getDimensionPixelSize(
+                    R.dimen.config_suggestions_strip_height);
+            setLayoutParams(stripParams);
+        }
         removeAllDebugInfoViews();
-        mStripVisibilityGroup.showSuggestionsStrip();
+        mSuggestionsStrip.setVisibility(VISIBLE);
         dismissMoreSuggestionsPanel();
     }
 
@@ -370,9 +392,6 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
 
     @Override
     public boolean onInterceptTouchEvent(final MotionEvent me) {
-        if (mStripVisibilityGroup.isShowingImportantNoticeStrip()) {
-            return false;
-        }
         // Detecting sliding up finger to show {@link MoreSuggestionsView}.
         if (!mMoreSuggestionsView.isShowingInParent()) {
             mLastX = (int)me.getX();
@@ -459,52 +478,258 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
         return true;
     }
 
-    private void showKeyboardToolsMenu() {
-        final PopupMenu popup = new PopupMenu(getContext(), mToolsKey);
-        popup.getMenu().add(Menu.NONE, TOOL_ACTION_PASTE, Menu.NONE,
-                R.string.keyboard_tool_paste);
-        popup.getMenu().add(Menu.NONE, TOOL_ACTION_SELECT_ALL, Menu.NONE,
-                R.string.keyboard_tool_select_all);
-        popup.getMenu().add(Menu.NONE, TOOL_ACTION_COPY, Menu.NONE,
-                R.string.keyboard_tool_copy);
-        popup.getMenu().add(Menu.NONE, TOOL_ACTION_CUT, Menu.NONE,
-                R.string.keyboard_tool_cut);
-        popup.getMenu().add(Menu.NONE, TOOL_ACTION_EMOJI, Menu.NONE,
-                R.string.keyboard_tool_emoji);
-        popup.getMenu().add(Menu.NONE, TOOL_ACTION_SETTINGS, Menu.NONE,
-                R.string.keyboard_tool_settings);
-        popup.setOnMenuItemClickListener(new PopupMenu.OnMenuItemClickListener() {
-            @Override
-            public boolean onMenuItemClick(final MenuItem item) {
-                if (mListener == null) {
-                    return false;
-                }
-                mListener.onKeyboardToolSelected(item.getItemId());
-                return true;
+    private void beginActionPanel(final int titleRes) {
+        mToolsMenuOpen = true;
+        mSuggestionsStrip.removeAllViews();
+        mSuggestionsStrip.setVisibility(VISIBLE);
+        mActionPanel = new LinearLayout(getContext());
+        mActionPanel.setOrientation(LinearLayout.VERTICAL);
+        mActionPanel.setPadding(dp(7), dp(4), dp(7), dp(5));
+        mSuggestionsStrip.addView(mActionPanel, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        final CBoardTheme colors = CBoardTheme.resolve(getContext());
+        mActionPanel.setBackgroundColor(colors.panel);
+        final LinearLayout header = new LinearLayout(getContext());
+        header.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        TextView title = new TextView(getContext());
+        title.setText(titleRes);
+        title.setTextColor(colors.text);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        header.addView(title, new LinearLayout.LayoutParams(0, dp(24), 1));
+
+        TextView close = new TextView(getContext());
+        close.setText(R.string.close_keyboard_tools);
+        close.setTextColor(colors.secondaryText);
+        close.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        close.setGravity(android.view.Gravity.CENTER);
+        close.setPadding(dp(10), 0, dp(4), 0);
+        close.setContentDescription(getResources().getString(R.string.close_keyboard_tools));
+        close.setClickable(true);
+        close.setFocusable(true);
+        final GradientDrawable closeMask = new GradientDrawable();
+        closeMask.setColor(Color.WHITE);
+        closeMask.setCornerRadius(dp(12));
+        close.setBackground(new RippleDrawable(ColorStateList.valueOf(
+                colors.dark ? 0x33FFFFFF : 0x22000000),
+                new ColorDrawable(Color.TRANSPARENT), closeMask));
+        close.setOnClickListener(new OnClickListener() {
+            @Override public void onClick(View view) {
+                setSuggestions(mSuggestedWords, mIsRtlLanguage);
             }
         });
-        popup.show();
+        header.addView(close, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(24)));
+        mActionPanel.addView(header, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(24)));
+
+        mActionItems = new LinearLayout(getContext());
+        mActionItems.setOrientation(LinearLayout.VERTICAL);
+        mActionItems.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        mActionPanel.addView(mActionItems, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+
+        final ViewGroup.LayoutParams stripParams = getLayoutParams();
+        if (stripParams != null) {
+            final boolean landscape = getResources().getConfiguration().orientation
+                    == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+            stripParams.height = dp(landscape ? 148 : 180);
+            setLayoutParams(stripParams);
+        }
+        if (mMainKeyboardView != null) mMainKeyboardView.setVisibility(GONE);
+        requestLayout();
+    }
+
+    private void addToolGridTile(final View tile) {
+        if (mActionGridRow == null || mActionGridColumn == 4) {
+            mActionGridRow = new LinearLayout(getContext());
+            mActionGridRow.setOrientation(LinearLayout.HORIZONTAL);
+            mActionGridRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            mActionItems.addView(mActionGridRow, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+            mActionGridColumn = 0;
+        }
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.MATCH_PARENT, 1);
+        params.setMargins(dp(2), dp(1), dp(2), dp(1));
+        mActionGridRow.addView(tile, params);
+        mActionGridColumn++;
+    }
+
+    public void toggleCBoardTools() {
+        if (mToolsMenuOpen) {
+            setSuggestions(mSuggestedWords, mIsRtlLanguage);
+        } else {
+            showMoreOptions();
+        }
+    }
+
+    public boolean isToolsMenuOpen() { return mToolsMenuOpen; }
+
+    public void setGifEnabled(final boolean enabled) { mGifEnabled = enabled; }
+
+    public void showKeyboardTools() {
+        beginActionPanel(R.string.keyboard_tool_text);
+        mActionGridRow = null;
+        mActionGridColumn = 0;
+        addKeyboardTool(R.string.keyboard_tool_paste, R.drawable.ic_tool_paste,
+                TOOL_ACTION_PASTE);
+        addKeyboardTool(R.string.keyboard_tool_select_all, R.drawable.ic_tool_select_all,
+                TOOL_ACTION_SELECT_ALL);
+        addKeyboardTool(R.string.keyboard_tool_copy, R.drawable.ic_tool_copy,
+                TOOL_ACTION_COPY);
+        addKeyboardTool(R.string.keyboard_tool_cut, R.drawable.ic_tool_cut,
+                TOOL_ACTION_CUT);
+        addKeyboardTool(R.string.keyboard_tool_more, R.drawable.ic_cboard_more,
+                TOOL_ACTION_MORE);
+    }
+
+    public void showMoreOptions() {
+        beginActionPanel(R.string.keyboard_tools);
+        mActionGridRow = null;
+        mActionGridColumn = 0;
+        addKeyboardTool(R.string.keyboard_tool_text, R.drawable.ic_tool_text,
+                TOOL_ACTION_TEXT);
+        if (mGifEnabled) addKeyboardTool(R.string.keyboard_tool_gif, 0, TOOL_ACTION_GIF);
+        addKeyboardTool(R.string.keyboard_tool_clipboard, R.drawable.ic_cboard_clipboard,
+                TOOL_ACTION_CLIPBOARD);
+        addKeyboardTool(R.string.keyboard_tool_emoji, R.drawable.ic_tool_emoji,
+                TOOL_ACTION_EMOJI);
+        addKeyboardTool(R.string.more_switch_keyboard, R.drawable.ic_tool_switch_keyboard,
+                TOOL_ACTION_SWITCHER);
+        addKeyboardTool(R.string.keyboard_theme, R.drawable.ic_tool_theme,
+                TOOL_ACTION_THEME);
+        addKeyboardTool(R.string.keyboard_tool_settings, R.drawable.ic_tool_settings,
+                TOOL_ACTION_SETTINGS);
+        addKeyboardTool(R.string.more_hide_keyboard, R.drawable.ic_tool_hide_keyboard,
+                TOOL_ACTION_HIDE);
+    }
+
+    public void showClipboardHistory(final java.util.List<String> items) {
+        beginActionPanel(R.string.keyboard_tool_clipboard);
+        mActionItems.setOrientation(LinearLayout.HORIZONTAL);
+        final HorizontalScrollView scroller = new HorizontalScrollView(getContext());
+        scroller.setHorizontalScrollBarEnabled(false);
+        scroller.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        scroller.setFillViewport(false);
+        final LinearLayout history = new LinearLayout(getContext());
+        history.setOrientation(LinearLayout.HORIZONTAL);
+        history.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        scroller.addView(history, new HorizontalScrollView.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        mActionPanel.removeView(mActionItems);
+        mActionPanel.addView(scroller, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        mActionItems = history;
+        if (items == null || items.isEmpty()) {
+            addClipboardRow(getResources().getString(R.string.clipboard_empty), null);
+            return;
+        }
+        for (String text : items) addClipboardRow(text, text);
+    }
+
+    private void addClipboardRow(final String label, final String value) {
+        final CBoardTheme colors = CBoardTheme.resolve(getContext());
+        TextView item = new TextView(getContext());
+        item.setText(label);
+        item.setTag(Boolean.TRUE);
+        item.setTextColor(colors.text);
+        item.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        item.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        item.setMaxLines(2);
+        item.setEllipsize(TextUtils.TruncateAt.END);
+        item.setPadding(dp(10), dp(5), dp(10), dp(5));
+        item.setContentDescription(value == null ? label : "Paste " + label);
+        item.setClickable(value != null);
+        GradientDrawable surface = new GradientDrawable();
+        surface.setColor(colors.key);
+        surface.setCornerRadius(dp(11));
+        surface.setStroke(dp(1), colors.border);
+        item.setBackground(surface);
+        item.setOnClickListener(new OnClickListener() {
+            @Override public void onClick(View view) {
+                if (value != null && mListener != null) mListener.onClipboardItemSelected(value);
+            }
+        });
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(172),
+                ViewGroup.LayoutParams.MATCH_PARENT);
+        params.setMargins(dp(3), dp(2), dp(3), dp(2));
+        mActionItems.addView(item, params);
+    }
+
+    private int dp(final float value) {
+        return (int)(value * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    private Drawable createToolTileBackground(final CBoardTheme colors) {
+        final GradientDrawable surface = new GradientDrawable();
+        surface.setColor(colors.key);
+        surface.setCornerRadius(dp(10));
+        surface.setStroke(dp(1), colors.border);
+        final GradientDrawable mask = new GradientDrawable();
+        mask.setColor(Color.WHITE);
+        mask.setCornerRadius(dp(10));
+        final int rippleColor = colors.dark ? 0x33FFFFFF : 0x22000000;
+        return new RippleDrawable(ColorStateList.valueOf(rippleColor), surface, mask);
+    }
+
+    private void addKeyboardTool(final int labelRes, final int iconRes, final int action) {
+        final CBoardTheme colors = CBoardTheme.resolve(getContext());
+        final int foreground = colors.text;
+        final LinearLayout item = new LinearLayout(getContext());
+        item.setOrientation(LinearLayout.VERTICAL);
+        item.setGravity(android.view.Gravity.CENTER);
+        item.setPadding(dp(3), dp(2), dp(3), dp(2));
+        item.setContentDescription(getResources().getString(labelRes));
+        item.setTag(Integer.valueOf(action));
+        item.setClickable(true);
+        item.setFocusable(true);
+
+        item.setBackground(createToolTileBackground(colors));
+
+        if (iconRes == 0) {
+            TextView gif = new TextView(getContext());
+            gif.setText("GIF");
+            gif.setTextColor(colors.accent);
+            gif.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+            gif.setTypeface(null, android.graphics.Typeface.BOLD);
+            gif.setGravity(android.view.Gravity.CENTER);
+            item.addView(gif, new LinearLayout.LayoutParams(dp(22), dp(19)));
+        } else {
+            final Drawable drawable = getResources().getDrawable(iconRes).mutate();
+            drawable.setTint(colors.secondaryText);
+            final ImageView icon = new ImageView(getContext());
+            icon.setImageDrawable(drawable);
+            LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(19), dp(19));
+            item.addView(icon, iconParams);
+        }
+        final TextView label = new TextView(getContext());
+        label.setText(labelRes);
+        label.setTextColor(foreground);
+        label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
+        label.setGravity(android.view.Gravity.CENTER);
+        label.setSingleLine(true);
+        label.setEllipsize(TextUtils.TruncateAt.END);
+        item.addView(label, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        item.setOnClickListener(new OnClickListener() {
+            @Override public void onClick(final View view) {
+                if (mListener != null) mListener.onKeyboardToolSelected(action);
+                if (action != TOOL_ACTION_CLIPBOARD && action != TOOL_ACTION_TEXT
+                        && action != TOOL_ACTION_MORE) {
+                    setSuggestions(mSuggestedWords, mIsRtlLanguage);
+                }
+            }
+        });
+        addToolGridTile(item);
     }
 
     @Override
     public void onClick(final View view) {
         AudioAndHapticFeedbackManager.getInstance().performHapticAndAudioFeedback(
                 Constants.CODE_UNSPECIFIED, this);
-        if (view == mToolsKey) {
-            showKeyboardToolsMenu();
-            return;
-        }
-        if (view == mImportantNoticeStrip) {
-            mListener.showImportantNoticeContents();
-            return;
-        }
-        if (view == mVoiceKey) {
-            mListener.onCodeInput(Constants.CODE_SHORTCUT,
-                    Constants.SUGGESTION_STRIP_COORDINATE, Constants.SUGGESTION_STRIP_COORDINATE,
-                    false /* isKeyRepeat */);
-            return;
-        }
-
         final Object tag = view.getTag();
         // {@link Integer} tag is set at
         // {@link SuggestionStripLayoutHelper#setupWordViewsTextAndColor(SuggestedWords,int)} and
@@ -525,12 +750,5 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
         dismissMoreSuggestionsPanel();
     }
 
-    @Override
-    protected void onSizeChanged(final int w, final int h, final int oldw, final int oldh) {
-        // Called by the framework when the size is known. Show the important notice if applicable.
-        // This may be overriden by showing suggestions later, if applicable.
-        if (oldw <= 0 && w > 0) {
-            maybeShowImportantNoticeTitle();
-        }
-    }
+
 }

@@ -17,6 +17,7 @@
 package com.android.inputmethod.latin.settings;
 
 import com.android.inputmethod.latin.permissions.PermissionsManager;
+import com.android.inputmethod.latin.setup.CrazeDashboardActivity;
 import com.android.inputmethod.latin.utils.FragmentUtils;
 import com.android.inputmethod.latin.utils.StatsUtils;
 import com.android.inputmethod.latin.utils.StatsUtilsManager;
@@ -36,7 +37,6 @@ public final class SettingsActivity extends PreferenceActivity
     public static final String EXTRA_ENTRY_KEY = "entry";
     public static final String EXTRA_ENTRY_VALUE_LONG_PRESS_COMMA = "long_press_comma";
     public static final String EXTRA_ENTRY_VALUE_APP_ICON = "app_icon";
-    public static final String EXTRA_ENTRY_VALUE_NOTICE_DIALOG = "important_notice";
     public static final String EXTRA_ENTRY_VALUE_SYSTEM_SETTINGS = "system_settings";
 
     private boolean mShowHomeAsUp;
@@ -44,6 +44,14 @@ public final class SettingsActivity extends PreferenceActivity
     @Override
     protected void onCreate(final Bundle savedState) {
         super.onCreate(savedState);
+        final Intent sourceIntent = super.getIntent();
+        if (sourceIntent.getStringExtra(EXTRA_SHOW_FRAGMENT) == null) {
+            final Intent dashboard = new Intent(this, CrazeDashboardActivity.class);
+            dashboard.putExtra(CrazeDashboardActivity.EXTRA_START_TAB, 2);
+            startActivity(dashboard);
+            finish();
+            return;
+        }
         final ActionBar actionBar = getActionBar();
         final Intent intent = getIntent();
         if (actionBar != null) {

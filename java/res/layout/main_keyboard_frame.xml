@@ -1,32 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-/*
-**
-** Copyright 2014, The Android Open Source Project
-**
-** Licensed under the Apache License, Version 2.0 (the "License");
-** you may not use this file except in compliance with the License.
-** You may obtain a copy of the License at
-**
-**     http://www.apache.org/licenses/LICENSE-2.0
-**
-** Unless required by applicable law or agreed to in writing, software
-** distributed under the License is distributed on an "AS IS" BASIS,
-** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-** See the License for the specific language governing permissions and
-** limitations under the License.
-*/
--->
-
-<LinearLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="wrap_content"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:id="@+id/cboard_keyboard_panel"
     android:layout_gravity="bottom"
-    android:orientation="vertical" >
+    android:orientation="vertical">
 
-    <!-- To ensure that key preview popup is correctly placed when the current system locale is
-         one of RTL locales, layoutDirection="ltr" is needed in the SDK version 17+. -->
+    <!-- CBoard utility toolbar. The suggestion row below stays independent so predictions
+         keep their own breathing room, as in the supplied keyboard reference. -->
+    <com.android.inputmethod.latin.CBoardToolbarView
+        android:id="@+id/cboard_top_row"
+        android:layout_width="match_parent"
+        android:layout_height="44dp" />
+
+    <View
+        android:id="@+id/cboard_toolbar_divider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp" />
+
     <com.android.inputmethod.latin.suggestions.SuggestionStripView
         android:id="@+id/suggestion_strip_view"
         android:layoutDirection="ltr"
@@ -36,8 +27,11 @@
         android:clipToPadding="false"
         style="?attr/suggestionStripViewStyle" />
 
-    <!-- To ensure that key preview popup is correctly placed when the current system locale is
-         one of RTL locales, layoutDirection="ltr" is needed in the SDK version 17+. -->
+    <View
+        android:id="@+id/cboard_suggestion_divider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp" />
+
     <com.android.inputmethod.keyboard.MainKeyboardView
         android:id="@+id/keyboard_view"
         android:layoutDirection="ltr"

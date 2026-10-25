@@ -25,6 +25,7 @@ import android.graphics.Paint;
 import android.graphics.Paint.Align;
 import android.graphics.PorterDuff;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.NinePatchDrawable;
@@ -34,6 +35,7 @@ import android.view.View;
 
 import com.android.inputmethod.keyboard.internal.KeyDrawParams;
 import com.android.inputmethod.keyboard.internal.KeyVisualAttributes;
+import com.android.inputmethod.latin.CBoardTheme;
 import com.android.inputmethod.latin.R;
 import com.android.inputmethod.latin.common.Constants;
 import com.android.inputmethod.latin.utils.TypefaceUtils;
@@ -120,7 +122,9 @@ public class KeyboardView extends View {
     private final Canvas mOffscreenCanvas = new Canvas();
     @Nonnull
     private final Paint mPaint = new Paint();
+    private final Paint mCBoardKeyPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint.FontMetrics mFontMetrics = new Paint.FontMetrics();
+    private CBoardTheme mCurrentCBoardTheme;
 
     public KeyboardView(final Context context, final AttributeSet attrs) {
         this(context, attrs, R.attr.keyboardViewStyle);
@@ -163,6 +167,12 @@ public class KeyboardView extends View {
         keyAttr.recycle();
 
         mPaint.setAntiAlias(true);
+        applyCBoardTheme();
+    }
+
+    public void applyCBoardTheme() {
+        mCurrentCBoardTheme = CBoardTheme.resolve(getContext());
+        setBackgroundColor(mCurrentCBoardTheme.panel);
     }
 
     @Nullable
@@ -332,6 +342,15 @@ public class KeyboardView extends View {
 
         final KeyVisualAttributes attr = key.getVisualAttributes();
         final KeyDrawParams params = mKeyDrawParams.mayCloneAndUpdateParams(key.getHeight(), attr);
+        final CBoardTheme colors = mCurrentCBoardTheme;
+        params.mTextColor = colors.text;
+        params.mTextInactivatedColor = colors.secondaryText;
+        final boolean primaryAction = key.isActionKey() && key.getCode() == Constants.CODE_ENTER;
+        params.mFunctionalTextColor = primaryAction ? colors.accentText : colors.secondaryText;
+        params.mHintLetterColor = colors.secondaryText;
+        params.mHintLabelColor = colors.secondaryText;
+        params.mShiftedLetterHintInactivatedColor = colors.secondaryText;
+        params.mShiftedLetterHintActivatedColor = colors.text;
         params.mAnimAlpha = Constants.Color.ALPHA_OPAQUE;
 
         if (!key.isSpacer()) {
@@ -349,35 +368,36 @@ public class KeyboardView extends View {
     // Draw key background.
     protected void onDrawKeyBackground(@Nonnull final Key key, @Nonnull final Canvas canvas,
             @Nonnull final Drawable background) {
-        final int keyWidth = key.getDrawWidth();
-        final int keyHeight = key.getHeight();
-        final int bgWidth, bgHeight, bgX, bgY;
-        if (key.needsToKeepBackgroundAspectRatio(mDefaultKeyLabelFlags)
-                // HACK: To disable expanding normal/functional key background.
-                && !key.hasCustomActionLabel()) {
-            final int intrinsicWidth = background.getIntrinsicWidth();
-            final int intrinsicHeight = background.getIntrinsicHeight();
-            final float minScale = Math.min(
-                    keyWidth / (float)intrinsicWidth, keyHeight / (float)intrinsicHeight);
-            bgWidth = (int)(intrinsicWidth * minScale);
-            bgHeight = (int)(intrinsicHeight * minScale);
-            bgX = (keyWidth - bgWidth) / 2;
-            bgY = (keyHeight - bgHeight) / 2;
-        } else {
-            final Rect padding = mKeyBackgroundPadding;
-            bgWidth = keyWidth + padding.left + padding.right;
-            bgHeight = keyHeight + padding.top + padding.bottom;
-            bgX = -padding.left;
-            bgY = -padding.top;
-        }
-        final Rect bounds = background.getBounds();
-        if (bgWidth != bounds.right || bgHeight != bounds.bottom) {
-            background.setBounds(0, 0, bgWidth, bgHeight);
-        }
-        canvas.translate(bgX, bgY);
-        background.draw(canvas);
-        canvas.translate(-bgX, -bgY);
+        final CBoardTheme colors = mCurrentCBoardTheme;
+        final int width = key.getDrawWidth();
+        final int height = key.getHeight();
+        final boolean special = key.isActionKey() || key.isModifier();
+        final boolean pressed = hasState(background.getState(), android.R.attr.state_pressed);
+        final float inset = dp(1.5f);
+        final float radius = dp(6.5f);
+        mCBoardKeyPaint.setStyle(Paint.Style.FILL);
+        final boolean primaryAction = key.isActionKey() && key.getCode() == Constants.CODE_ENTER;
+        final int keyFace = primaryAction ? colors.accent
+                : (special ? colors.functionalKey : colors.key);
+        mCBoardKeyPaint.setColor(primaryAction ? colors.accent
+                : (pressed ? colors.pressed : colors.border));
+        canvas.drawRoundRect(new RectF(inset, inset, width - inset, height - inset), radius, radius,
+                mCBoardKeyPaint);
+        mCBoardKeyPaint.setColor(primaryAction ? keyFace : (pressed ? colors.key : keyFace));
+        canvas.drawRoundRect(new RectF(inset, inset, width - inset, height - dp(2.5f)), radius, radius,
+                mCBoardKeyPaint);
     }
+
+    private static boolean hasState(int[] states, int requested) {
+        if (states == null) return false;
+        for (int state : states) if (state == requested) return true;
+        return false;
+    }
+
+    private float dp(float value) {
+        return value * getResources().getDisplayMetrics().density;
+    }
+
 
     // Draw key top visuals.
     protected void onDrawKeyTopVisuals(@Nonnull final Key key, @Nonnull final Canvas canvas,

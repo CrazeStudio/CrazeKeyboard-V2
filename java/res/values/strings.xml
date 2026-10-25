@@ -21,12 +21,6 @@
     <!-- Title for Latin keyboard input options dialog [CHAR LIMIT=25] -->
     <string name="english_ime_input_options">Input options</string>
 
-    <!-- Title for the spell checker option to turn on/off contact names lookup [CHAR LIMIT=25] -->
-    <string name="use_contacts_for_spellchecking_option_title">Look up contact names</string>
-
-    <!-- Description for the spell checker option to turn on/off contact names lookup. [CHAR LIMIT=65] -->
-    <string name="use_contacts_for_spellchecking_option_summary">Spell checker uses entries from your contact list</string>
-
     <!-- Option to provide vibrate/haptic feedback on keypress -->
     <string name="vibrate_on_keypress">Vibrate on keypress</string>
 
@@ -70,12 +64,21 @@
     <string name="popup_on_keypress_summary">Show a larger preview above the pressed key</string>
     <string name="voice_input_summary">Show the voice input shortcut when available</string>
     <string name="keyboard_tools">Keyboard tools</string>
+    <string name="close_keyboard_tools">Close keyboard tools</string>
+    <string name="gesture_preview_trail_summary">Show a trail while gliding across the keys</string>
     <string name="keyboard_tool_paste">Paste from clipboard</string>
+    <string name="keyboard_tool_text">Text actions</string>
+    <string name="keyboard_tool_gif">GIF picker</string>
+    <string name="keyboard_tool_more">More tools</string>
     <string name="keyboard_tool_select_all">Select all text</string>
     <string name="keyboard_tool_copy">Copy selected text</string>
     <string name="keyboard_tool_cut">Cut selected text</string>
     <string name="keyboard_tool_settings">CrazeKeyboard settings</string>
     <string name="keyboard_tool_emoji">Open emoji keyboard</string>
+    <string name="keyboard_tool_clipboard">Clipboard history</string>
+    <string name="clipboard_empty">No copied text yet</string>
+    <string name="more_switch_keyboard">Switch keyboard</string>
+    <string name="more_hide_keyboard">Hide keyboard</string>
 
     <!--  Option for enabling or disabling the split keyboard layout. [CHAR LIMIT=65]-->
     <string name="enable_split_keyboard">Enable split keyboard</string>
@@ -133,11 +136,6 @@
     <string name="abbreviation_unit_milliseconds"><xliff:g id="MILLISECONDS">%s</xliff:g>ms</string>
     <!-- The text that represents the current settings value is the system default [CHAR LIMIT=25] -->
     <string name="settings_system_default">System default</string>
-
-    <!-- Option name for enabling or disabling the use of names of people in Contacts for suggestion and correction [CHAR LIMIT=25] -->
-    <string name="use_contacts_dict">Suggest Contact names</string>
-    <!-- Description for option enabling or disabling the use of names of people in Contacts for suggestion and correction [CHAR LIMIT=65] -->
-    <string name="use_contacts_dict_summary">Use names from Contacts for suggestions and corrections</string>
 
     <!-- Option name for enabling the use by the keyboards of sent/received messages, e-mail and typing history to improve suggestion accuracy [CHAR LIMIT=25] -->
     <string name="use_personalized_dicts">Personalized suggestions</string>

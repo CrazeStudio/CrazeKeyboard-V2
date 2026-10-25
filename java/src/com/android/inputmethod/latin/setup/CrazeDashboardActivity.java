@@ -5,6 +5,7 @@
 package com.android.inputmethod.latin.setup;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -39,6 +40,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.android.inputmethod.keyboard.KeyboardTheme;
+import com.android.inputmethod.latin.CBoardTheme;
 import com.android.inputmethod.latin.R;
 import com.android.inputmethod.latin.settings.Settings;
 import com.android.inputmethod.latin.settings.SettingsActivity;
@@ -47,13 +49,15 @@ import java.util.List;
 /** CrazeKeyboard "Aurora" companion app: playground, theme studio, settings and feedback tuning. */
 public final class CrazeDashboardActivity extends Activity {
     private static final int KEYBOARD = 0, THEMES = 1, SETTINGS = 2, HAPTICS = 3;
+    private static final int TYPING = 4, LAYOUTS = 5, CORRECTION = 6, ADVANCED = 7, DEBUG = 8;
+    public static final String EXTRA_START_TAB = "craze_start_tab";
+    public static final String EXTRA_START_PAGE = "craze_start_page";
 
-    // Aurora palette
-    private static final int BG = 0xFF0F121C, SURFACE = 0xFF171B29, HIGH = 0xFF222839;
-    private static final int INPUT = 0xFF0B0D14, TEXT = 0xFFF2F4FF, MUTED = 0xFFA9B0C8;
-    private static final int BORDER = 0xFF2A3047, INDIGO = 0xFF9FB0FF, INDIGO_BG = 0xFF222B55;
-    private static final int ORANGE = 0xFFFF8A24, CORAL = 0xFFFF6A2B, ON_ORANGE = 0xFF2A1405;
-    private static final int OK = 0xFF6EE7A8, OK_BG = 0xFF12372A;
+    // Instance tokens are resolved from system appearance, dynamic colors or saved custom colors.
+    private int BG, SURFACE, HIGH, INPUT, TEXT, MUTED, BORDER, INDIGO, INDIGO_BG;
+    private int ORANGE, CORAL, ON_ORANGE, OK = 0xFF168454, OK_BG = 0xFFE4F5EC;
+    private CBoardTheme palette;
+    private LinearLayout rootView;
 
     private int tab = KEYBOARD, page = KEYBOARD;
     private String playgroundText = "";
@@ -74,8 +78,8 @@ public final class CrazeDashboardActivity extends Activity {
     }
 
     private final Preset[] presets = {
-        new Preset(3, "Aurora Light", "Airy white keys, soft indigo panel, orange accents",
-                0xFFEEF0F7, 0xFFFFFFFF, 0xFFC9D0E2, ORANGE, false),
+        new Preset(3, "Aurora Light", "Clean white keys, soft gray panel, orange accents",
+                0xFFD5D9E0, 0xFFFAFBFD, 0xFFB8BEC8, ORANGE, false),
         new Preset(4, "Aurora Dark", "Deep midnight keys with glowing orange accents",
                 0xFF151927, 0xFF2A3042, 0xFF0B0D14, ORANGE, true)
     };
@@ -83,9 +87,16 @@ public final class CrazeDashboardActivity extends Activity {
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        applyUiTheme();
+        setTheme(palette.dark ? R.style.CrazeDashboardDarkTheme : R.style.CrazeDashboardTheme);
+        tab = Math.max(KEYBOARD, Math.min(SETTINGS,
+                getIntent().getIntExtra(EXTRA_START_TAB, KEYBOARD)));
+        page = Math.max(KEYBOARD, Math.min(DEBUG, getIntent().getIntExtra(EXTRA_START_PAGE, tab)));
+        if (page > SETTINGS) tab = SETTINGS;
         getWindow().setStatusBarColor(BG);
-        getWindow().setNavigationBarColor(INPUT);
+        getWindow().setNavigationBarColor(BG);
         LinearLayout root = new LinearLayout(this);
+        rootView = root;
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(BG);
         setContentView(root);
@@ -102,6 +113,28 @@ public final class CrazeDashboardActivity extends Activity {
     }
 
     // ---------------------------------------------------------------- chrome
+
+    private void applyUiTheme() {
+        palette = CBoardTheme.resolve(this);
+        BG = palette.background; SURFACE = palette.surface; HIGH = palette.panel;
+        INPUT = palette.key; TEXT = palette.text; MUTED = palette.secondaryText;
+        BORDER = palette.border; INDIGO = palette.accent; ORANGE = palette.accent;
+        CORAL = palette.accent; ON_ORANGE = palette.accentText;
+        INDIGO_BG = blendColor(INDIGO, SURFACE, .13f);
+        getWindow().setStatusBarColor(BG);
+        getWindow().setNavigationBarColor(BG);
+        int bars = palette.dark ? 0 : (View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+        getWindow().getDecorView().setSystemUiVisibility(bars);
+        if (rootView != null) rootView.setBackgroundColor(BG);
+    }
+
+    private int blendColor(int a, int b, float amount) {
+        int r = Math.round(Color.red(a) * (1 - amount) + Color.red(b) * amount);
+        int g = Math.round(Color.green(a) * (1 - amount) + Color.green(b) * amount);
+        int bl = Math.round(Color.blue(a) * (1 - amount) + Color.blue(b) * amount);
+        return Color.rgb(r, g, bl);
+    }
 
     private void buildHeader(LinearLayout root) {
         LinearLayout h = row();
@@ -125,8 +158,8 @@ public final class CrazeDashboardActivity extends Activity {
 
     private void buildNav(LinearLayout root) {
         LinearLayout wrap = new LinearLayout(this);
-        wrap.setBackgroundColor(INPUT);
-        wrap.setPadding(dp(12), dp(8), dp(12), dp(10));
+        wrap.setBackgroundColor(BG);
+        wrap.setPadding(dp(16), dp(8), dp(16), dp(12));
         LinearLayout nav = row();
         nav.setPadding(dp(4), dp(4), dp(4), dp(4));
         nav.setBackground(bg(SURFACE, 24, BORDER));
@@ -154,9 +187,16 @@ public final class CrazeDashboardActivity extends Activity {
 
     private void render() {
         if (pageHost == null) return;
+        applyUiTheme();
+        if (rootView != null) rootView.setBackgroundColor(BG);
         LinearLayout content = col();
         content.setPadding(dp(16), dp(8), dp(16), dp(24));
         if (page == HAPTICS) buildHaptics(content);
+        else if (page == TYPING) buildTyping(content);
+        else if (page == LAYOUTS) buildLayouts(content);
+        else if (page == CORRECTION) buildCorrection(content);
+        else if (page == ADVANCED) buildAdvanced(content);
+        else if (page == DEBUG) buildDeveloper(content);
         else if (tab == THEMES) buildThemes(content);
         else if (tab == SETTINGS) buildSettings(content);
         else buildKeyboard(content);
@@ -263,14 +303,37 @@ public final class CrazeDashboardActivity extends Activity {
     private void focusPlayground() { /* the editor requests focus when tapped; kept for future autofocus */ }
 
     private void buildThemes(LinearLayout c) {
-        heading(c, "Theme Studio", "Presets change the real keyboard theme.");
+        heading(c, "Theme Studio", "Choose how CBoard follows your colors.");
         gap(c, 14);
+        LinearLayout modes = card();
+        modes.addView(txt("COLOR MODE", 10, INDIGO, true));
+        gap(modes, 8);
+        String mode = CBoardTheme.mode(this);
+        addThemeMode(modes, "System", CBoardTheme.SYSTEM, mode);
+        addThemeMode(modes, "Light", CBoardTheme.LIGHT, mode);
+        addThemeMode(modes, "Dark", CBoardTheme.DARK, mode);
+        addThemeMode(modes, "Custom", CBoardTheme.CUSTOM, mode);
+        c.addView(modes);
+        if (CBoardTheme.CUSTOM.equals(mode)) {
+            gap(c, 12);
+            LinearLayout custom = card();
+            custom.addView(txt("CUSTOM COLORS", 10, INDIGO, true));
+            gap(custom, 8);
+            colorOption(custom, "Accent", CBoardTheme.PREF_ACCENT, palette.accent);
+            colorOption(custom, "Keyboard background", CBoardTheme.PREF_PANEL, palette.panel);
+            colorOption(custom, "Key background", CBoardTheme.PREF_KEY, palette.key);
+            colorOption(custom, "Text color", CBoardTheme.PREF_TEXT, palette.text);
+            c.addView(custom);
+        }
+        gap(c, 12);
+        heading(c, "Preview", "Changes are saved immediately and update the keyboard.");
+        gap(c, 10);
         int current = KeyboardTheme.getKeyboardTheme(this).mThemeId;
         for (Preset p : presets) { c.addView(themeCard(p, current)); gap(c, 12); }
         LinearLayout note = card();
         note.addView(txt("APPLYING A THEME", 10, INDIGO, true));
         gap(note, 5);
-        note.addView(txt("Your choice is saved right away. Reopen the keyboard in a text field to see it.", 12, MUTED, false));
+        note.addView(txt("Your choice is saved and updates the active keyboard immediately.", 12, MUTED, false));
         c.addView(note);
     }
 
@@ -303,14 +366,86 @@ public final class CrazeDashboardActivity extends Activity {
         gap(card, 10);
         View.OnClickListener apply = new View.OnClickListener() {
             @Override public void onClick(View v) {
+                String mode = p.dark ? CBoardTheme.DARK : CBoardTheme.LIGHT;
+                prefs.edit().putString(CBoardTheme.PREF_MODE, mode).apply();
                 KeyboardTheme.saveKeyboardThemeId(p.id, prefs);
-                Toast.makeText(CrazeDashboardActivity.this, p.name + " saved. Reopen the keyboard to apply it.",
-                        Toast.LENGTH_LONG).show();
                 render();
             }
         };
         card.addView(active ? button("✓  Active", OK_BG, OK, null) : primary("Apply theme", apply));
         return card;
+    }
+
+    private void addThemeMode(LinearLayout parent, String title, final String value, String active) {
+        final boolean selected = value.equals(active);
+        View.OnClickListener click = new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                prefs.edit().putString(CBoardTheme.PREF_MODE, value).apply();
+                if (CBoardTheme.LIGHT.equals(value)) KeyboardTheme.saveKeyboardThemeId(3, prefs);
+                if (CBoardTheme.DARK.equals(value)) KeyboardTheme.saveKeyboardThemeId(4, prefs);
+                render();
+            }
+        };
+        parent.addView(button((selected ? "✓  " : "○  ") + title,
+                selected ? INDIGO_BG : HIGH, selected ? INDIGO : TEXT, click));
+        gap(parent, 6);
+    }
+
+    private void colorOption(LinearLayout parent, String title, final String prefKey, int color) {
+        TextView swatch = button("●  " + title + "     " + String.format("#%06X", 0xFFFFFF & color),
+                color, Color.luminance(color) > .45f ? Color.BLACK : Color.WHITE,
+                new View.OnClickListener() {
+                    @Override public void onClick(View v) { showColorPicker(prefKey, colorFor(prefKey)); }
+                });
+        parent.addView(swatch);
+        gap(parent, 6);
+    }
+
+    private int colorFor(String key) {
+        return prefs.getInt(key, key.equals(CBoardTheme.PREF_ACCENT) ? palette.accent
+                : key.equals(CBoardTheme.PREF_PANEL) ? palette.panel
+                : key.equals(CBoardTheme.PREF_KEY) ? palette.key : palette.text);
+    }
+
+    private void showColorPicker(final String prefKey, int initialColor) {
+        LinearLayout box = col();
+        box.setPadding(dp(20), dp(10), dp(20), dp(6));
+        final TextView preview = txt("Custom color", 16, TEXT, true);
+        preview.setGravity(Gravity.CENTER);
+        box.addView(preview, new LinearLayout.LayoutParams(-1, dp(52)));
+        final SeekBar hue = new SeekBar(this); hue.setMax(359);
+        final SeekBar saturation = new SeekBar(this); saturation.setMax(100);
+        final SeekBar value = new SeekBar(this); value.setMax(100);
+        hue.setProgressTintList(ColorStateList.valueOf(INDIGO));
+        saturation.setProgressTintList(ColorStateList.valueOf(INDIGO));
+        value.setProgressTintList(ColorStateList.valueOf(INDIGO));
+        float[] hsv = new float[3]; Color.colorToHSV(initialColor, hsv);
+        hue.setProgress((int) hsv[0]); saturation.setProgress((int) (hsv[1] * 100));
+        value.setProgress((int) (hsv[2] * 100));
+        box.addView(hue); box.addView(saturation); box.addView(value);
+        SeekBar.OnSeekBarChangeListener listener = new SeekBar.OnSeekBarChangeListener() {
+            private void update() {
+                int color = Color.HSVToColor(new float[]{hue.getProgress(),
+                        saturation.getProgress() / 100f, value.getProgress() / 100f});
+                preview.setBackground(bg(color, 14, color));
+                preview.setTextColor(Color.luminance(color) > .45f ? Color.BLACK : Color.WHITE);
+            }
+            @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) { update(); }
+            @Override public void onStartTrackingTouch(SeekBar bar) {}
+            @Override public void onStopTrackingTouch(SeekBar bar) {}
+        };
+        hue.setOnSeekBarChangeListener(listener); saturation.setOnSeekBarChangeListener(listener);
+        value.setOnSeekBarChangeListener(listener);
+        preview.setBackground(bg(initialColor, 14, initialColor));
+        new AlertDialog.Builder(this).setTitle("Choose color").setView(box)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Apply", (dialog, which) -> {
+                    int color = Color.HSVToColor(new float[]{hue.getProgress(),
+                            saturation.getProgress() / 100f, value.getProgress() / 100f});
+                    prefs.edit().putInt(prefKey, color).putString(CBoardTheme.PREF_MODE,
+                            CBoardTheme.CUSTOM).apply();
+                    render();
+                }).show();
     }
 
     private void buildSettings(LinearLayout c) {
@@ -324,20 +459,20 @@ public final class CrazeDashboardActivity extends Activity {
             @Override public void onClick(View v) { page = HAPTICS; render(); }
         });
         gap(c, 8);
-        settingRow(c, "Aa", "Typing preferences", "Capitalization, spacing and punctuation", ORANGE, new View.OnClickListener() {
-            @Override public void onClick(View v) { openFragment("com.android.inputmethod.latin.settings.PreferencesSettingsFragment"); }
+        settingRow(c, "Aa", "Typing preferences", "Capitalization, spacing and key feedback", ORANGE, new View.OnClickListener() {
+            @Override public void onClick(View v) { page = TYPING; render(); }
         });
         gap(c, 8);
-        settingRow(c, "文", "Languages & layouts", "Appearance and layout configuration", INDIGO, new View.OnClickListener() {
-            @Override public void onClick(View v) { openFragment("com.android.inputmethod.latin.settings.AppearanceSettingsFragment"); }
+        settingRow(c, "文", "Languages & layouts", "Keyboard shape and screen layout", INDIGO, new View.OnClickListener() {
+            @Override public void onClick(View v) { page = LAYOUTS; render(); }
         });
         gap(c, 8);
         settingRow(c, "✎", "Text correction", "Suggestions and auto-correction", ORANGE, new View.OnClickListener() {
-            @Override public void onClick(View v) { openFragment("com.android.inputmethod.latin.settings.CorrectionSettingsFragment"); }
+            @Override public void onClick(View v) { page = CORRECTION; render(); }
         });
         gap(c, 8);
-        settingRow(c, "⚙", "All keyboard settings", "Open the full native settings screen", TEXT, new View.OnClickListener() {
-            @Override public void onClick(View v) { startActivity(new Intent(CrazeDashboardActivity.this, SettingsActivity.class)); }
+        settingRow(c, "⚙", "More controls", "Gesture typing and advanced options", TEXT, new View.OnClickListener() {
+            @Override public void onClick(View v) { page = ADVANCED; render(); }
         });
         gap(c, 12);
         LinearLayout privacy = card();
@@ -345,6 +480,193 @@ public final class CrazeDashboardActivity extends Activity {
         gap(privacy, 4);
         privacy.addView(txt("Text typed in the playground never leaves this device.", 12, MUTED, false));
         c.addView(privacy);
+    }
+
+
+    private void buildTyping(LinearLayout c) {
+        c.addView(button("←  Settings", HIGH, MUTED, new View.OnClickListener() {
+            @Override public void onClick(View v) { page = SETTINGS; tab = SETTINGS; render(); }
+        }), new LinearLayout.LayoutParams(-2, -2));
+        gap(c, 12);
+        heading(c, "Typing preferences", "Make everyday typing feel right.");
+        gap(c, 14);
+        LinearLayout typing = card();
+        typing.addView(txt("TYPING", 10, INDIGO, true));
+        switchRow(typing, getString(R.string.auto_cap), getString(R.string.auto_cap_summary),
+                Settings.PREF_AUTO_CAP, true);
+        divider(typing);
+        switchRow(typing, getString(R.string.use_double_space_period),
+                getString(R.string.use_double_space_period_summary),
+                Settings.PREF_KEY_USE_DOUBLE_SPACE_PERIOD, true);
+        c.addView(typing);
+        gap(c, 12);
+        LinearLayout feedback = card();
+        feedback.addView(txt("KEY FEEDBACK", 10, INDIGO, true));
+        switchRow(feedback, getString(R.string.vibrate_on_keypress),
+                getString(R.string.vibrate_on_keypress_summary), Settings.PREF_VIBRATE_ON,
+                getResources().getBoolean(R.bool.config_default_vibration_enabled));
+        divider(feedback);
+        switchRow(feedback, getString(R.string.sound_on_keypress),
+                getString(R.string.sound_on_keypress_summary), Settings.PREF_SOUND_ON,
+                getResources().getBoolean(R.bool.config_default_sound_enabled));
+        divider(feedback);
+        switchRow(feedback, getString(R.string.popup_on_keypress),
+                getString(R.string.popup_on_keypress_summary), Settings.PREF_POPUP_ON,
+                getResources().getBoolean(R.bool.config_default_key_preview_popup));
+        divider(feedback);
+        switchRow(feedback, getString(R.string.voice_input),
+                getString(R.string.voice_input_summary), Settings.PREF_VOICE_INPUT_KEY, true);
+        c.addView(feedback);
+    }
+
+    private void buildLayouts(LinearLayout c) {
+        c.addView(button("←  Settings", HIGH, MUTED, new View.OnClickListener() {
+            @Override public void onClick(View v) { page = SETTINGS; tab = SETTINGS; render(); }
+        }), new LinearLayout.LayoutParams(-2, -2));
+        gap(c, 12);
+        heading(c, "Languages & layouts", "Choose a keyboard look and layout.");
+        gap(c, 14);
+        LinearLayout theme = card();
+        theme.addView(txt("KEYBOARD THEME", 10, INDIGO, true));
+        gap(theme, 6);
+        theme.addView(txt("Pick a light or dark keyboard style.", 12, MUTED, false));
+        gap(theme, 10);
+        theme.addView(primary("Open Theme Studio", new View.OnClickListener() {
+            @Override public void onClick(View v) { page = THEMES; tab = THEMES; render(); }
+        }));
+        c.addView(theme);
+        gap(c, 12);
+        LinearLayout layout = card();
+        layout.addView(txt("SCREEN LAYOUT", 10, INDIGO, true));
+        switchRow(layout, getString(R.string.enable_split_keyboard),
+                getString(R.string.enable_split_keyboard_summary), Settings.PREF_ENABLE_SPLIT_KEYBOARD,
+                false);
+        gap(layout, 8);
+        layout.addView(button("Custom input styles  ›", HIGH, TEXT, new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                openFragment("com.android.inputmethod.latin.settings.CustomInputStyleSettingsFragment");
+            }
+        }));
+        c.addView(layout);
+    }
+
+    private void buildCorrection(LinearLayout c) {
+        c.addView(button("←  Settings", HIGH, MUTED, new View.OnClickListener() {
+            @Override public void onClick(View v) { page = SETTINGS; tab = SETTINGS; render(); }
+        }), new LinearLayout.LayoutParams(-2, -2));
+        gap(c, 12);
+        heading(c, "Text correction", "Choose how CrazeKeyboard helps while you type.");
+        gap(c, 14);
+        LinearLayout suggestions = card();
+        suggestions.addView(txt("SUGGESTIONS", 10, INDIGO, true));
+        switchRow(suggestions, getString(R.string.prefs_show_suggestions),
+                getString(R.string.prefs_show_suggestions_summary), Settings.PREF_SHOW_SUGGESTIONS, true);
+        divider(suggestions);
+        switchRow(suggestions, getString(R.string.bigram_prediction),
+                getString(R.string.bigram_prediction_summary), Settings.PREF_BIGRAM_PREDICTIONS, true);
+        divider(suggestions);
+        switchRow(suggestions, getString(R.string.auto_correction),
+                getString(R.string.auto_correction_summary), Settings.PREF_AUTO_CORRECTION, true);
+        c.addView(suggestions);
+        gap(c, 12);
+        LinearLayout privacy = card();
+        privacy.addView(txt("PERSONALIZATION", 10, INDIGO, true));
+        switchRow(privacy, getString(R.string.use_personalized_dicts),
+                getString(R.string.use_personalized_dicts_summary),
+                Settings.PREF_KEY_USE_PERSONALIZED_DICTS, true);
+        divider(privacy);
+        switchRow(privacy, getString(R.string.prefs_block_potentially_offensive_title),
+                getString(R.string.prefs_block_potentially_offensive_summary),
+                Settings.PREF_BLOCK_POTENTIALLY_OFFENSIVE,
+                getResources().getBoolean(R.bool.config_block_potentially_offensive));
+        c.addView(privacy);
+        gap(c, 12);
+        c.addView(button("Personal dictionary  ›", HIGH, TEXT, new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                startActivity(new Intent(android.provider.Settings.ACTION_USER_DICTIONARY_SETTINGS));
+            }
+        }));
+    }
+
+    private void buildAdvanced(LinearLayout c) {
+        c.addView(button("←  Settings", HIGH, MUTED, new View.OnClickListener() {
+            @Override public void onClick(View v) { page = SETTINGS; tab = SETTINGS; render(); }
+        }), new LinearLayout.LayoutParams(-2, -2));
+        gap(c, 12);
+        heading(c, "More controls", "Tune gestures and keyboard behavior.");
+        gap(c, 14);
+        LinearLayout gestures = card();
+        gestures.addView(txt("GESTURE TYPING", 10, INDIGO, true));
+        switchRow(gestures, getString(R.string.gesture_input),
+                getString(R.string.gesture_input_summary), Settings.PREF_GESTURE_INPUT, true);
+        divider(gestures);
+        switchRow(gestures, getString(R.string.gesture_floating_preview_text),
+                getString(R.string.gesture_floating_preview_text_summary),
+                Settings.PREF_GESTURE_FLOATING_PREVIEW_TEXT, true);
+        divider(gestures);
+        switchRow(gestures, getString(R.string.gesture_preview_trail),
+                getString(R.string.gesture_preview_trail_summary), Settings.PREF_GESTURE_PREVIEW_TRAIL, true);
+        c.addView(gestures);
+        gap(c, 12);
+        LinearLayout controls = card();
+        controls.addView(txt("OTHER CONTROLS", 10, INDIGO, true));
+        switchRow(controls, getString(R.string.prefs_enable_emoji_alt_physical_key),
+                getString(R.string.prefs_enable_emoji_alt_physical_key_summary),
+                Settings.PREF_ENABLE_EMOJI_ALT_PHYSICAL_KEY, true);
+        divider(controls);
+        switchRow(controls, getString(R.string.show_setup_wizard_icon),
+                getString(R.string.show_setup_wizard_icon_summary),
+                Settings.PREF_SHOW_SETUP_WIZARD_ICON, false);
+        c.addView(controls);
+        gap(c, 12);
+        c.addView(button("Developer tools  ›", HIGH, TEXT, new View.OnClickListener() {
+            @Override public void onClick(View v) { page = DEBUG; tab = SETTINGS; render(); }
+        }));
+    }
+
+    private void buildDeveloper(LinearLayout c) {
+        c.addView(button("←  More controls", HIGH, MUTED, new View.OnClickListener() {
+            @Override public void onClick(View v) { page = ADVANCED; tab = SETTINGS; render(); }
+        }), new LinearLayout.LayoutParams(-2, -2));
+        gap(c, 12);
+        heading(c, "Developer tools", "Existing diagnostics and keyboard tuning controls.");
+        gap(c, 14);
+        LinearLayout tuning = card();
+        tuning.addView(txt("INPUT DIAGNOSTICS", 10, INDIGO, true));
+        switchRow(tuning, "Force compatibility multitouch", "Use the fallback touch tracker",
+                com.android.inputmethod.latin.settings.DebugSettings.PREF_FORCE_NON_DISTINCT_MULTITOUCH,
+                false);
+        divider(tuning);
+        switchRow(tuning, "Sliding key preview", "Show input path feedback",
+                com.android.inputmethod.latin.settings.DebugSettings.PREF_SLIDING_KEY_INPUT_PREVIEW,
+                true);
+        divider(tuning);
+        switchRow(tuning, "Allow keyboard resizing", "Enable test-only keyboard height controls",
+                com.android.inputmethod.latin.settings.DebugSettings.PREF_RESIZE_KEYBOARD, false);
+        c.addView(tuning);
+        gap(c, 12);
+        LinearLayout dumps = card();
+        dumps.addView(txt("DICTIONARY DUMPS", 10, INDIGO, true));
+        gap(dumps, 8);
+        addDictionaryDump(dumps, "User dictionary", com.android.inputmethod.latin.Dictionary.TYPE_USER);
+        addDictionaryDump(dumps, "Typing history", com.android.inputmethod.latin.Dictionary.TYPE_USER_HISTORY);
+        c.addView(dumps);
+    }
+
+    private void addDictionaryDump(LinearLayout parent, final String title, final String type) {
+        parent.addView(button("Export " + title, HIGH, TEXT, new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                Intent dump = new Intent(com.android.inputmethod.latin.DictionaryDumpBroadcastReceiver
+                        .DICTIONARY_DUMP_INTENT_ACTION);
+                dump.setPackage(getPackageName());
+                dump.putExtra(com.android.inputmethod.latin.DictionaryDumpBroadcastReceiver
+                        .DICTIONARY_NAME_KEY, type);
+                sendBroadcast(dump);
+                Toast.makeText(CrazeDashboardActivity.this, "Dictionary export requested",
+                        Toast.LENGTH_SHORT).show();
+            }
+        }));
+        gap(parent, 6);
     }
 
     private void buildHaptics(LinearLayout c) {

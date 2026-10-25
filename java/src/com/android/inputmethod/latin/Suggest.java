@@ -216,12 +216,8 @@ public final class Suggest {
                 || wordComposer.isMostlyCaps()
                 // We never auto-correct when suggestions are resumed because it would be unexpected
                 || wordComposer.isResumed()
-                // If we don't have a main dictionary, we never want to auto-correct. The reason
-                // for this is, the user may have a contact whose name happens to match a valid
-                // word in their language, and it will unexpectedly auto-correct. For example, if
-                // the user types in English with no dictionary and has a "Will" in their contact
-                // list, "will" would always auto-correct to "Will" which is unwanted. Hence, no
-                // main dict => no auto-correct. Also, it would probably get obnoxious quickly.
+                // If no main dictionary is available, we cannot reliably choose a correction, so
+                // avoid automatic replacements and leave the candidate for the user to select.
                 // TODO: now that we have personalization, we may want to re-evaluate this decision
                 || !mDictionaryFacilitator.hasAtLeastOneInitializedMainDictionary()
                 // If the first suggestion is a shortcut we never auto-correct to it, regardless
