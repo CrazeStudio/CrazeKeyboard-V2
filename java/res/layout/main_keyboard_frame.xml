@@ -2,44 +2,35 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:id="@+id/cboard_keyboard_panel"
     android:layout_gravity="bottom"
     android:orientation="vertical">
 
-    <!-- Suggestions, tool launcher and voice input share one compact top row. -->
-    <LinearLayout
+    <!-- CBoard utility toolbar. The suggestion row below stays independent so predictions
+         keep their own breathing room, as in the supplied keyboard reference. -->
+    <com.android.inputmethod.latin.CBoardToolbarView
         android:id="@+id/cboard_top_row"
+        android:layout_width="match_parent"
+        android:layout_height="44dp" />
+
+    <View
+        android:id="@+id/cboard_toolbar_divider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp" />
+
+    <com.android.inputmethod.latin.suggestions.SuggestionStripView
+        android:id="@+id/suggestion_strip_view"
+        android:layoutDirection="ltr"
         android:layout_width="match_parent"
         android:layout_height="@dimen/config_suggestions_strip_height"
         android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingLeft="5dp"
-        android:paddingRight="3dp">
+        android:clipToPadding="false"
+        style="?attr/suggestionStripViewStyle" />
 
-        <ImageButton
-            android:id="@+id/cboard_tools_button"
-            android:layout_width="42dp"
-            android:layout_height="match_parent"
-            android:contentDescription="@string/keyboard_tools"
-            android:padding="10dp"
-            android:scaleType="centerInside"
-            android:src="@drawable/ic_cboard_tools"
-            />
-
-        <com.android.inputmethod.latin.suggestions.SuggestionStripView
-            android:id="@+id/suggestion_strip_view"
-            android:layoutDirection="ltr"
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:gravity="center_vertical"
-            android:clipToPadding="false"
-            style="?attr/suggestionStripViewStyle" />
-
-        <com.android.inputmethod.latin.CBoardToolbarView
-            android:id="@+id/cboard_toolbar"
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent" />
-    </LinearLayout>
+    <View
+        android:id="@+id/cboard_suggestion_divider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp" />
 
     <com.android.inputmethod.keyboard.MainKeyboardView
         android:id="@+id/keyboard_view"

@@ -50,23 +50,23 @@ public final class CBoardTheme {
                 & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
         boolean dark = DARK.equals(mode) || ((SYSTEM.equals(mode) || CUSTOM.equals(mode)) && systemDark);
         boolean useDynamic = Build.VERSION.SDK_INT >= 31 && SYSTEM.equals(mode);
-        int accent = dynamicColor(context, "system_accent1_500", dark ? 0xFFB5A8FF : 0xFF5D56C9, useDynamic);
+        int accent = dynamicColor(context, "system_accent1_500", dark ? 0xFFA8C7FA : 0xFF526FA7, useDynamic);
         int surface = dynamicColor(context, dark ? "system_neutral1_900" : "system_neutral1_10",
-                dark ? 0xFF202124 : 0xFFFFFFFF, useDynamic);
+                dark ? 0xFF191C20 : 0xFFFFFFFF, useDynamic);
         int background = dynamicColor(context, dark ? "system_neutral1_950" : "system_neutral1_50",
-                dark ? 0xFF17181B : 0xFFF4F5F8, useDynamic);
+                dark ? 0xFF101216 : 0xFFF4F5F8, useDynamic);
         int panel = dynamicColor(context, dark ? "system_neutral1_850" : "system_neutral1_100",
-                dark ? 0xFF202124 : 0xFFD5D9E0, useDynamic);
+                dark ? 0xFF191C20 : 0xFFD5D9E0, useDynamic);
         int key = dynamicColor(context, dark ? "system_neutral2_800" : "system_neutral1_10",
-                dark ? 0xFF3C4043 : 0xFFFAFBFD, useDynamic);
+                dark ? 0xFF2B2E35 : 0xFFFAFBFD, useDynamic);
         int functional = dynamicColor(context, dark ? "system_neutral2_850" : "system_neutral1_200",
-                dark ? 0xFF303134 : 0xFFBBC1CB, useDynamic);
+                dark ? 0xFF202328 : 0xFFBBC1CB, useDynamic);
         int text = dynamicColor(context, dark ? "system_neutral1_10" : "system_neutral1_900",
-                dark ? 0xFFF1F3F4 : 0xFF202124, useDynamic);
+                dark ? 0xFFF1F3F8 : 0xFF202124, useDynamic);
         int secondary = dynamicColor(context, dark ? "system_neutral2_200" : "system_neutral2_600",
-                dark ? 0xFFBDC1C6 : 0xFF747B8D, useDynamic);
+                dark ? 0xFF9AA0A6 : 0xFF747B8D, useDynamic);
         int border = dynamicColor(context, dark ? "system_neutral2_700" : "system_neutral2_200",
-                dark ? 0xFF34363A : 0xFFC4CAD3, useDynamic);
+                dark ? 0xFF25282D : 0xFFC4CAD3, useDynamic);
         int pressed = blend(key, accent, dark ? .30f : .16f);
         int accentText = contrastText(accent);
         if (CUSTOM.equals(mode)) {

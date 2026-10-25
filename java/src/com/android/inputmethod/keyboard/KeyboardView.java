@@ -345,7 +345,8 @@ public class KeyboardView extends View {
         final CBoardTheme colors = mCurrentCBoardTheme;
         params.mTextColor = colors.text;
         params.mTextInactivatedColor = colors.secondaryText;
-        params.mFunctionalTextColor = colors.secondaryText;
+        final boolean primaryAction = key.isActionKey() && key.getCode() == Constants.CODE_ENTER;
+        params.mFunctionalTextColor = primaryAction ? colors.accentText : colors.secondaryText;
         params.mHintLetterColor = colors.secondaryText;
         params.mHintLabelColor = colors.secondaryText;
         params.mShiftedLetterHintInactivatedColor = colors.secondaryText;
@@ -370,18 +371,20 @@ public class KeyboardView extends View {
         final CBoardTheme colors = mCurrentCBoardTheme;
         final int width = key.getDrawWidth();
         final int height = key.getHeight();
-        final boolean space = key.getCode() == Constants.CODE_SPACE;
         final boolean special = key.isActionKey() || key.isModifier();
         final boolean pressed = hasState(background.getState(), android.R.attr.state_pressed);
-        final float inset = dp(space ? 1.5f : 2.0f);
-        final float radius = dp(space ? 11.0f : 7.5f);
+        final float inset = dp(1.5f);
+        final float radius = dp(6.5f);
         mCBoardKeyPaint.setStyle(Paint.Style.FILL);
-        mCBoardKeyPaint.setColor(pressed ? colors.pressed : colors.border);
+        final boolean primaryAction = key.isActionKey() && key.getCode() == Constants.CODE_ENTER;
+        final int keyFace = primaryAction ? colors.accent
+                : (special ? colors.functionalKey : colors.key);
+        mCBoardKeyPaint.setColor(primaryAction ? colors.accent
+                : (pressed ? colors.pressed : colors.border));
         canvas.drawRoundRect(new RectF(inset, inset, width - inset, height - inset), radius, radius,
                 mCBoardKeyPaint);
-        mCBoardKeyPaint.setColor(pressed ? colors.key : (space ? colors.key :
-                (special ? colors.functionalKey : colors.key)));
-        canvas.drawRoundRect(new RectF(inset, inset, width - inset, height - dp(3)), radius, radius,
+        mCBoardKeyPaint.setColor(primaryAction ? keyFace : (pressed ? colors.key : keyFace));
+        canvas.drawRoundRect(new RectF(inset, inset, width - inset, height - dp(2.5f)), radius, radius,
                 mCBoardKeyPaint);
     }
 

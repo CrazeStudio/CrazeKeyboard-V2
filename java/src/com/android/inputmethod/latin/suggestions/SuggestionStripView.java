@@ -18,7 +18,6 @@ package com.android.inputmethod.latin.suggestions;
 
 import android.content.Context;
 import android.content.res.Resources;
-import android.content.res.TypedArray;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
@@ -38,7 +37,6 @@ import android.view.View.OnLongClickListener;
 import android.view.ViewGroup;
 import android.view.ViewParent;
 import android.view.accessibility.AccessibilityEvent;
-import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
@@ -93,8 +91,6 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
     private static final float DEBUG_INFO_TEXT_SIZE_IN_DIP = 6.0f;
 
     private final ViewGroup mSuggestionsStrip;
-    private final ImageButton mToolsKey;
-    private final ImageButton mVoiceKey;
     private final View mImportantNoticeStrip;
     MainKeyboardView mMainKeyboardView;
 
@@ -171,8 +167,6 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
         inflater.inflate(R.layout.suggestions_strip, this);
 
         mSuggestionsStrip = (ViewGroup)findViewById(R.id.suggestions_strip);
-        mToolsKey = (ImageButton)findViewById(R.id.suggestions_strip_tools_key);
-        mVoiceKey = (ImageButton)findViewById(R.id.suggestions_strip_voice_key);
         mImportantNoticeStrip = findViewById(R.id.important_notice_strip);
         mStripVisibilityGroup = new StripVisibilityGroup(this, mSuggestionsStrip,
                 mImportantNoticeStrip);
@@ -205,13 +199,6 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
         mMoreSuggestionsSlidingDetector = new GestureDetector(
                 context, mMoreSuggestionsSlidingListener);
 
-        final TypedArray keyboardAttr = context.obtainStyledAttributes(attrs,
-                R.styleable.Keyboard, defStyle, R.style.SuggestionStripView);
-        final Drawable iconVoice = keyboardAttr.getDrawable(R.styleable.Keyboard_iconShortcutKey);
-        keyboardAttr.recycle();
-        mVoiceKey.setImageDrawable(iconVoice);
-        mVoiceKey.setVisibility(GONE);
-        mToolsKey.setVisibility(GONE);
     }
 
     /**
@@ -226,8 +213,6 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
     public void updateVisibility(final boolean shouldBeVisible, final boolean isFullscreenMode) {
         final int visibility = shouldBeVisible ? VISIBLE : (isFullscreenMode ? GONE : INVISIBLE);
         setVisibility(visibility);
-        final SettingsValues currentSettingsValues = Settings.getInstance().getCurrent();
-        mVoiceKey.setVisibility(currentSettingsValues.mShowsVoiceInputKey ? VISIBLE : INVISIBLE);
     }
 
     public void setSuggestions(final SuggestedWords suggestedWords, final boolean isRtlLanguage) {
@@ -244,12 +229,50 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
     public void applyCBoardTheme() {
         final CBoardTheme colors = CBoardTheme.resolve(getContext());
         setBackgroundColor(colors.panel);
-        for (int i = 0; i < mSuggestionsStrip.getChildCount(); i++) {
-            final View child = mSuggestionsStrip.getChildAt(i);
-            if (child instanceof TextView) ((TextView)child).setTextColor(colors.text);
+        mSuggestionsStrip.setBackgroundColor(colors.panel);
+        if (mToolsMenuOpen) {
+            if (mActionItems != null) applyToolPanelTheme(mActionItems, colors);
+        } else {
+            for (int i = 0; i < mWordViews.size(); i++) {
+                final TextView word = mWordViews.get(i);
+                word.setTextColor(i == 1 ? colors.text : colors.secondaryText);
+                word.setGravity(android.view.Gravity.CENTER);
+                if (i == 1) {
+                    final GradientDrawable selected = new GradientDrawable();
+                    selected.setColor(colors.key);
+                    selected.setCornerRadius(dp(18));
+                    selected.setStroke(dp(1), colors.border);
+                    word.setBackground(selected);
+                    word.setPadding(dp(7), 0, dp(7), 0);
+                } else {
+                    word.setBackground(null);
+                    word.setPadding(dp(6), 0, dp(6), 0);
+                }
+            }
+            for (View divider : mDividerViews) {
+                divider.setBackgroundColor(colors.border);
+                divider.setAlpha(.6f);
+            }
         }
-        mToolsKey.setImageTintList(ColorStateList.valueOf(colors.accent));
-        mVoiceKey.setImageTintList(ColorStateList.valueOf(colors.accent));
+    }
+
+    private void applyToolPanelTheme(final ViewGroup container, final CBoardTheme colors) {
+        for (int i = 0; i < container.getChildCount(); i++) {
+            final View child = container.getChildAt(i);
+            if (child instanceof ImageView) {
+                ((ImageView)child).setImageTintList(ColorStateList.valueOf(colors.secondaryText));
+            } else if (child instanceof TextView) {
+                final TextView text = (TextView)child;
+                text.setTextColor(colors.text);
+                if (text.getParent() == mActionItems) {
+                    final GradientDrawable card = new GradientDrawable();
+                    card.setColor(colors.key);
+                    card.setCornerRadius(dp(11));
+                    text.setBackground(card);
+                }
+            }
+            if (child instanceof ViewGroup) applyToolPanelTheme((ViewGroup)child, colors);
+        }
     }
 
     public void setMoreSuggestionsHeight(final int remainingHeight) {
@@ -283,8 +306,6 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
 
     public void clear() {
         mToolsMenuOpen = false;
-        mToolsKey.setImageResource(R.drawable.ic_keyboard_tools);
-        mToolsKey.setContentDescription(getResources().getString(R.string.keyboard_tools));
         mSuggestionsStrip.removeAllViews();
         removeAllDebugInfoViews();
         mStripVisibilityGroup.showSuggestionsStrip();
@@ -497,8 +518,6 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
 
     private void beginActionPanel(final int itemWidthDp) {
         mToolsMenuOpen = true;
-        mToolsKey.setImageResource(R.drawable.ic_keyboard_tools_close);
-        mToolsKey.setContentDescription(getResources().getString(R.string.close_keyboard_tools));
         mSuggestionsStrip.removeAllViews();
         mStripVisibilityGroup.showSuggestionsStrip();
         final HorizontalScrollView scroller = new HorizontalScrollView(getContext());
@@ -562,7 +581,6 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
 
     public void showClipboardHistory(final java.util.List<String> items) {
         mToolsMenuOpen = true;
-        mToolsKey.setImageResource(R.drawable.ic_keyboard_tools_close);
         mSuggestionsStrip.removeAllViews();
         mStripVisibilityGroup.showSuggestionsStrip();
         final HorizontalScrollView scroller = new HorizontalScrollView(getContext());
@@ -677,21 +695,10 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
     public void onClick(final View view) {
         AudioAndHapticFeedbackManager.getInstance().performHapticAndAudioFeedback(
                 Constants.CODE_UNSPECIFIED, this);
-        if (view == mToolsKey) {
-            toggleCBoardTools();
-            return;
-        }
         if (view == mImportantNoticeStrip) {
             mListener.showImportantNoticeContents();
             return;
         }
-        if (view == mVoiceKey) {
-            mListener.onCodeInput(Constants.CODE_SHORTCUT,
-                    Constants.SUGGESTION_STRIP_COORDINATE, Constants.SUGGESTION_STRIP_COORDINATE,
-                    false /* isKeyRepeat */);
-            return;
-        }
-
         final Object tag = view.getTag();
         // {@link Integer} tag is set at
         // {@link SuggestionStripLayoutHelper#setupWordViewsTextAndColor(SuggestedWords,int)} and

@@ -178,9 +178,9 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
                     keyboard.applyCBoardTheme();
                     keyboard.invalidateAllKeys();
                 }
-                        if (mSuggestionStripView != null) mSuggestionStripView.applyCBoardTheme();
+                if (mSuggestionStripView != null) mSuggestionStripView.applyCBoardTheme();
                 if (mInputView != null) {
-                    CBoardToolbarView toolbar = mInputView.findViewById(R.id.cboard_toolbar);
+                    CBoardToolbarView toolbar = mInputView.findViewById(R.id.cboard_top_row);
                     if (toolbar != null) toolbar.applyCBoardTheme();
                     applyCBoardTopBarTheme();
                     com.android.inputmethod.keyboard.emoji.EmojiPalettesView emojiView =
@@ -914,22 +914,14 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         if (hasSuggestionStripView()) {
             mSuggestionStripView.setListener(this, view);
         }
-        CBoardToolbarView toolbar = view.findViewById(R.id.cboard_toolbar);
+        CBoardToolbarView toolbar = view.findViewById(R.id.cboard_top_row);
+        final boolean gifEnabled = supportsGifInput(getCurrentInputEditorInfo());
         if (toolbar != null) {
             toolbar.setListener(this);
             toolbar.setVoiceEnabled(mSettings.getCurrent().mShowsVoiceInputKey);
+            toolbar.setGifEnabled(gifEnabled);
         }
-        if (mSuggestionStripView != null) {
-            mSuggestionStripView.setGifEnabled(supportsGifInput(getCurrentInputEditorInfo()));
-        }
-        android.widget.ImageButton tools = view.findViewById(R.id.cboard_tools_button);
-        if (tools != null) {
-            tools.setOnClickListener(new View.OnClickListener() {
-                @Override public void onClick(View button) {
-                    if (mSuggestionStripView != null) mSuggestionStripView.toggleCBoardTools();
-                }
-            });
-        }
+        if (mSuggestionStripView != null) mSuggestionStripView.setGifEnabled(gifEnabled);
         applyCBoardTopBarTheme();
     }
 
@@ -1007,8 +999,11 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         // settings, so currentSettingsValues can't be final.
         SettingsValues currentSettingsValues = mSettings.getCurrent();
         if (mInputView != null) {
-            CBoardToolbarView toolbar = mInputView.findViewById(R.id.cboard_toolbar);
-            if (toolbar != null) toolbar.setVoiceEnabled(currentSettingsValues.mShowsVoiceInputKey);
+            CBoardToolbarView toolbar = mInputView.findViewById(R.id.cboard_top_row);
+            if (toolbar != null) {
+                toolbar.setVoiceEnabled(currentSettingsValues.mShowsVoiceInputKey);
+                toolbar.setGifEnabled(supportsGifInput(editorInfo));
+            }
         }
         if (mSuggestionStripView != null) {
             mSuggestionStripView.setGifEnabled(supportsGifInput(editorInfo));
@@ -1829,9 +1824,16 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
     public void onCBoardToolbarAction(final int action) {
         if (action == CBoardToolbarView.MORE) {
             if (mSuggestionStripView != null) mSuggestionStripView.toggleCBoardTools();
-        } else if (action == CBoardToolbarView.VOICE) {
+            return;
+        }
+        if (mSuggestionStripView != null && mSuggestionStripView.isToolsMenuOpen()) {
+            mSuggestionStripView.toggleCBoardTools();
+        }
+        if (action == CBoardToolbarView.VOICE) {
             onCodeInput(Constants.CODE_SHORTCUT, Constants.SUGGESTION_STRIP_COORDINATE,
                     Constants.SUGGESTION_STRIP_COORDINATE, false /* isKeyRepeat */);
+        } else {
+            onKeyboardToolSelected(action);
         }
     }
 
@@ -1845,19 +1847,14 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
     private void applyCBoardTopBarTheme() {
         if (mInputView == null) return;
         CBoardTheme colors = CBoardTheme.resolve(this);
-        View row = mInputView.findViewById(R.id.cboard_top_row);
-        if (row != null) row.setBackgroundColor(colors.panel);
-        android.widget.ImageButton tools = mInputView.findViewById(R.id.cboard_tools_button);
-        if (tools != null) {
-            tools.setImageTintList(android.content.res.ColorStateList.valueOf(colors.secondaryText));
-            android.graphics.drawable.GradientDrawable mask =
-                    new android.graphics.drawable.GradientDrawable();
-            mask.setColor(Color.WHITE);
-            mask.setCornerRadius(getResources().getDisplayMetrics().density * 14);
-            tools.setBackground(new android.graphics.drawable.RippleDrawable(
-                    android.content.res.ColorStateList.valueOf(
-                            colors.dark ? 0x33FFFFFF : 0x22000000), null, mask));
-        }
+        View panel = mInputView.findViewById(R.id.cboard_keyboard_panel);
+        if (panel != null) panel.setBackgroundColor(colors.panel);
+        CBoardToolbarView toolbar = mInputView.findViewById(R.id.cboard_top_row);
+        if (toolbar != null) toolbar.applyCBoardTheme();
+        View toolbarDivider = mInputView.findViewById(R.id.cboard_toolbar_divider);
+        if (toolbarDivider != null) toolbarDivider.setBackgroundColor(colors.border);
+        View suggestionDivider = mInputView.findViewById(R.id.cboard_suggestion_divider);
+        if (suggestionDivider != null) suggestionDivider.setBackgroundColor(colors.border);
     }
 
     private void launchDashboardThemes() {
