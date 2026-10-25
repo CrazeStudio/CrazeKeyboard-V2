@@ -48,12 +48,12 @@ import java.util.List;
 public final class CrazeDashboardActivity extends Activity {
     private static final int KEYBOARD = 0, THEMES = 1, SETTINGS = 2, HAPTICS = 3;
 
-    // Aurora palette
-    private static final int BG = 0xFF0F121C, SURFACE = 0xFF171B29, HIGH = 0xFF222839;
-    private static final int INPUT = 0xFF0B0D14, TEXT = 0xFFF2F4FF, MUTED = 0xFFA9B0C8;
-    private static final int BORDER = 0xFF2A3047, INDIGO = 0xFF9FB0FF, INDIGO_BG = 0xFF222B55;
+    // Craze Studio palette: warm paper surfaces, ink text, and a vivid ember accent.
+    private static final int BG = 0xFFF4F5F8, SURFACE = 0xFFFFFFFF, HIGH = 0xFFEEF0F5;
+    private static final int INPUT = 0xFFFFFFFF, TEXT = 0xFF202437, MUTED = 0xFF747B8D;
+    private static final int BORDER = 0xFFE2E5EC, INDIGO = 0xFF5D56C9, INDIGO_BG = 0xFFEFEDFF;
     private static final int ORANGE = 0xFFFF8A24, CORAL = 0xFFFF6A2B, ON_ORANGE = 0xFF2A1405;
-    private static final int OK = 0xFF6EE7A8, OK_BG = 0xFF12372A;
+    private static final int OK = 0xFF168454, OK_BG = 0xFFE4F5EC;
 
     private int tab = KEYBOARD, page = KEYBOARD;
     private String playgroundText = "";
@@ -84,7 +84,7 @@ public final class CrazeDashboardActivity extends Activity {
         super.onCreate(state);
         prefs = PreferenceManager.getDefaultSharedPreferences(this);
         getWindow().setStatusBarColor(BG);
-        getWindow().setNavigationBarColor(INPUT);
+        getWindow().setNavigationBarColor(BG);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(BG);
@@ -125,8 +125,8 @@ public final class CrazeDashboardActivity extends Activity {
 
     private void buildNav(LinearLayout root) {
         LinearLayout wrap = new LinearLayout(this);
-        wrap.setBackgroundColor(INPUT);
-        wrap.setPadding(dp(12), dp(8), dp(12), dp(10));
+        wrap.setBackgroundColor(BG);
+        wrap.setPadding(dp(16), dp(8), dp(16), dp(12));
         LinearLayout nav = row();
         nav.setPadding(dp(4), dp(4), dp(4), dp(4));
         nav.setBackground(bg(SURFACE, 24, BORDER));
