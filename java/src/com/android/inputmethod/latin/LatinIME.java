@@ -20,7 +20,6 @@ import static com.android.inputmethod.latin.common.Constants.ImeOption.FORCE_ASC
 import static com.android.inputmethod.latin.common.Constants.ImeOption.NO_MICROPHONE;
 import static com.android.inputmethod.latin.common.Constants.ImeOption.NO_MICROPHONE_COMPAT;
 
-import android.Manifest.permission;
 import android.app.ActivityOptions;
 import android.content.BroadcastReceiver;
 import android.content.ClipData;
@@ -86,7 +85,6 @@ import com.android.inputmethod.latin.common.InputPointers;
 import com.android.inputmethod.latin.define.DebugFlags;
 import com.android.inputmethod.latin.define.ProductionFlags;
 import com.android.inputmethod.latin.inputlogic.InputLogic;
-import com.android.inputmethod.latin.permissions.PermissionsManager;
 import com.android.inputmethod.latin.personalization.PersonalizationHelper;
 import com.android.inputmethod.latin.settings.Settings;
 import com.android.inputmethod.latin.settings.SettingsActivity;
@@ -95,7 +93,6 @@ import com.android.inputmethod.latin.suggestions.SuggestionStripView;
 import com.android.inputmethod.latin.suggestions.SuggestionStripViewAccessor;
 import com.android.inputmethod.latin.touchinputconsumer.GestureConsumer;
 import com.android.inputmethod.latin.utils.ApplicationUtils;
-import com.android.inputmethod.latin.utils.ImportantNoticeUtils;
 import com.android.inputmethod.latin.utils.IntentUtils;
 import com.android.inputmethod.latin.utils.JniUtils;
 import com.android.inputmethod.latin.utils.LeakGuardHandlerWrapper;
@@ -119,8 +116,7 @@ import javax.annotation.Nullable;
  */
 public class LatinIME extends InputMethodService implements KeyboardActionListener,
         SuggestionStripView.Listener, SuggestionStripViewAccessor, CBoardToolbarView.Listener,
-        DictionaryFacilitator.DictionaryInitializationListener,
-        PermissionsManager.PermissionsResultCallback {
+        DictionaryFacilitator.DictionaryInitializationListener {
     static final String TAG = LatinIME.class.getSimpleName();
     private static final boolean TRACE = false;
 
@@ -768,7 +764,7 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
     private void resetDictionaryFacilitator(final Locale locale) {
         final SettingsValues settingsValues = mSettings.getCurrent();
         mDictionaryFacilitator.resetDictionaries(this /* context */, locale,
-                settingsValues.mUseContactsDict, settingsValues.mUsePersonalizedDicts,
+                settingsValues.mUsePersonalizedDicts,
                 false /* forceReloadMainDictionary */,
                 settingsValues.mAccount, "" /* dictNamePrefix */,
                 this /* DictionaryInitializationListener */);
@@ -785,8 +781,7 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
     /* package private */ void resetSuggestMainDict() {
         final SettingsValues settingsValues = mSettings.getCurrent();
         mDictionaryFacilitator.resetDictionaries(this /* context */,
-                mDictionaryFacilitator.getLocale(), settingsValues.mUseContactsDict,
-                settingsValues.mUsePersonalizedDicts,
+                mDictionaryFacilitator.getLocale(), settingsValues.mUsePersonalizedDicts,
                 true /* forceReloadMainDictionary */,
                 settingsValues.mAccount, "" /* dictNamePrefix */,
                 this /* DictionaryInitializationListener */);
@@ -1451,21 +1446,6 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         return keyboard.getCoordinates(codePoints);
     }
 
-    // Callback for the {@link SuggestionStripView}, to call when the important notice strip is
-    // pressed.
-    @Override
-    public void showImportantNoticeContents() {
-        PermissionsManager.get(this).requestPermissions(
-                this /* PermissionsResultCallback */,
-                null /* activity */, permission.READ_CONTACTS);
-    }
-
-    @Override
-    public void onRequestPermissionsResult(boolean allGranted) {
-        ImportantNoticeUtils.updateContactsNoticeShown(this /* context */);
-        setNeutralSuggestionStrip();
-    }
-
     public void displaySettingsDialog() {
         showSubtypeSelectorAndSettings();
     }
@@ -1650,13 +1630,11 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
             return;
         }
 
-        final boolean shouldShowImportantNotice =
-                ImportantNoticeUtils.shouldShowImportantNotice(this, currentSettingsValues);
         final boolean shouldShowSuggestionCandidates =
                 currentSettingsValues.mInputAttributes.mShouldShowSuggestions
                 && currentSettingsValues.isSuggestionsEnabledPerUserSettings();
-        final boolean shouldShowSuggestionsStripUnlessPassword = shouldShowImportantNotice
-                || currentSettingsValues.mShowsVoiceInputKey
+        final boolean shouldShowSuggestionsStripUnlessPassword =
+                currentSettingsValues.mShowsVoiceInputKey
                 || shouldShowSuggestionCandidates
                 || currentSettingsValues.isApplicationSpecifiedCompletionsOn();
         final boolean shouldShowSuggestionsStrip = shouldShowSuggestionsStripUnlessPassword
@@ -1672,16 +1650,6 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         final boolean noSuggestionsFromDictionaries = suggestedWords.isEmpty()
                 || suggestedWords.isPunctuationSuggestions()
                 || isEmptyApplicationSpecifiedCompletions;
-        final boolean isBeginningOfSentencePrediction = (suggestedWords.mInputStyle
-                == SuggestedWords.INPUT_STYLE_BEGINNING_OF_SENTENCE_PREDICTION);
-        final boolean noSuggestionsToOverrideImportantNotice = noSuggestionsFromDictionaries
-                || isBeginningOfSentencePrediction;
-        if (shouldShowImportantNotice && noSuggestionsToOverrideImportantNotice) {
-            if (mSuggestionStripView.maybeShowImportantNoticeTitle()) {
-                return;
-            }
-        }
-
         if (currentSettingsValues.isSuggestionsEnabledPerUserSettings()
                 || currentSettingsValues.isApplicationSpecifiedCompletionsOn()
                 // We should clear the contextual strip if there is no suggestion from dictionaries.
@@ -2181,7 +2149,7 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
     void replaceDictionariesForTest(final Locale locale) {
         final SettingsValues settingsValues = mSettings.getCurrent();
         mDictionaryFacilitator.resetDictionaries(this, locale,
-            settingsValues.mUseContactsDict, settingsValues.mUsePersonalizedDicts,
+            settingsValues.mUsePersonalizedDicts,
             false /* forceReloadMainDictionary */,
             settingsValues.mAccount, "", /* dictionaryNamePrefix */
             this /* DictionaryInitializationListener */);

@@ -58,7 +58,6 @@ public abstract class Dictionary {
     // The following types of dictionary have actual functional instances. We don't need final
     // phony dictionary instances for them.
     public static final String TYPE_MAIN = "main";
-    public static final String TYPE_CONTACTS = "contacts";
     // User dictionary, the system-managed one.
     public static final String TYPE_USER = "user";
     // User history dictionary internal to LatinIME.
@@ -68,13 +67,11 @@ public abstract class Dictionary {
     public final Locale mLocale;
 
     /**
-     * Set out of the dictionary types listed above that are based on data specific to the user,
-     * e.g., the user's contacts.
+     * Set out of the dictionary types listed above that are based on data specific to the user.
      */
     private static final HashSet<String> sUserSpecificDictionaryTypes = new HashSet<>(Arrays.asList(
             TYPE_USER_TYPED,
             TYPE_USER,
-            TYPE_CONTACTS,
             TYPE_USER_HISTORY));
 
     public Dictionary(final String dictType, final Locale locale) {

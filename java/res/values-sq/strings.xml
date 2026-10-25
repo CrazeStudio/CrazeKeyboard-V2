@@ -21,8 +21,6 @@
 <resources xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
     <string name="english_ime_input_options" msgid="4262655277902459172">"Opsionet e hyrjes"</string>
-    <string name="use_contacts_for_spellchecking_option_title" msgid="5006788115094214047">"Kërko emra kontakti"</string>
-    <string name="use_contacts_for_spellchecking_option_summary" msgid="3637428873952490597">"Kontrolluesi drejtshkrimor përdor fjalë të futura nga kontaktet e tua"</string>
     <string name="vibrate_on_keypress" msgid="4198642474308147572">"Lësho dridhje kur shtyp tastin"</string>
     <string name="sound_on_keypress" msgid="961585885443836044">"Lësho tingull kur shtyp tastin"</string>
     <string name="popup_on_keypress" msgid="8957173605079893697">"Zmadhim germe kur shtyp"</string>
@@ -55,8 +53,6 @@
     <string name="key_preview_popup_dismiss_default_delay" msgid="5550664463804963104">"I parazgjedhur"</string>
     <string name="abbreviation_unit_milliseconds" msgid="3255301845626146979">"<xliff:g id="MILLISECONDS">%s</xliff:g> milisek."</string>
     <string name="settings_system_default" msgid="677003402757146199">"Parazgjedhja e sistemit"</string>
-    <string name="use_contacts_dict" msgid="1625971825786907643">"Sugjero emra te \"Kontaktet\""</string>
-    <string name="use_contacts_dict_summary" msgid="3820744038619192013">"Përdor emra nga \"Kontaktet\" për sugjerime dhe korrigjime"</string>
     <string name="use_personalized_dicts" msgid="7400413665774169711">"Sugjerime të personalizuara"</string>
     <string name="enable_metrics_logging" msgid="5113593293708535701">"Përmirëso apl. \"<xliff:g id="APPLICATION_NAME">%s</xliff:g>\""</string>
     <string name="use_double_space_period" msgid="7172135098923900609">"Pikë me hapësirë të dyfishtë"</string>

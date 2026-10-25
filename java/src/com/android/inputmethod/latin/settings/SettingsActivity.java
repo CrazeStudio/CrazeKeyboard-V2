@@ -37,7 +37,6 @@ public final class SettingsActivity extends PreferenceActivity
     public static final String EXTRA_ENTRY_KEY = "entry";
     public static final String EXTRA_ENTRY_VALUE_LONG_PRESS_COMMA = "long_press_comma";
     public static final String EXTRA_ENTRY_VALUE_APP_ICON = "app_icon";
-    public static final String EXTRA_ENTRY_VALUE_NOTICE_DIALOG = "important_notice";
     public static final String EXTRA_ENTRY_VALUE_SYSTEM_SETTINGS = "system_settings";
 
     private boolean mShowHomeAsUp;

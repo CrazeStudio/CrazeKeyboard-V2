@@ -35,7 +35,6 @@ public class DictionaryFacilitatorLruCache {
     private final String mDictionaryNamePrefix;
     private final Object mLock = new Object();
     private final DictionaryFacilitator mDictionaryFacilitator;
-    private boolean mUseContactsDictionary;
     private Locale mLocale;
 
     public DictionaryFacilitatorLruCache(final Context context, final String dictionaryNamePrefix) {
@@ -69,21 +68,8 @@ public class DictionaryFacilitatorLruCache {
         if (mLocale != null) {
           // Note: Given that personalized dictionaries are not used here; we can pass null account.
           mDictionaryFacilitator.resetDictionaries(mContext, mLocale,
-              mUseContactsDictionary, false /* usePersonalizedDicts */,
-              false /* forceReloadMainDictionary */, null /* account */,
-              mDictionaryNamePrefix, null /* listener */);
-        }
-    }
-
-    public void setUseContactsDictionary(final boolean useContactsDictionary) {
-        synchronized (mLock) {
-            if (mUseContactsDictionary == useContactsDictionary) {
-                // The value has not been changed.
-                return;
-            }
-            mUseContactsDictionary = useContactsDictionary;
-            resetDictionariesForLocaleLocked();
-            waitForLoadingMainDictionary(mDictionaryFacilitator);
+              false /* usePersonalizedDicts */, false /* forceReloadMainDictionary */,
+              null /* account */, mDictionaryNamePrefix, null /* listener */);
         }
     }
 

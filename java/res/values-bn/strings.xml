@@ -21,8 +21,6 @@
 <resources xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
     <string name="english_ime_input_options" msgid="4262655277902459172">"ইনপুট বিকল্পগুলি"</string>
-    <string name="use_contacts_for_spellchecking_option_title" msgid="5006788115094214047">"পরিচিতি নাম খুঁজুন"</string>
-    <string name="use_contacts_for_spellchecking_option_summary" msgid="3637428873952490597">"বানান পরীক্ষক আপনার পরিচিতি তালিকা থেকে এন্ট্রি ব্যবহার করে"</string>
     <string name="vibrate_on_keypress" msgid="4198642474308147572">"কীপ্রেস এর সময় ভাইব্রেট"</string>
     <string name="sound_on_keypress" msgid="961585885443836044">"কীপ্রেস এর সময়ের শব্দ"</string>
     <string name="popup_on_keypress" msgid="8957173605079893697">"কীপ্রেস এর ফলে পপআপ"</string>
@@ -55,8 +53,6 @@
     <string name="key_preview_popup_dismiss_default_delay" msgid="5550664463804963104">"ডিফল্ট"</string>
     <string name="abbreviation_unit_milliseconds" msgid="3255301845626146979">"<xliff:g id="MILLISECONDS">%s</xliff:g>মিলি.সে."</string>
     <string name="settings_system_default" msgid="677003402757146199">"সিস্টেম ডিফল্ট"</string>
-    <string name="use_contacts_dict" msgid="1625971825786907643">"পরিচিতি নাম প্রস্তাব দিন"</string>
-    <string name="use_contacts_dict_summary" msgid="3820744038619192013">"পরামর্শ ও সংশোধনীর জন্য পরিচিতি থেকে নাম ব্যবহার করুন"</string>
     <string name="use_personalized_dicts" msgid="7400413665774169711">"ব্যক্তিগতকৃত পরামর্শ"</string>
     <string name="enable_metrics_logging" msgid="5113593293708535701">"উন্নত <xliff:g id="APPLICATION_NAME">%s</xliff:g>"</string>
     <string name="use_double_space_period" msgid="7172135098923900609">"ডাবল-স্পেস পিরিয়ড"</string>

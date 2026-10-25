@@ -17,8 +17,6 @@
 package com.android.inputmethod.latin.spellcheck;
 
 import android.content.Intent;
-import android.content.SharedPreferences;
-import android.preference.PreferenceManager;
 import android.service.textservice.SpellCheckerService;
 import android.text.InputType;
 import android.view.inputmethod.EditorInfo;
@@ -50,12 +48,9 @@ import javax.annotation.Nonnull;
 /**
  * Service for spell checking, using LatinIME's dictionaries and mechanisms.
  */
-public final class AndroidSpellCheckerService extends SpellCheckerService
-        implements SharedPreferences.OnSharedPreferenceChangeListener {
+public final class AndroidSpellCheckerService extends SpellCheckerService {
     private static final String TAG = AndroidSpellCheckerService.class.getSimpleName();
     private static final boolean DEBUG = false;
-
-    public static final String PREF_USE_CONTACTS_KEY = "pref_spellcheck_use_contacts";
 
     private static final int SPELLCHECKER_DUMMY_KEYBOARD_WIDTH = 480;
     private static final int SPELLCHECKER_DUMMY_KEYBOARD_HEIGHT = 301;
@@ -95,9 +90,6 @@ public final class AndroidSpellCheckerService extends SpellCheckerService
         super.onCreate();
         mRecommendedThreshold = Float.parseFloat(
                 getString(R.string.spellchecker_recommended_threshold_value));
-        final SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-        prefs.registerOnSharedPreferenceChangeListener(this);
-        onSharedPreferenceChanged(prefs, PREF_USE_CONTACTS_KEY);
     }
 
     public float getRecommendedThreshold() {
@@ -122,13 +114,6 @@ public final class AndroidSpellCheckerService extends SpellCheckerService
         default:
             throw new RuntimeException("Wrong script supplied: " + script);
         }
-    }
-
-    @Override
-    public void onSharedPreferenceChanged(final SharedPreferences prefs, final String key) {
-        if (!PREF_USE_CONTACTS_KEY.equals(key)) return;
-        final boolean useContactsDictionary = prefs.getBoolean(PREF_USE_CONTACTS_KEY, true);
-        mDictionaryFacilitatorCache.setUseContactsDictionary(useContactsDictionary);
     }
 
     @Override

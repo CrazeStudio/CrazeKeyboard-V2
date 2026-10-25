@@ -575,9 +575,6 @@ public final class CrazeDashboardActivity extends Activity {
                 getString(R.string.use_personalized_dicts_summary),
                 Settings.PREF_KEY_USE_PERSONALIZED_DICTS, true);
         divider(privacy);
-        switchRow(privacy, getString(R.string.use_contacts_dict),
-                getString(R.string.use_contacts_dict_summary), Settings.PREF_KEY_USE_CONTACTS_DICT, true);
-        divider(privacy);
         switchRow(privacy, getString(R.string.prefs_block_potentially_offensive_title),
                 getString(R.string.prefs_block_potentially_offensive_summary),
                 Settings.PREF_BLOCK_POTENTIALLY_OFFENSIVE,
@@ -652,7 +649,6 @@ public final class CrazeDashboardActivity extends Activity {
         dumps.addView(txt("DICTIONARY DUMPS", 10, INDIGO, true));
         gap(dumps, 8);
         addDictionaryDump(dumps, "User dictionary", com.android.inputmethod.latin.Dictionary.TYPE_USER);
-        addDictionaryDump(dumps, "Contact dictionary", com.android.inputmethod.latin.Dictionary.TYPE_CONTACTS);
         addDictionaryDump(dumps, "Typing history", com.android.inputmethod.latin.Dictionary.TYPE_USER_HISTORY);
         c.addView(dumps);
     }

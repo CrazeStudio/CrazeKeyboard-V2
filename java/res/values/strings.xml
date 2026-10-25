@@ -21,12 +21,6 @@
     <!-- Title for Latin keyboard input options dialog [CHAR LIMIT=25] -->
     <string name="english_ime_input_options">Input options</string>
 
-    <!-- Title for the spell checker option to turn on/off contact names lookup [CHAR LIMIT=25] -->
-    <string name="use_contacts_for_spellchecking_option_title">Look up contact names</string>
-
-    <!-- Description for the spell checker option to turn on/off contact names lookup. [CHAR LIMIT=65] -->
-    <string name="use_contacts_for_spellchecking_option_summary">Spell checker uses entries from your contact list</string>
-
     <!-- Option to provide vibrate/haptic feedback on keypress -->
     <string name="vibrate_on_keypress">Vibrate on keypress</string>
 
@@ -142,11 +136,6 @@
     <string name="abbreviation_unit_milliseconds"><xliff:g id="MILLISECONDS">%s</xliff:g>ms</string>
     <!-- The text that represents the current settings value is the system default [CHAR LIMIT=25] -->
     <string name="settings_system_default">System default</string>
-
-    <!-- Option name for enabling or disabling the use of names of people in Contacts for suggestion and correction [CHAR LIMIT=25] -->
-    <string name="use_contacts_dict">Suggest Contact names</string>
-    <!-- Description for option enabling or disabling the use of names of people in Contacts for suggestion and correction [CHAR LIMIT=65] -->
-    <string name="use_contacts_dict_summary">Use names from Contacts for suggestions and corrections</string>
 
     <!-- Option name for enabling the use by the keyboards of sent/received messages, e-mail and typing history to improve suggestion accuracy [CHAR LIMIT=25] -->
     <string name="use_personalized_dicts">Personalized suggestions</string>

@@ -46,12 +46,10 @@ public interface DictionaryFacilitator {
 
     public static final String[] ALL_DICTIONARY_TYPES = new String[] {
             Dictionary.TYPE_MAIN,
-            Dictionary.TYPE_CONTACTS,
             Dictionary.TYPE_USER_HISTORY,
             Dictionary.TYPE_USER};
 
     public static final String[] DYNAMIC_DICTIONARY_TYPES = new String[] {
-            Dictionary.TYPE_CONTACTS,
             Dictionary.TYPE_USER_HISTORY,
             Dictionary.TYPE_USER};
 
@@ -107,14 +105,11 @@ public interface DictionaryFacilitator {
 
     Locale getLocale();
 
-    boolean usesContacts();
-
     String getAccount();
 
     void resetDictionaries(
             final Context context,
             final Locale newLocale,
-            final boolean useContactsDict,
             final boolean usePersonalizedDicts,
             final boolean forceReloadMainDictionary,
             @Nullable final String account,
