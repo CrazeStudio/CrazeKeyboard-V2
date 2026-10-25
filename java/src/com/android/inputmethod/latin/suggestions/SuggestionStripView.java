@@ -103,7 +103,9 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
     private boolean mIsRtlLanguage;
     private boolean mGifEnabled;
     private LinearLayout mActionItems;
-    private int mActionItemWidth;
+    private LinearLayout mActionPanel;
+    private LinearLayout mActionGridRow;
+    private int mActionGridColumn;
 
     private final SuggestionStripLayoutHelper mLayoutHelper;
 
@@ -188,7 +190,7 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
         setBackgroundColor(colors.panel);
         mSuggestionsStrip.setBackgroundColor(colors.panel);
         if (mToolsMenuOpen) {
-            if (mActionItems != null) applyToolPanelTheme(mActionItems, colors);
+            if (mActionPanel != null) applyToolPanelTheme(mActionPanel, colors);
         } else {
             for (int i = 0; i < mWordViews.size(); i++) {
                 final TextView word = mWordViews.get(i);
@@ -221,12 +223,6 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
             } else if (child instanceof TextView) {
                 final TextView text = (TextView)child;
                 text.setTextColor(colors.text);
-                if (text.getParent() == mActionItems) {
-                    final GradientDrawable card = new GradientDrawable();
-                    card.setColor(colors.key);
-                    card.setCornerRadius(dp(11));
-                    text.setBackground(card);
-                }
             }
             if (child instanceof ViewGroup) applyToolPanelTheme((ViewGroup)child, colors);
         }
@@ -239,6 +235,17 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
     public void clear() {
         mToolsMenuOpen = false;
         mSuggestionsStrip.removeAllViews();
+        mActionPanel = null;
+        mActionItems = null;
+        mActionGridRow = null;
+        mActionGridColumn = 0;
+        if (mMainKeyboardView != null) mMainKeyboardView.setVisibility(VISIBLE);
+        final ViewGroup.LayoutParams stripParams = getLayoutParams();
+        if (stripParams != null) {
+            stripParams.height = getResources().getDimensionPixelSize(
+                    R.dimen.config_suggestions_strip_height);
+            setLayoutParams(stripParams);
+        }
         removeAllDebugInfoViews();
         mSuggestionsStrip.setVisibility(VISIBLE);
         dismissMoreSuggestionsPanel();
@@ -445,22 +452,83 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
         return true;
     }
 
-    private void beginActionPanel(final int itemWidthDp) {
+    private void beginActionPanel(final int titleRes) {
         mToolsMenuOpen = true;
         mSuggestionsStrip.removeAllViews();
         mSuggestionsStrip.setVisibility(VISIBLE);
-        final HorizontalScrollView scroller = new HorizontalScrollView(getContext());
-        scroller.setHorizontalScrollBarEnabled(false);
-        scroller.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        scroller.setFillViewport(false);
-        mActionItems = new LinearLayout(getContext());
-        mActionItems.setOrientation(LinearLayout.HORIZONTAL);
-        mActionItems.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        mActionItemWidth = dp(itemWidthDp);
-        scroller.addView(mActionItems, new HorizontalScrollView.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        mSuggestionsStrip.addView(scroller, new ViewGroup.LayoutParams(
+        mActionPanel = new LinearLayout(getContext());
+        mActionPanel.setOrientation(LinearLayout.VERTICAL);
+        mActionPanel.setPadding(dp(7), dp(4), dp(7), dp(5));
+        mSuggestionsStrip.addView(mActionPanel, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        final CBoardTheme colors = CBoardTheme.resolve(getContext());
+        mActionPanel.setBackgroundColor(colors.panel);
+        final LinearLayout header = new LinearLayout(getContext());
+        header.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        TextView title = new TextView(getContext());
+        title.setText(titleRes);
+        title.setTextColor(colors.text);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        header.addView(title, new LinearLayout.LayoutParams(0, dp(24), 1));
+
+        TextView close = new TextView(getContext());
+        close.setText("Done  ×");
+        close.setTextColor(colors.secondaryText);
+        close.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        close.setGravity(android.view.Gravity.CENTER);
+        close.setPadding(dp(10), 0, dp(4), 0);
+        close.setContentDescription(getResources().getString(R.string.close_keyboard_tools));
+        close.setClickable(true);
+        close.setFocusable(true);
+        final GradientDrawable closeMask = new GradientDrawable();
+        closeMask.setColor(Color.WHITE);
+        closeMask.setCornerRadius(dp(12));
+        close.setBackground(new RippleDrawable(ColorStateList.valueOf(
+                colors.dark ? 0x33FFFFFF : 0x22000000),
+                new ColorDrawable(Color.TRANSPARENT), closeMask));
+        close.setOnClickListener(new OnClickListener() {
+            @Override public void onClick(View view) {
+                setSuggestions(mSuggestedWords, mIsRtlLanguage);
+            }
+        });
+        header.addView(close, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(24)));
+        mActionPanel.addView(header, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(24)));
+
+        mActionItems = new LinearLayout(getContext());
+        mActionItems.setOrientation(LinearLayout.VERTICAL);
+        mActionItems.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        mActionPanel.addView(mActionItems, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+
+        final ViewGroup.LayoutParams stripParams = getLayoutParams();
+        if (stripParams != null) {
+            final boolean landscape = getResources().getConfiguration().orientation
+                    == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+            stripParams.height = dp(landscape ? 148 : 180);
+            setLayoutParams(stripParams);
+        }
+        if (mMainKeyboardView != null) mMainKeyboardView.setVisibility(GONE);
+        requestLayout();
+    }
+
+    private void addToolGridTile(final View tile) {
+        if (mActionGridRow == null || mActionGridColumn == 4) {
+            mActionGridRow = new LinearLayout(getContext());
+            mActionGridRow.setOrientation(LinearLayout.HORIZONTAL);
+            mActionGridRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            mActionItems.addView(mActionGridRow, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+            mActionGridColumn = 0;
+        }
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.MATCH_PARENT, 1);
+        params.setMargins(dp(2), dp(1), dp(2), dp(1));
+        mActionGridRow.addView(tile, params);
+        mActionGridColumn++;
     }
 
     public void toggleCBoardTools() {
@@ -476,7 +544,9 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
     public void setGifEnabled(final boolean enabled) { mGifEnabled = enabled; }
 
     public void showKeyboardTools() {
-        beginActionPanel(66);
+        beginActionPanel(R.string.keyboard_tool_text);
+        mActionGridRow = null;
+        mActionGridColumn = 0;
         addKeyboardTool(R.string.keyboard_tool_paste, R.drawable.ic_tool_paste,
                 TOOL_ACTION_PASTE);
         addKeyboardTool(R.string.keyboard_tool_select_all, R.drawable.ic_tool_select_all,
@@ -490,7 +560,9 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
     }
 
     public void showMoreOptions() {
-        beginActionPanel(66);
+        beginActionPanel(R.string.keyboard_tools);
+        mActionGridRow = null;
+        mActionGridColumn = 0;
         addKeyboardTool(R.string.keyboard_tool_text, R.drawable.ic_tool_text,
                 TOOL_ACTION_TEXT);
         if (mGifEnabled) addKeyboardTool(R.string.keyboard_tool_gif, 0, TOOL_ACTION_GIF);
@@ -509,20 +581,21 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
     }
 
     public void showClipboardHistory(final java.util.List<String> items) {
-        mToolsMenuOpen = true;
-        mSuggestionsStrip.removeAllViews();
-        mSuggestionsStrip.setVisibility(VISIBLE);
+        beginActionPanel(R.string.keyboard_tool_clipboard);
+        mActionItems.setOrientation(LinearLayout.HORIZONTAL);
         final HorizontalScrollView scroller = new HorizontalScrollView(getContext());
         scroller.setHorizontalScrollBarEnabled(false);
         scroller.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        mActionItems = new LinearLayout(getContext());
-        mActionItems.setOrientation(LinearLayout.HORIZONTAL);
-        mActionItems.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        scroller.addView(mActionItems, new HorizontalScrollView.LayoutParams(
+        scroller.setFillViewport(false);
+        final LinearLayout history = new LinearLayout(getContext());
+        history.setOrientation(LinearLayout.HORIZONTAL);
+        history.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        scroller.addView(history, new HorizontalScrollView.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        mSuggestionsStrip.addView(scroller, new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        mActionItemWidth = dp(168);
+        mActionPanel.removeView(mActionItems);
+        mActionPanel.addView(scroller, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        mActionItems = history;
         if (items == null || items.isEmpty()) {
             addClipboardRow(getResources().getString(R.string.clipboard_empty), null);
             return;
@@ -531,13 +604,13 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
     }
 
     private void addClipboardRow(final String label, final String value) {
+        final CBoardTheme colors = CBoardTheme.resolve(getContext());
         TextView item = new TextView(getContext());
-        CBoardTheme colors = CBoardTheme.resolve(getContext());
         item.setText(label);
         item.setTextColor(colors.text);
         item.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         item.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        item.setSingleLine(true);
+        item.setMaxLines(2);
         item.setEllipsize(TextUtils.TruncateAt.END);
         item.setPadding(dp(10), dp(5), dp(10), dp(5));
         item.setContentDescription(value == null ? label : "Paste " + label);
@@ -545,13 +618,14 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
         GradientDrawable surface = new GradientDrawable();
         surface.setColor(colors.key);
         surface.setCornerRadius(dp(11));
+        surface.setStroke(dp(1), colors.border);
         item.setBackground(surface);
         item.setOnClickListener(new OnClickListener() {
             @Override public void onClick(View view) {
                 if (value != null && mListener != null) mListener.onClipboardItemSelected(value);
             }
         });
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(mActionItemWidth,
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(172),
                 ViewGroup.LayoutParams.MATCH_PARENT);
         params.setMargins(dp(3), dp(2), dp(3), dp(2));
         mActionItems.addView(item, params);
@@ -563,34 +637,37 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
 
     private void addKeyboardTool(final int labelRes, final int iconRes, final int action) {
         final CBoardTheme colors = CBoardTheme.resolve(getContext());
-        final int foreground = colors.secondaryText;
+        final int foreground = colors.text;
         final int rippleColor = colors.dark ? 0x33FFFFFF : 0x22000000;
         final LinearLayout item = new LinearLayout(getContext());
         item.setOrientation(LinearLayout.VERTICAL);
         item.setGravity(android.view.Gravity.CENTER);
-        item.setPadding(dp(2), dp(2), dp(2), dp(2));
+        item.setPadding(dp(3), dp(2), dp(3), dp(2));
         item.setContentDescription(getResources().getString(labelRes));
         item.setClickable(true);
         item.setFocusable(true);
 
+        final GradientDrawable surface = new GradientDrawable();
+        surface.setColor(colors.key);
+        surface.setCornerRadius(dp(10));
+        surface.setStroke(dp(1), colors.border);
         final GradientDrawable mask = new GradientDrawable();
         mask.setColor(Color.WHITE);
         mask.setCornerRadius(dp(10));
-        item.setBackground(new RippleDrawable(ColorStateList.valueOf(rippleColor),
-                new ColorDrawable(Color.TRANSPARENT), mask));
+        item.setBackground(new RippleDrawable(ColorStateList.valueOf(rippleColor), surface, mask));
 
-        final ImageView icon = new ImageView(getContext());
         if (iconRes == 0) {
             TextView gif = new TextView(getContext());
             gif.setText("GIF");
-            gif.setTextColor(foreground);
+            gif.setTextColor(colors.accent);
             gif.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
             gif.setTypeface(null, android.graphics.Typeface.BOLD);
             gif.setGravity(android.view.Gravity.CENTER);
             item.addView(gif, new LinearLayout.LayoutParams(dp(22), dp(19)));
         } else {
             final Drawable drawable = getResources().getDrawable(iconRes).mutate();
-            drawable.setTint(foreground);
+            drawable.setTint(colors.secondaryText);
+            final ImageView icon = new ImageView(getContext());
             icon.setImageDrawable(drawable);
             LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(19), dp(19));
             item.addView(icon, iconParams);
@@ -614,10 +691,7 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
                 }
             }
         });
-        LinearLayout.LayoutParams itemParams = new LinearLayout.LayoutParams(mActionItemWidth,
-                ViewGroup.LayoutParams.MATCH_PARENT);
-        itemParams.setMargins(dp(1), 0, dp(1), 0);
-        mActionItems.addView(item, itemParams);
+        addToolGridTile(item);
     }
 
     @Override
