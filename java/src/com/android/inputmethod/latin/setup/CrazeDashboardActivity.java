@@ -74,8 +74,8 @@ public final class CrazeDashboardActivity extends Activity {
     }
 
     private final Preset[] presets = {
-        new Preset(3, "Aurora Light", "Airy white keys, soft indigo panel, orange accents",
-                0xFFEEF0F7, 0xFFFFFFFF, 0xFFC9D0E2, ORANGE, false),
+        new Preset(3, "Aurora Light", "Clean white keys, soft gray panel, orange accents",
+                0xFFD5D9E0, 0xFFFAFBFD, 0xFFB8BEC8, ORANGE, false),
         new Preset(4, "Aurora Dark", "Deep midnight keys with glowing orange accents",
                 0xFF151927, 0xFF2A3042, 0xFF0B0D14, ORANGE, true)
     };
