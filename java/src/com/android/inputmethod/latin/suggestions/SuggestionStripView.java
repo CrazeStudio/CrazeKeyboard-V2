@@ -50,6 +50,7 @@ import com.android.inputmethod.keyboard.KeyboardTheme;
 import com.android.inputmethod.keyboard.MainKeyboardView;
 import com.android.inputmethod.keyboard.MoreKeysPanel;
 import com.android.inputmethod.latin.AudioAndHapticFeedbackManager;
+import com.android.inputmethod.latin.CBoardTheme;
 import com.android.inputmethod.latin.R;
 import com.android.inputmethod.latin.SuggestedWords;
 import com.android.inputmethod.latin.SuggestedWords.SuggestedWordInfo;
@@ -69,6 +70,7 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
         public void pickSuggestionManually(SuggestedWordInfo word);
         public void onCodeInput(int primaryCode, int x, int y, boolean isKeyRepeat);
         public void onKeyboardToolSelected(int action);
+        public void onClipboardItemSelected(String text);
     }
 
     public static final int TOOL_ACTION_PASTE = 1;
@@ -77,6 +79,10 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
     public static final int TOOL_ACTION_CUT = 4;
     public static final int TOOL_ACTION_SETTINGS = 5;
     public static final int TOOL_ACTION_EMOJI = 6;
+    public static final int TOOL_ACTION_CLIPBOARD = 7;
+    public static final int TOOL_ACTION_SWITCHER = 8;
+    public static final int TOOL_ACTION_THEME = 9;
+    public static final int TOOL_ACTION_HIDE = 10;
 
     static final boolean DBG = DebugFlags.DEBUG_ENABLED;
     private static final float DEBUG_INFO_TEXT_SIZE_IN_DIP = 6.0f;
@@ -196,8 +202,8 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
         final Drawable iconVoice = keyboardAttr.getDrawable(R.styleable.Keyboard_iconShortcutKey);
         keyboardAttr.recycle();
         mVoiceKey.setImageDrawable(iconVoice);
-        mVoiceKey.setOnClickListener(this);
-        mToolsKey.setOnClickListener(this);
+        mVoiceKey.setVisibility(GONE);
+        mToolsKey.setVisibility(GONE);
     }
 
     /**
@@ -224,6 +230,18 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
         mStartIndexOfMoreSuggestions = mLayoutHelper.layoutAndReturnStartIndexOfMoreSuggestions(
                 getContext(), mSuggestedWords, mSuggestionsStrip, this);
         mStripVisibilityGroup.showSuggestionsStrip();
+        applyCBoardTheme();
+    }
+
+    public void applyCBoardTheme() {
+        final CBoardTheme colors = CBoardTheme.resolve(getContext());
+        setBackgroundColor(colors.panel);
+        for (int i = 0; i < mSuggestionsStrip.getChildCount(); i++) {
+            final View child = mSuggestionsStrip.getChildAt(i);
+            if (child instanceof TextView) ((TextView)child).setTextColor(colors.text);
+        }
+        mToolsKey.setImageTintList(ColorStateList.valueOf(colors.accent));
+        mVoiceKey.setImageTintList(ColorStateList.valueOf(colors.accent));
     }
 
     public void setMoreSuggestionsHeight(final int remainingHeight) {
@@ -488,10 +506,56 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
                 TOOL_ACTION_COPY);
         addKeyboardTool(R.string.keyboard_tool_cut, R.drawable.ic_tool_cut,
                 TOOL_ACTION_CUT);
+    }
+
+    public void showKeyboardTools() { toggleKeyboardTools(); }
+
+    public void showMoreOptions() {
+        mToolsMenuOpen = true;
+        mToolsKey.setImageResource(R.drawable.ic_keyboard_tools_close);
+        mSuggestionsStrip.removeAllViews();
+        mStripVisibilityGroup.showSuggestionsStrip();
+        addKeyboardTool(R.string.keyboard_theme, R.drawable.ic_tool_settings,
+                TOOL_ACTION_THEME);
         addKeyboardTool(R.string.keyboard_tool_emoji, R.drawable.ic_tool_emoji,
                 TOOL_ACTION_EMOJI);
+        addKeyboardTool(R.string.keyboard_tool_clipboard, R.drawable.ic_cboard_clipboard,
+                TOOL_ACTION_CLIPBOARD);
         addKeyboardTool(R.string.keyboard_tool_settings, R.drawable.ic_tool_settings,
                 TOOL_ACTION_SETTINGS);
+        addKeyboardTool(R.string.more_hide_keyboard, R.drawable.ic_cboard_more,
+                TOOL_ACTION_HIDE);
+    }
+
+    public void showClipboardHistory(final java.util.List<String> items) {
+        mToolsMenuOpen = true;
+        mSuggestionsStrip.removeAllViews();
+        mStripVisibilityGroup.showSuggestionsStrip();
+        if (items == null || items.isEmpty()) {
+            addClipboardRow(getResources().getString(R.string.clipboard_empty), null);
+            return;
+        }
+        for (String text : items) addClipboardRow(text, text);
+    }
+
+    private void addClipboardRow(final String label, final String value) {
+        TextView item = new TextView(getContext());
+        item.setText(label);
+        item.setTextColor(CBoardTheme.resolve(getContext()).text);
+        item.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        item.setGravity(android.view.Gravity.CENTER);
+        item.setSingleLine(true);
+        item.setEllipsize(TextUtils.TruncateAt.END);
+        item.setPadding(dp(8), dp(4), dp(8), dp(4));
+        item.setContentDescription(value == null ? label : "Paste " + label);
+        item.setClickable(value != null);
+        item.setOnClickListener(new OnClickListener() {
+            @Override public void onClick(View view) {
+                if (value != null && mListener != null) mListener.onClipboardItemSelected(value);
+            }
+        });
+        mSuggestionsStrip.addView(item, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.MATCH_PARENT, 1f));
     }
 
     private int dp(final float value) {
@@ -536,10 +600,10 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
 
         item.setOnClickListener(new OnClickListener() {
             @Override public void onClick(final View view) {
-                if (mListener != null) {
-                    mListener.onKeyboardToolSelected(action);
+                if (mListener != null) mListener.onKeyboardToolSelected(action);
+                if (action != TOOL_ACTION_CLIPBOARD) {
+                    setSuggestions(mSuggestedWords, mIsRtlLanguage);
                 }
-                setSuggestions(mSuggestedWords, mIsRtlLanguage);
             }
         });
         mSuggestionsStrip.addView(item, new LinearLayout.LayoutParams(0,

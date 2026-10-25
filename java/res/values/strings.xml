@@ -78,6 +78,10 @@
     <string name="keyboard_tool_cut">Cut selected text</string>
     <string name="keyboard_tool_settings">CrazeKeyboard settings</string>
     <string name="keyboard_tool_emoji">Open emoji keyboard</string>
+    <string name="keyboard_tool_clipboard">Clipboard history</string>
+    <string name="clipboard_empty">No copied text yet</string>
+    <string name="more_switch_keyboard">Switch keyboard</string>
+    <string name="more_hide_keyboard">Hide keyboard</string>
 
     <!--  Option for enabling or disabling the split keyboard layout. [CHAR LIMIT=65]-->
     <string name="enable_split_keyboard">Enable split keyboard</string>

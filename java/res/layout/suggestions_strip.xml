@@ -29,10 +29,10 @@
         android:layout_height="match_parent"
         android:paddingTop="3dp"
         android:paddingBottom="3dp"
-        android:layout_marginLeft="@dimen/config_suggestions_strip_horizontal_margin"
-        android:layout_marginRight="@dimen/config_suggestions_strip_horizontal_margin"
-        android:paddingLeft="@dimen/config_suggestions_strip_edge_key_width"
-        android:paddingRight="@dimen/config_suggestions_strip_edge_key_width"
+        android:layout_marginLeft="4dp"
+        android:layout_marginRight="4dp"
+        android:paddingLeft="2dp"
+        android:paddingRight="2dp"
         android:hapticFeedbackEnabled="false"
         android:soundEffectsEnabled="false" />
     <!-- Provide audio and haptic feedback by ourselves based on the keyboard settings.

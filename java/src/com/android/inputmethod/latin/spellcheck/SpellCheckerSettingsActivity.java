@@ -24,6 +24,7 @@ import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
 import android.preference.PreferenceActivity;
+import com.android.inputmethod.latin.setup.CrazeDashboardActivity;
 import androidx.core.app.ActivityCompat;
 
 /**
@@ -36,6 +37,11 @@ public final class SpellCheckerSettingsActivity extends PreferenceActivity
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        Intent dashboard = new Intent(this, CrazeDashboardActivity.class);
+        dashboard.putExtra(CrazeDashboardActivity.EXTRA_START_TAB, 2);
+        dashboard.putExtra(CrazeDashboardActivity.EXTRA_START_PAGE, 6);
+        startActivity(dashboard);
+        finish();
     }
 
     @Override

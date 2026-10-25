@@ -25,8 +25,12 @@
     android:layout_gravity="bottom"
     android:orientation="vertical" >
 
-    <!-- To ensure that key preview popup is correctly placed when the current system locale is
-         one of RTL locales, layoutDirection="ltr" is needed in the SDK version 17+. -->
+    <com.android.inputmethod.latin.CBoardToolbarView
+        android:id="@+id/cboard_toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="42dp" />
+
+    <!-- This independent layer shows word predictions and autocorrection. -->
     <com.android.inputmethod.latin.suggestions.SuggestionStripView
         android:id="@+id/suggestion_strip_view"
         android:layoutDirection="ltr"

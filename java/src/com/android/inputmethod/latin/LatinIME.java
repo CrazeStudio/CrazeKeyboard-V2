@@ -22,13 +22,14 @@ import static com.android.inputmethod.latin.common.Constants.ImeOption.NO_MICROP
 
 import android.Manifest.permission;
 import android.app.ActivityOptions;
-import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.DialogInterface;
-import android.content.DialogInterface.OnClickListener;
+import android.content.ClipDescription;
+import android.content.ClipboardManager;
+import android.content.SharedPreferences;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.net.Uri;
 import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.graphics.Color;
@@ -53,6 +54,7 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.view.inputmethod.CompletionInfo;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputContentInfo;
 import android.view.inputmethod.InputMethodSubtype;
 
 import androidx.annotation.NonNull;
@@ -70,6 +72,7 @@ import com.android.inputmethod.event.HardwareEventDecoder;
 import com.android.inputmethod.event.HardwareKeyboardEventDecoder;
 import com.android.inputmethod.event.InputTransaction;
 import com.android.inputmethod.keyboard.Keyboard;
+import com.android.inputmethod.latin.setup.CBoardGifPickerActivity;
 import com.android.inputmethod.keyboard.KeyboardActionListener;
 import com.android.inputmethod.keyboard.KeyboardId;
 import com.android.inputmethod.keyboard.KeyboardSwitcher;
@@ -91,7 +94,6 @@ import com.android.inputmethod.latin.suggestions.SuggestionStripView;
 import com.android.inputmethod.latin.suggestions.SuggestionStripViewAccessor;
 import com.android.inputmethod.latin.touchinputconsumer.GestureConsumer;
 import com.android.inputmethod.latin.utils.ApplicationUtils;
-import com.android.inputmethod.latin.utils.DialogUtils;
 import com.android.inputmethod.latin.utils.ImportantNoticeUtils;
 import com.android.inputmethod.latin.utils.IntentUtils;
 import com.android.inputmethod.latin.utils.JniUtils;
@@ -115,7 +117,7 @@ import javax.annotation.Nullable;
  * Input method implementation for Qwerty'ish keyboard.
  */
 public class LatinIME extends InputMethodService implements KeyboardActionListener,
-        SuggestionStripView.Listener, SuggestionStripViewAccessor,
+        SuggestionStripView.Listener, SuggestionStripViewAccessor, CBoardToolbarView.Listener,
         DictionaryFacilitator.DictionaryInitializationListener,
         PermissionsManager.PermissionsResultCallback {
     static final String TAG = LatinIME.class.getSimpleName();
@@ -158,6 +160,31 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
     private View mInputView;
     private InsetsUpdater mInsetsUpdater;
     private SuggestionStripView mSuggestionStripView;
+    private SharedPreferences mThemePreferences;
+    private final BroadcastReceiver mGifSelectionReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            Uri uri = intent.getData();
+            if (uri != null) commitGifContent(uri);
+        }
+    };
+    private final SharedPreferences.OnSharedPreferenceChangeListener mThemePreferenceListener =
+            new SharedPreferences.OnSharedPreferenceChangeListener() {
+        @Override public void onSharedPreferenceChanged(SharedPreferences preferences, String key) {
+            if (key == null || key.startsWith("cboard_")) {
+                mKeyboardSwitcher.updateKeyboardTheme(mDisplayContext);
+                final MainKeyboardView keyboard = mKeyboardSwitcher.getMainKeyboardView();
+                if (keyboard != null) {
+                    keyboard.applyCBoardTheme();
+                    keyboard.invalidateAllKeys();
+                }
+                if (mSuggestionStripView != null) mSuggestionStripView.applyCBoardTheme();
+                if (mInputView != null) {
+                    CBoardToolbarView toolbar = mInputView.findViewById(R.id.cboard_toolbar);
+                    if (toolbar != null) toolbar.applyCBoardTheme();
+                }
+            }
+        }
+    };
 
     private RichInputMethodManager mRichImm;
     @UsedForTesting final KeyboardSwitcher mKeyboardSwitcher;
@@ -196,8 +223,6 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         }
     }
     final HideSoftInputReceiver mHideSoftInputReceiver = new HideSoftInputReceiver(this);
-
-    private AlertDialog mOptionsDialog;
 
     private final boolean mIsHardwareAcceleratedDrawingEnabled;
 
@@ -606,6 +631,14 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         mDisplayContext = getDisplayContext();
         KeyboardSwitcher.init(this);
         super.onCreate();
+        mThemePreferences = PreferenceManager.getDefaultSharedPreferences(this);
+        mThemePreferences.registerOnSharedPreferenceChangeListener(mThemePreferenceListener);
+        IntentFilter gifFilter = new IntentFilter(CBoardGifPickerActivity.ACTION_GIF_SELECTED);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(mGifSelectionReceiver, gifFilter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(mGifSelectionReceiver, gifFilter);
+        }
 
         mHandler.onCreate();
 
@@ -759,6 +792,10 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         mDictionaryFacilitator.closeDictionaries();
         mSettings.onDestroy();
         unregisterReceiver(mHideSoftInputReceiver);
+        unregisterReceiver(mGifSelectionReceiver);
+        if (mThemePreferences != null) {
+            mThemePreferences.unregisterOnSharedPreferenceChangeListener(mThemePreferenceListener);
+        }
         unregisterReceiver(mRingerModeChangeReceiver);
         unregisterReceiver(mDictionaryPackInstallReceiver);
         unregisterReceiver(mDictionaryDumpBroadcastReceiver);
@@ -804,6 +841,11 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
             }
         }
         super.onConfigurationChanged(conf);
+        mDisplayContext = getDisplayContext();
+        mKeyboardSwitcher.updateKeyboardTheme(mDisplayContext);
+        final MainKeyboardView keyboard = mKeyboardSwitcher.getMainKeyboardView();
+        if (keyboard != null) { keyboard.applyCBoardTheme(); keyboard.invalidateAllKeys(); }
+        if (mSuggestionStripView != null) mSuggestionStripView.applyCBoardTheme();
     }
 
     @Override
@@ -860,6 +902,12 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         mSuggestionStripView = (SuggestionStripView)view.findViewById(R.id.suggestion_strip_view);
         if (hasSuggestionStripView()) {
             mSuggestionStripView.setListener(this, view);
+        }
+        CBoardToolbarView toolbar = view.findViewById(R.id.cboard_toolbar);
+        if (toolbar != null) {
+            toolbar.setListener(this);
+            toolbar.setVoiceEnabled(mSettings.getCurrent().mShowsVoiceInputKey);
+            toolbar.setGifEnabled(supportsGifInput(getCurrentInputEditorInfo()));
         }
     }
 
@@ -936,6 +984,13 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         // If we are starting input in a different text field from before, we'll have to reload
         // settings, so currentSettingsValues can't be final.
         SettingsValues currentSettingsValues = mSettings.getCurrent();
+        if (mInputView != null) {
+            CBoardToolbarView toolbar = mInputView.findViewById(R.id.cboard_toolbar);
+            if (toolbar != null) {
+                toolbar.setVoiceEnabled(currentSettingsValues.mShowsVoiceInputKey);
+                toolbar.setGifEnabled(supportsGifInput(editorInfo));
+            }
+        }
 
         if (editorInfo == null) {
             Log.e(TAG, "Null EditorInfo in onStartInputView()");
@@ -1199,10 +1254,6 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
         mKeyboardSwitcher.onHideWindow();
 
         if (TRACE) Debug.stopMethodTracing();
-        if (isShowingOptionDialog()) {
-            mOptionsDialog.dismiss();
-            mOptionsDialog = null;
-        }
         super.hideWindow();
     }
 
@@ -1399,15 +1450,11 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
     }
 
     public void displaySettingsDialog() {
-        if (isShowingOptionDialog()) {
-            return;
-        }
         showSubtypeSelectorAndSettings();
     }
 
     @Override
     public boolean onCustomRequest(final int requestCode) {
-        if (isShowingOptionDialog()) return false;
         switch (requestCode) {
         case Constants.CUSTOM_CODE_SHOW_INPUT_METHOD_PICKER:
             if (mRichImm.hasMultipleEnabledIMEsOrSubtypes(true /* include aux subtypes */)) {
@@ -1417,10 +1464,6 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
             return false;
         }
         return false;
-    }
-
-    private boolean isShowingOptionDialog() {
-        return mOptionsDialog != null && mOptionsDialog.isShowing();
     }
 
     public void switchLanguage(final InputMethodSubtype subtype) {
@@ -1669,6 +1712,10 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
 
     @Override
     public void onKeyboardToolSelected(final int action) {
+        if (action == SuggestionStripView.TOOL_ACTION_CLIPBOARD) {
+            showClipboardHistory();
+            return;
+        }
         if (action == SuggestionStripView.TOOL_ACTION_EMOJI) {
             onCodeInput(Constants.CODE_EMOJI, Constants.SUGGESTION_STRIP_COORDINATE,
                     Constants.SUGGESTION_STRIP_COORDINATE, false /* isKeyRepeat */);
@@ -1678,10 +1725,27 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
             launchSettings(SettingsActivity.EXTRA_ENTRY_VALUE_SYSTEM_SETTINGS);
             return;
         }
+        if (action == SuggestionStripView.TOOL_ACTION_SWITCHER) {
+            mRichImm.getInputMethodManager().showInputMethodPicker();
+            return;
+        }
+        if (action == SuggestionStripView.TOOL_ACTION_THEME) {
+            launchDashboardThemes();
+            return;
+        }
+        if (action == SuggestionStripView.TOOL_ACTION_HIDE) {
+            requestHideSelf(0);
+            return;
+        }
         final android.view.inputmethod.InputConnection inputConnection =
                 getCurrentInputConnection();
         if (inputConnection == null) {
             return;
+        }
+        if (action == SuggestionStripView.TOOL_ACTION_COPY
+                || action == SuggestionStripView.TOOL_ACTION_CUT) {
+            CharSequence selected = inputConnection.getSelectedText(0);
+            if (selected != null && selected.length() > 0) rememberClipboardText(selected.toString());
         }
         final int contextMenuAction;
         switch (action) {
@@ -1701,6 +1765,128 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
             return;
         }
         inputConnection.performContextMenuAction(contextMenuAction);
+    }
+
+    @Override
+    public void onCBoardToolbarAction(final int action) {
+        switch (action) {
+        case CBoardToolbarView.NAVIGATION:
+            mRichImm.getInputMethodManager().showInputMethodPicker();
+            break;
+        case CBoardToolbarView.TEXT_TOOLS:
+            mSuggestionStripView.showKeyboardTools();
+            break;
+        case CBoardToolbarView.GIF:
+            Intent picker = new Intent(this, CBoardGifPickerActivity.class);
+            picker.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(picker);
+            break;
+        case CBoardToolbarView.CLIPBOARD:
+            showClipboardHistory();
+            break;
+        case CBoardToolbarView.SETTINGS:
+            launchSettings(SettingsActivity.EXTRA_ENTRY_VALUE_SYSTEM_SETTINGS);
+            break;
+        case CBoardToolbarView.MORE:
+            mSuggestionStripView.showMoreOptions();
+            break;
+        case CBoardToolbarView.VOICE:
+            onCodeInput(Constants.CODE_SHORTCUT, Constants.SUGGESTION_STRIP_COORDINATE,
+                    Constants.SUGGESTION_STRIP_COORDINATE, false /* isKeyRepeat */);
+            break;
+        }
+    }
+
+    private void launchDashboardThemes() {
+        mInputLogic.commitTyped(mSettings.getCurrent(), LastComposedWord.NOT_A_SEPARATOR);
+        requestHideSelf(0);
+        Intent intent = new Intent(this, com.android.inputmethod.latin.setup.CrazeDashboardActivity.class);
+        intent.putExtra(com.android.inputmethod.latin.setup.CrazeDashboardActivity.EXTRA_START_TAB, 1);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        startActivityOnTheSameDisplay(intent);
+    }
+
+    @Override
+    public void onClipboardItemSelected(final String text) {
+        final android.view.inputmethod.InputConnection connection = getCurrentInputConnection();
+        if (connection != null) connection.commitText(text, 1);
+        if (mSuggestionStripView != null) {
+            mSuggestionStripView.setSuggestions(SuggestedWords.getEmptyInstance(), false);
+        }
+    }
+
+    private void showClipboardHistory() {
+        if (mSuggestionStripView == null) return;
+        final java.util.ArrayList<String> items = new java.util.ArrayList<>();
+        final ClipboardManager clipboard = (ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+        if (clipboard != null && clipboard.hasPrimaryClip()) {
+            CharSequence current = clipboard.getPrimaryClip().getItemAt(0).coerceToText(this);
+            if (current != null && current.length() > 0) items.add(current.toString());
+        }
+        try {
+            org.json.JSONArray saved = new org.json.JSONArray(mThemePreferences.getString(
+                    "cboard_clipboard_history", "[]"));
+            for (int i = 0; i < saved.length() && items.size() < 6; i++) {
+                String item = saved.optString(i, "");
+                if (!item.isEmpty() && !items.contains(item)) items.add(item);
+            }
+        } catch (org.json.JSONException ignored) { }
+        mSuggestionStripView.showClipboardHistory(items);
+    }
+
+    private void rememberClipboardText(String text) {
+        try {
+            org.json.JSONArray old = new org.json.JSONArray(mThemePreferences.getString(
+                    "cboard_clipboard_history", "[]"));
+            org.json.JSONArray next = new org.json.JSONArray();
+            next.put(text);
+            for (int i = 0; i < old.length() && next.length() < 20; i++) {
+                String item = old.optString(i, "");
+                if (!item.isEmpty() && !item.equals(text)) next.put(item);
+            }
+            mThemePreferences.edit().putString("cboard_clipboard_history", next.toString()).apply();
+        } catch (org.json.JSONException ignored) { }
+    }
+
+    private boolean supportsGifInput(final EditorInfo editor) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N_MR1 || editor == null
+                || editor.contentMimeTypes == null) return false;
+        for (String type : editor.contentMimeTypes) {
+            if (ClipDescription.compareMimeTypes("image/gif", type)
+                    || ClipDescription.compareMimeTypes("image/*", type)) return true;
+        }
+        return false;
+    }
+
+    private void commitGifContent(final Uri uri) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N_MR1) {
+            android.widget.Toast.makeText(this, "GIF input needs Android 7 or newer",
+                    android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final EditorInfo editor = getCurrentInputEditorInfo();
+        final String[] accepted = editor == null ? null : editor.contentMimeTypes;
+        boolean supported = false;
+        if (accepted != null) for (String type : accepted) {
+            if (ClipDescription.compareMimeTypes("image/gif", type)
+                    || ClipDescription.compareMimeTypes("image/*", type)) supported = true;
+        }
+        if (!supported) {
+            android.widget.Toast.makeText(this, "This text field does not accept GIF images",
+                    android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        ClipboardManager clipboard = (ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+        if (clipboard != null) {
+            clipboard.setPrimaryClip(ClipData.newUri(getContentResolver(), "GIF", uri));
+        }
+        ClipDescription description = new ClipDescription("CBoard GIF", new String[]{"image/gif"});
+        InputContentInfo content = new InputContentInfo(uri, description, null);
+        boolean sent = getCurrentInputConnection().commitContent(content,
+                android.view.inputmethod.InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION,
+                null);
+        if (!sent) android.widget.Toast.makeText(this, "Unable to send GIF to this field",
+                android.widget.Toast.LENGTH_SHORT).show();
     }
 
     // This will show either an empty suggestion strip (if prediction is enabled) or
@@ -1911,59 +2097,9 @@ public class LatinIME extends InputMethodService implements KeyboardActionListen
     }
 
     private void showSubtypeSelectorAndSettings() {
-        final CharSequence title = getString(R.string.english_ime_input_options);
-        // TODO: Should use new string "Select active input modes".
-        final CharSequence languageSelectionTitle = getString(R.string.language_selection_title);
-        final CharSequence[] items = new CharSequence[] {
-                languageSelectionTitle,
-                getString(ApplicationUtils.getActivityTitleResId(this, SettingsActivity.class))
-        };
-        final String imeId = mRichImm.getInputMethodIdOfThisIme();
-        final OnClickListener listener = new OnClickListener() {
-            @Override
-            public void onClick(DialogInterface di, int position) {
-                di.dismiss();
-                switch (position) {
-                case 0:
-                    final Intent intent = IntentUtils.getInputLanguageSelectionIntent(
-                            imeId,
-                            Intent.FLAG_ACTIVITY_NEW_TASK
-                                    | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
-                                    | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                    intent.putExtra(Intent.EXTRA_TITLE, languageSelectionTitle);
-                    startActivityOnTheSameDisplay(intent);
-                    break;
-                case 1:
-                    launchSettings(SettingsActivity.EXTRA_ENTRY_VALUE_LONG_PRESS_COMMA);
-                    break;
-                }
-            }
-        };
-        final AlertDialog.Builder builder = new AlertDialog.Builder(
-                DialogUtils.getPlatformDialogThemeContext(this));
-        builder.setItems(items, listener).setTitle(title);
-        final AlertDialog dialog = builder.create();
-        dialog.setCancelable(true /* cancelable */);
-        dialog.setCanceledOnTouchOutside(true /* cancelable */);
-        showOptionDialog(dialog);
-    }
-
-    // TODO: Move this method out of {@link LatinIME}.
-    private void showOptionDialog(final AlertDialog dialog) {
-        final IBinder windowToken = mKeyboardSwitcher.getMainKeyboardView().getWindowToken();
-        if (windowToken == null) {
-            return;
-        }
-
-        final Window window = dialog.getWindow();
-        final WindowManager.LayoutParams lp = window.getAttributes();
-        lp.token = windowToken;
-        lp.type = WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG;
-        window.setAttributes(lp);
-        window.addFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
-
-        mOptionsDialog = dialog;
-        dialog.show();
+        // The old attached platform menu is replaced by the CBoard control center. Language
+        // selection remains available from the custom Languages & layouts page.
+        launchSettings(SettingsActivity.EXTRA_ENTRY_VALUE_LONG_PRESS_COMMA);
     }
 
     @UsedForTesting

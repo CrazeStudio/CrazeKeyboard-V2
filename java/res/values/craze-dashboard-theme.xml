@@ -16,4 +16,20 @@
         <item name="android:textColorSecondary">#FF747B8D</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>
+    <style name="CrazeDashboardDarkTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:colorAccent">#FFB5A8</item>
+        <item name="android:colorControlActivated">#FFB5A8</item>
+        <item name="android:colorControlHighlight">#33FFFFFF</item>
+        <item name="android:colorPrimary">#FF202124</item>
+        <item name="android:colorPrimaryDark">#FF17181B</item>
+        <item name="android:statusBarColor">#FF17181B</item>
+        <item name="android:navigationBarColor">#FF17181B</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowBackground">#FF17181B</item>
+        <item name="android:textColorPrimary">#FFF1F3F4</item>
+        <item name="android:textColorSecondary">#FFBDC1C6</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
 </resources>
