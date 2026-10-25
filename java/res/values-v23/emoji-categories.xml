@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Unicode Emoji 17.0 fully-qualified sequences; see res/raw/unicode_emoji_license.txt. -->
+<!-- Unicode Emoji 18.0 fully-qualified sequences; see res/raw/unicode_emoji_license.txt. -->
 <resources>
     <array name="emoji_eight_smiley_people" format="string">
         <item>1F600</item>
@@ -13,6 +13,7 @@
         <item>1F642</item>
         <item>1F643</item>
         <item>1FAE0</item>
+        <item>1FAEB</item>
         <item>1F609</item>
         <item>1F60A</item>
         <item>1F607</item>
@@ -347,6 +348,18 @@
         <item>1F44E,1F3FD</item>
         <item>1F44E,1F3FE</item>
         <item>1F44E,1F3FF</item>
+        <item>1FAF9</item>
+        <item>1FAF9,1F3FB</item>
+        <item>1FAF9,1F3FC</item>
+        <item>1FAF9,1F3FD</item>
+        <item>1FAF9,1F3FE</item>
+        <item>1FAF9,1F3FF</item>
+        <item>1FAFA</item>
+        <item>1FAFA,1F3FB</item>
+        <item>1FAFA,1F3FC</item>
+        <item>1FAFA,1F3FD</item>
+        <item>1FAFA,1F3FE</item>
+        <item>1FAFA,1F3FF</item>
         <item>270A</item>
         <item>270A,1F3FB</item>
         <item>270A,1F3FC</item>
@@ -2710,6 +2723,7 @@
         <item>1F9AA</item>
         <item>1F40C</item>
         <item>1F98B</item>
+        <item>1FACC</item>
         <item>1F41B</item>
         <item>1F41C</item>
         <item>1F41D</item>
@@ -2783,6 +2797,7 @@
         <item>1F336,FE0F</item>
         <item>1FAD1</item>
         <item>1F952</item>
+        <item>1FADD</item>
         <item>1F96C</item>
         <item>1F966</item>
         <item>1F9C4</item>
@@ -3005,6 +3020,7 @@
         <item>1F6A6</item>
         <item>1F6D1</item>
         <item>1F6A7</item>
+        <item>1F6D9</item>
         <item>2693</item>
         <item>1F6DF</item>
         <item>26F5</item>
@@ -3104,6 +3120,7 @@
         <item>2603,FE0F</item>
         <item>26C4</item>
         <item>2604,FE0F</item>
+        <item>1FA8B</item>
         <item>1F525</item>
         <item>1F4A7</item>
         <item>1F30A</item>
@@ -3358,6 +3375,7 @@
         <item>1F58C,FE0F</item>
         <item>1F58D,FE0F</item>
         <item>1F4DD</item>
+        <item>1FA8C</item>
         <item>1F4BC</item>
         <item>1F4C1</item>
         <item>1F4C2</item>
@@ -3387,6 +3405,7 @@
         <item>1F510</item>
         <item>1F511</item>
         <item>1F5DD,FE0F</item>
+        <item>1FA8D</item>
         <item>1F528</item>
         <item>1FA93</item>
         <item>26CF,FE0F</item>
