@@ -190,7 +190,10 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
         setBackgroundColor(colors.panel);
         mSuggestionsStrip.setBackgroundColor(colors.panel);
         if (mToolsMenuOpen) {
-            if (mActionPanel != null) applyToolPanelTheme(mActionPanel, colors);
+            if (mActionPanel != null) {
+                mActionPanel.setBackgroundColor(colors.panel);
+                applyToolPanelTheme(mActionPanel, colors);
+            }
         } else {
             for (int i = 0; i < mWordViews.size(); i++) {
                 final TextView word = mWordViews.get(i);
@@ -222,7 +225,30 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
                 ((ImageView)child).setImageTintList(ColorStateList.valueOf(colors.secondaryText));
             } else if (child instanceof TextView) {
                 final TextView text = (TextView)child;
-                text.setTextColor(colors.text);
+                if (Boolean.TRUE.equals(text.getTag())) {
+                    text.setTextColor(colors.text);
+                    final GradientDrawable card = new GradientDrawable();
+                    card.setColor(colors.key);
+                    card.setCornerRadius(dp(11));
+                    card.setStroke(dp(1), colors.border);
+                    text.setBackground(card);
+                } else if (getResources().getString(R.string.close_keyboard_tools)
+                        .contentEquals(text.getContentDescription())) {
+                    text.setTextColor(colors.secondaryText);
+                    final GradientDrawable mask = new GradientDrawable();
+                    mask.setColor(Color.WHITE);
+                    mask.setCornerRadius(dp(12));
+                    text.setBackground(new RippleDrawable(ColorStateList.valueOf(
+                            colors.dark ? 0x33FFFFFF : 0x22000000),
+                            new ColorDrawable(Color.TRANSPARENT), mask));
+                } else if ("GIF".contentEquals(text.getText())) {
+                    text.setTextColor(colors.accent);
+                } else {
+                    text.setTextColor(colors.text);
+                }
+            } else if (child instanceof LinearLayout && child.isClickable()
+                    && child.getTag() instanceof Integer) {
+                child.setBackground(createToolTileBackground(colors));
             }
             if (child instanceof ViewGroup) applyToolPanelTheme((ViewGroup)child, colors);
         }
@@ -474,7 +500,7 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
         header.addView(title, new LinearLayout.LayoutParams(0, dp(24), 1));
 
         TextView close = new TextView(getContext());
-        close.setText("Done  ×");
+        close.setText(R.string.close_keyboard_tools);
         close.setTextColor(colors.secondaryText);
         close.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         close.setGravity(android.view.Gravity.CENTER);
@@ -607,6 +633,7 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
         final CBoardTheme colors = CBoardTheme.resolve(getContext());
         TextView item = new TextView(getContext());
         item.setText(label);
+        item.setTag(Boolean.TRUE);
         item.setTextColor(colors.text);
         item.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         item.setGravity(android.view.Gravity.CENTER_VERTICAL);
@@ -635,18 +662,7 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
         return (int)(value * getResources().getDisplayMetrics().density + 0.5f);
     }
 
-    private void addKeyboardTool(final int labelRes, final int iconRes, final int action) {
-        final CBoardTheme colors = CBoardTheme.resolve(getContext());
-        final int foreground = colors.text;
-        final int rippleColor = colors.dark ? 0x33FFFFFF : 0x22000000;
-        final LinearLayout item = new LinearLayout(getContext());
-        item.setOrientation(LinearLayout.VERTICAL);
-        item.setGravity(android.view.Gravity.CENTER);
-        item.setPadding(dp(3), dp(2), dp(3), dp(2));
-        item.setContentDescription(getResources().getString(labelRes));
-        item.setClickable(true);
-        item.setFocusable(true);
-
+    private Drawable createToolTileBackground(final CBoardTheme colors) {
         final GradientDrawable surface = new GradientDrawable();
         surface.setColor(colors.key);
         surface.setCornerRadius(dp(10));
@@ -654,7 +670,23 @@ public final class SuggestionStripView extends RelativeLayout implements OnClick
         final GradientDrawable mask = new GradientDrawable();
         mask.setColor(Color.WHITE);
         mask.setCornerRadius(dp(10));
-        item.setBackground(new RippleDrawable(ColorStateList.valueOf(rippleColor), surface, mask));
+        final int rippleColor = colors.dark ? 0x33FFFFFF : 0x22000000;
+        return new RippleDrawable(ColorStateList.valueOf(rippleColor), surface, mask);
+    }
+
+    private void addKeyboardTool(final int labelRes, final int iconRes, final int action) {
+        final CBoardTheme colors = CBoardTheme.resolve(getContext());
+        final int foreground = colors.text;
+        final LinearLayout item = new LinearLayout(getContext());
+        item.setOrientation(LinearLayout.VERTICAL);
+        item.setGravity(android.view.Gravity.CENTER);
+        item.setPadding(dp(3), dp(2), dp(3), dp(2));
+        item.setContentDescription(getResources().getString(labelRes));
+        item.setTag(Integer.valueOf(action));
+        item.setClickable(true);
+        item.setFocusable(true);
+
+        item.setBackground(createToolTileBackground(colors));
 
         if (iconRes == 0) {
             TextView gif = new TextView(getContext());
