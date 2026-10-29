@@ -9,14 +9,20 @@ import java.util.List;
  */
 public final class AutoCorrector {
     private AutoCorrector() {}
+
+    /** A learned word must have been typed at least this often before it can replace something else. */
     public static final int MIN_COUNT = 4;
 
     /** @return the replacement, or null to leave the word alone */
     public static String correct(Dictionary d, String typed, String prev, boolean sentenceStart) {
         if (typed == null || WordChars.codePointCount(typed) < 3) return null;
-        if (WordChars.isAllUpper(typed) || WordChars.hasInnerUpper(typed)) return null;
+        if (WordChars.isAllUpper(typed)) return null;
+        if (WordChars.hasInnerUpper(typed)) return null;
+        // a capital in the middle of a sentence is probably a name
         if (!sentenceStart && WordChars.startsUpper(typed)) return null;
-        if (d.contains(typed) || d.expansionFor(typed) != null) return null;
+        if (d.contains(typed)) return null;
+        if (d.expansionFor(typed) != null) return null;
+
         String key = WordChars.normalize(typed);
         List<SuggestionEngine.Scored> options = SuggestionEngine.corrections(d, key, prev, 5);
         SuggestionEngine.Scored best = null;
@@ -28,6 +34,7 @@ public final class AutoCorrector {
             best = s;
             break;
         }
-        return best == null ? null : WordChars.matchCase(typed, best.display);
+        if (best == null) return null;
+        return WordChars.matchCase(typed, best.display);
     }
 }

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="craze_space_0">0dp</dimen>
+    <dimen name="craze_space_1">2dp</dimen>
+    <dimen name="craze_space_2">4dp</dimen>
+    <dimen name="craze_space_3">8dp</dimen>
+    <dimen name="craze_space_4">12dp</dimen>
+    <dimen name="craze_space_5">16dp</dimen>
+    <dimen name="craze_space_6">24dp</dimen>
+    <dimen name="craze_space_7">32dp</dimen>
+    <dimen name="craze_space_8">48dp</dimen>
+    <dimen name="craze_size_touch_min">48dp</dimen>
+    <dimen name="craze_size_key_row">52dp</dimen>
+    <dimen name="craze_size_key_gap">4dp</dimen>
+    <dimen name="craze_size_strip_height">48dp</dimen>
+    <dimen name="craze_size_toolbar_button">48dp</dimen>
+    <dimen name="craze_size_toolbar_icon">24dp</dimen>
+    <dimen name="craze_size_panel_tab">48dp</dimen>
+    <dimen name="craze_size_grid_cell">48dp</dimen>
+    <dimen name="craze_size_resize_handle">24dp</dimen>
+    <dimen name="craze_size_keyboard_max_width">600dp</dimen>
+    <dimen name="craze_radius_key">8dp</dimen>
+    <dimen name="craze_radius_sm">6dp</dimen>
+    <dimen name="craze_radius_md">12dp</dimen>
+    <dimen name="craze_radius_lg">16dp</dimen>
+    <dimen name="craze_elevation_key">0dp</dimen>
+    <dimen name="craze_elevation_popup">8dp</dimen>
+    <dimen name="craze_elevation_floating">12dp</dimen>
+    <dimen name="craze_text_key_hint">11sp</dimen>
+    <dimen name="craze_text_caption">12sp</dimen>
+    <dimen name="craze_text_strip">16sp</dimen>
+    <dimen name="craze_text_body">16sp</dimen>
+    <dimen name="craze_text_key_small">16sp</dimen>
+    <dimen name="craze_text_key">22sp</dimen>
+    <dimen name="craze_text_title">22sp</dimen>
+    <dimen name="craze_text_headline">28sp</dimen>
+    <item name="craze_height_scale_min" format="float" type="dimen">0.8</item>
+    <item name="craze_height_scale_max" format="float" type="dimen">1.3</item>
+</resources>

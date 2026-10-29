@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="craze_bg">#1b1e23</color>
+    <color name="craze_surface">#2b3037</color>
+    <color name="craze_surface_modifier">#3a4048</color>
+    <color name="craze_surface_pressed">#4a525c</color>
+    <color name="craze_border">#3d444d</color>
+    <color name="craze_border_input">#8b95a1</color>
+    <color name="craze_text">#f1f3f5</color>
+    <color name="craze_text_muted">#b4bcc6</color>
+    <color name="craze_text_hint">#aab3bd</color>
+    <color name="craze_accent">#5eead4</color>
+    <color name="craze_on_accent">#04201d</color>
+    <color name="craze_danger">#ff8a80</color>
+    <color name="craze_success">#6ee7a8</color>
+    <color name="craze_warning">#fbbf77</color>
+</resources>

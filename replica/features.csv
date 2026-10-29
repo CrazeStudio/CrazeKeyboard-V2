@@ -1,0 +1,67 @@
+feature,area,priority,original,clone,notes
+Enable and select keyboard setup flow,setup,must,yes,no,Android IME enable then pick as active input method; help center has a setup article
+QWERTY letter layout with shift and caps lock,layout,must,yes,partial,BUILD: Shift works; caps lock not built
+Symbols and numbers layouts,layout,must,yes,yes,BUILD: One symbols page; fixed a stray space typed with the apostrophe key
+Enter key adapts to the field action (send / search / go / next),layout,must,yes,yes,Standard IME editor-action behaviour; inferred; BUILD: Existing in repo; learning now runs before it
+Long-press popups for accents and symbols,layout,must,yes,no,Help text confirms symbol hints on long press
+Key press popup preview,layout,should,yes,no,
+Number row toggle,layout,should,yes,no,
+Multiple layouts per language (QWERTY / QWERTZ / AZERTY etc.),layout,should,yes,no,Medium confidence: seen via language add-keyboard flow
+Backspace key repeat,layout,must,yes,no,
+Spacebar long-press and slide to move the cursor,editing,should,yes,no,Described in a tips article
+Suggestion strip with next-word prediction,suggestions,must,yes,yes,"BUILD: Built from the learned dictionary, no bundled words. Needs device test"
+Autocorrect with on/off toggle,text correction,must,yes,yes,Settings > Text correction; BUILD: Only trusts words typed 4+ times; Backspace undoes it. Toggle in Dictionary screen
+Auto-capitalisation and punctuation helpers,text correction,should,yes,partial,Inferred from typical settings; confirm on a real device; BUILD: Capital after a full stop only
+Learn words as you type,dictionary,must,yes,yes,Help center: saves typed words on device to help spelling; BUILD: Skips password fields and fields that ask for no personalised learning
+Delete learned words,dictionary,should,yes,yes,"Help center article on deleting saved words; BUILD: Delete one word or all, in the Dictionary screen"
+Personal dictionary with text shortcuts,dictionary,should,yes,yes,"Shortcut-to-phrase expansion mentioned in a tips article; BUILD: Shortcuts expand on space; list, add, remove in Dictionary screen"
+Phrase prediction (suggest phrases not just words),suggestions,could,yes,no,
+Glide typing (swipe to type),input,must,yes,partial,Marquee feature; needs a path-to-word decoder; BUILD: Decoder tested on a QWERTY model; works on learned words only; not yet tried on a device
+Glide trail and delete-by-swipe,input,could,yes,partial,Delete-swipe is a guess until verified on a device; BUILD: Trail drawn; delete-by-swipe not built
+Flick keys to enter symbols,input,could,yes,no,Low confidence: reported as testing in 2025 by a community post
+Multilingual typing (suggest across enabled languages),languages,must,yes,partial,"Store listing headline feature; BUILD: One dictionary per language (en, bn); no blending across languages yet"
+Add and remove keyboard languages,languages,must,yes,no,Help center walks through both entry points
+Switch language via globe key or long-press comma menu,languages,must,yes,no,
+Handwriting keyboard,input,could,yes,no,Needs a handwriting recognition model
+Morse code keyboard,input,could,yes,no,Mentioned in a tips roundup; low priority
+Voice typing with microphone key,voice,must,yes,no,
+Offline voice typing,voice,should,yes,no,Wikipedia: offline recognition added in 2019
+Voice editing commands (delete / replace / capitalise),voice,could,yes,no,Basic commands exist; AI-driven editing is newer and Pixel-first
+Emoji panel with categories and recents,emoji,must,yes,no,
+Emoji search,emoji,must,yes,no,
+Emoji suggestions in the strip,emoji,should,yes,no,
+Fast-access emoji row,emoji,could,yes,no,Settings > Emojis stickers GIFs
+Emoji mashup stickers using original artwork,emoji,could,yes,no,Own art only; same idea as Emoji Kitchen
+GIF search and send,gifs,should,yes,no,Needs a GIF provider API with licence; only works in apps that accept images
+Stickers tab with search,stickers,could,yes,no,Image insertion depends on the target app supporting rich content
+Clipboard history,clipboard,should,yes,no,Toggle on from the toolbar
+Pin clipboard items,clipboard,should,yes,no,
+Clipboard images,clipboard,could,yes,no,
+Text editing panel (arrows / select / cut / copy / paste),editing,should,yes,partial,"Added around Gboard 6.2; BUILD: Select all, copy, cut, paste exist; arrow keys not built"
+Toolbar with feature shortcuts,toolbar,must,yes,partial,"Opened from the left of the strip; BUILD: Five buttons: clipboard paste, edit, emoji, dictionary, settings; not customisable"
+Rearrange and customise toolbar shortcuts,toolbar,should,yes,no,
+One-handed mode (left / right),layout modes,should,yes,no,Added to Android in 2016
+Resizable floating keyboard,layout modes,could,yes,no,
+Split keyboard for tablets and foldables,layout modes,could,yes,no,Mentioned in a tips article
+Keyboard height setting,preferences,should,yes,no,
+Key sounds and haptic feedback settings,preferences,should,yes,no,
+Theme picker,themes,should,yes,no,
+Custom theme from your own colours or image,themes,could,yes,no,Original is limited on customisation per critics; room to beat it
+Follow system dark mode,themes,should,yes,no,Inferred
+Translate as you type,translate,could,yes,no,Original uses Google Translate; clone could use an on-device ML model
+AI writing tools (proofread / rephrase / tone),ai,could,yes,no,Original is Gemini-powered and chipset-gated; clone needs its own model
+Grammar correction,ai,could,yes,no,
+Settings home and sub-pages,settings,must,yes,partial,BUILD: Dictionary screen added; main settings screen not reviewed here
+Privacy: typed text stays on device,privacy,must,yes,yes,Help center and store listing both state this; BUILD: No network code; dictionary in private storage; backup off
+No learning or suggestions in password fields,privacy,must,yes,yes,Inferred from IME input-type handling; BUILD: Password and no-personalised-learning fields skip learning
+Help and send feedback entry,support,could,yes,no,
+Usage statistics opt-in,analytics,could,yes,no,Original sends usage stats; make clone opt-in
+Wear OS keyboard,platform,could,yes,no,Separate app surface; size on its own
+Google Search from the keyboard (G button),search,skip,yes,skip,Google's search service and results
+Cloud sync of learned words across devices,sync,skip,yes,skip,Needs a Google-account backend; offer local export/import instead
+Google prediction and language models,suggestions,skip,yes,skip,Proprietary models; use open dictionaries and your own n-gram model
+Google voice recognition models,voice,skip,yes,skip,Proprietary; use an open speech model instead
+Google Emoji Kitchen artwork,emoji,skip,yes,skip,Google-owned art
+Minis avatar stickers and Bitmoji integration,stickers,skip,yes,skip,Partner content
+Pixel Studio AI stickers,stickers,skip,yes,skip,Pixel-only and Google-owned
+Gemini Nano on-device model features,ai,skip,yes,skip,Google model on specific chipsets

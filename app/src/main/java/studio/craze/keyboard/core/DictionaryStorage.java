@@ -9,6 +9,7 @@ import java.io.OutputStreamWriter;
 import java.io.Reader;
 import java.io.Writer;
 
+/** Reads and writes a dictionary file. Writes go to a temp file first so a crash never leaves a half file. */
 public final class DictionaryStorage {
     private DictionaryStorage() {}
 
@@ -21,7 +22,9 @@ public final class DictionaryStorage {
         } catch (IOException e) {
             return new Dictionary();
         } finally {
-            if (r != null) try { r.close(); } catch (IOException ignored) { }
+            if (r != null) {
+                try { r.close(); } catch (IOException ignored) { }
+            }
         }
     }
 

@@ -1,0 +1,41 @@
+LIGHT (tokens.json)
+  AAA   15.73:1  text                     on bg                   
+  AAA   17.96:1  text                     on surface              
+  AAA   13.17:1  text                     on surface-modifier     
+  AAA   10.89:1  text                     on surface-pressed      
+  AA     6.62:1  text-muted               on bg                   
+  AAA    7.56:1  text-muted               on surface              
+  AA     6.00:1  text-hint                on surface              
+  AA     5.47:1  on-accent                on accent               
+  AA     4.79:1  accent                   on bg                   
+  AA     5.47:1  accent                   on surface              
+  AA     5.76:1  danger                   on bg                   
+  AA     6.57:1  danger                   on surface              
+  AA     4.66:1  success                  on bg                   
+  AA     6.21:1  warning                  on bg                   
+  PASS   4.15:1  border-input             on bg                   ui
+  PASS   4.74:1  border-input             on surface              ui
+  PASS   4.79:1  accent                   on bg                   ui
+
+  17 pairs, 0 failing AA
+
+DARK (tokens.dark.json)
+  AAA   15.02:1  text                     on bg                   
+  AAA   11.94:1  text                     on surface              
+  AAA    9.41:1  text                     on surface-modifier     
+  AAA    7.12:1  text                     on surface-pressed      
+  AAA    8.71:1  text-muted               on bg                   
+  AA     6.93:1  text-muted               on surface              
+  AA     6.26:1  text-hint                on surface              
+  AAA   11.55:1  on-accent                on accent               
+  AAA   11.30:1  accent                   on bg                   
+  AAA    8.98:1  accent                   on surface              
+  AAA    7.32:1  danger                   on bg                   
+  AA     5.82:1  danger                   on surface              
+  AAA   10.87:1  success                  on bg                   
+  AAA   10.20:1  warning                  on bg                   
+  PASS   5.50:1  border-input             on bg                   ui
+  PASS   4.37:1  border-input             on surface              ui
+  PASS  11.30:1  accent                   on bg                   ui
+
+  17 pairs, 0 failing AA

@@ -8,11 +8,17 @@ import java.util.concurrent.Executors;
 import studio.craze.keyboard.core.Dictionary;
 import studio.craze.keyboard.core.DictionaryStorage;
 
+/**
+ * One dictionary per language, kept in private app storage. The keyboard service and the dictionary
+ * screen share the same instance, so edits show up straight away. There is no bundled word list:
+ * every file starts empty and fills from what is typed.
+ */
 final class DictionaryHolder {
     private static final String PREFS = "crazekeyboard";
     private static final ExecutorService IO = Executors.newSingleThreadExecutor();
     private static Dictionary dictionary;
     private static String language;
+
     private DictionaryHolder() {}
 
     static String currentLanguage(Context context) {
@@ -26,6 +32,7 @@ final class DictionaryHolder {
         return new File(context.getFilesDir(), "dictionary_" + lang + ".txt");
     }
 
+    /** The dictionary for the language chosen in settings. Switching language saves the old one first. */
     static synchronized Dictionary get(Context context) {
         Context app = context.getApplicationContext();
         String lang = currentLanguage(app);
@@ -37,16 +44,23 @@ final class DictionaryHolder {
         return dictionary;
     }
 
+    /** Writes to disk on a background thread when something changed. */
     static void saveAsync(Context context) {
         final Context app = context.getApplicationContext();
         final Dictionary d;
         final String lang;
-        synchronized (DictionaryHolder.class) { d = dictionary; lang = language; }
+        synchronized (DictionaryHolder.class) {
+            d = dictionary;
+            lang = language;
+        }
         if (d == null || !d.consumeDirty()) return;
         IO.execute(new Runnable() {
             @Override public void run() {
-                try { DictionaryStorage.save(d, file(app, lang)); }
-                catch (IOException e) { d.markDirty(); }
+                try {
+                    DictionaryStorage.save(d, file(app, lang));
+                } catch (IOException e) {
+                    d.markDirty();
+                }
             }
         });
     }
@@ -57,7 +71,10 @@ final class DictionaryHolder {
 
     private static void saveBlocking(Context app, Dictionary d, String lang) {
         if (!d.consumeDirty()) return;
-        try { DictionaryStorage.save(d, file(app, lang)); }
-        catch (IOException e) { d.markDirty(); }
+        try {
+            DictionaryStorage.save(d, file(app, lang));
+        } catch (IOException e) {
+            d.markDirty();
+        }
     }
 }
