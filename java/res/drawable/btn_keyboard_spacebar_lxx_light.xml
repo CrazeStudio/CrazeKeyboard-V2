@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:state_pressed="true" android:drawable="@drawable/craze_spacebar_pressed_lxx_light" />
-    <item android:drawable="@drawable/craze_spacebar_normal_lxx_light" />
-</selector>

@@ -1,7 +1,0 @@
-# Gradle
-.externalNativeBuild/
-.gradle/
-.idea/
-CrazeKeyboard.iml
-build/
-local.properties
