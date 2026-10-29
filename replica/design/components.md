@@ -1,51 +1,28 @@
-# CrazeKeyboard design system
+# CrazeKeyboard UI component spec — SVG icon pass
 
-Independent native Android design system informed by public FUTO Keyboard user documentation. It uses familiar keyboard and settings conventions but original CrazeKeyboard labels, shapes, palette, and glyph choices.
+## Icon system
+- Source assets: original, locally authored SVGs in `replica/design/icons/`.
+- Android runtime assets: matching Android VectorDrawable XMLs in `app/src/main/res/drawable/`. Android Views render these vector resources natively; no SVG parser, external CDN, or network access is required.
+- Icon names: language, keyboard, prediction, voice, dictionary, theme, help, developer, chevron, clipboard, edit, emoji, settings.
+- Icon canvas: 24 × 24; settings category tiles render at 42dp; icons are padded to 24dp internal area.
+- Style: open-stroke outline icons, consistent 1.8dp stroke, rounded caps/joins, Craze violet for categories and neutral ink for toolbar actions.
+- Accessibility: category icons have content descriptions; the row itself is the clickable target. Decorative icon descriptions should not duplicate the full row label in TalkBack if later converted to compound accessibility nodes.
 
-## Visual direction
-- Calm, neutral surfaces with a restrained violet accent; no brand assets copied from FUTO.
-- Rounded settings rows, a compact app header, short descriptions, and one obvious action per row.
-- Keyboard surface is a light cool grey with white letter keys and lightly tinted action keys; dark mode uses charcoal surfaces.
-- Native sans-serif typography; no proprietary font assets.
-- 4dp spacing base; settings rows use 16dp interior padding and 8–10dp vertical separation.
+## Settings category row
+- Layout: 42dp icon tile, title, one-line explanatory subtitle, 24dp chevron.
+- States: default, pressed, keyboard focus, filtered out by search, empty search result.
+- Entire row clickable and focusable.
 
-## Components
-### Settings category row
-- Layout: 42dp original text-glyph tile, title, one-line explanatory subtitle, chevron.
-- States: default, pressed, keyboard-focus, filtered-out by search, empty search result.
-- Accessibility: whole row clickable/focusable; title is the primary label; subtitle describes function.
+## Buttons
+- Primary: 48dp high, violet background, white label, rounded 13dp.
+- Secondary: 48dp high, pale surface and dark label.
+- Back navigation stays text-based for explicit clarity.
 
-### Primary button
-- Height: 48dp; accent background, white text, 13dp radius.
-- Used for enabling keyboard and committing primary actions.
-- State: pressed feedback supplied by Android; avoid all-caps.
+## Keyboard
+- Keyboard view uses a cool-grey surface, white keycaps, violet-tinted action keys, rounded 7dp corners.
+- Main toolbar and edit toolbar remain custom Canvas-drawn. SVG source assets are included for clipboard/edit/emoji/settings so the next UI rendering pass can migrate these to vector icons without adding dependencies.
+- Password/numeric fields must not expose suggestions.
 
-### Secondary button
-- Height: 48dp; pale neutral/violet surface, dark text.
-- Used for input method picker and secondary actions.
-
-### Setting toggle
-- Native Android Switch with title and subtitle; persists in SharedPreferences.
-- States: checked, unchecked, disabled/not available.
-- The UI must disclose when a preference is stored but the corresponding engine is not yet wired.
-
-### Keyboard key
-- Rounded rectangle, minimum 32dp key height; 7–9dp corner radius.
-- Letter keys white in light mode; actions use a soft violet tint.
-- Shift, delete, symbols, enter and space have dedicated hit regions.
-- Key borders are an optional preference; haptic preference is currently stored but haptics are not implemented.
-
-### Suggestion strip
-- Separate horizontal strip above the keys, three equally divided candidates.
-- Suppressed for password fields, numeric fields, Bengali mode, or when suggestions are disabled.
-- Empty state is a blank neutral strip; never show suggestion data in password fields.
-
-### Settings detail page
-- Back control, large section title, short description, grouped cards, vertically scrollable content.
-- Language, theme, keyboard height, and suggestion settings persist locally.
-- Voice input and personal dictionary are explicitly marked unavailable/planned rather than presented as functional.
-
-## Accessibility and responsive behaviour
-- Native Android controls preserve platform focus and touch handling.
-- Screen is vertically scrollable and uses available width; long labels wrap.
-- Minimum action heights are 42–48dp. Full TalkBack and contrast verification on device remain required.
+## Settings detail
+- Scrollable detail screen with title, short description, grouped cards and native preference controls.
+- Local-only settings stored in SharedPreferences.

@@ -14,6 +14,7 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ImageView;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.Switch;
@@ -138,13 +139,13 @@ public class MainActivity extends Activity {
         if (content == null) return;
         content.removeAllViews();
         List<String[]> rows = Arrays.asList(
-            new String[]{"Languages & models", "Choose keyboard languages and local models", "Aa"},
-            new String[]{"Keyboard & typing", "Size, key behaviour and layout", "⌨"},
-            new String[]{"Text prediction", "Suggestions and typing assistance", "✧"},
-            new String[]{"Voice input", "Offline speech input status", "◖"},
-            new String[]{"Personal dictionary", "Words you want to keep available", "＋"},
-            new String[]{"Theme", "Colors, dark mode and key borders", "◐"},
-            new String[]{"Help & feedback", "Privacy notes and troubleshooting", "?"},
+            new String[]{"Languages & models", "Choose keyboard languages and local models", "language"},
+            new String[]{"Keyboard & typing", "Size, key behaviour and layout", "keyboard"},
+            new String[]{"Text prediction", "Suggestions and typing assistance", "prediction"},
+            new String[]{"Voice input", "Offline speech input status", "voice"},
+            new String[]{"Personal dictionary", "Words you want to keep available", "dictionary"},
+            new String[]{"Theme", "Colors, dark mode and key borders", "theme"},
+            new String[]{"Help & feedback", "Privacy notes and troubleshooting", "help"},
             new String[]{"Developer settings", "Build and diagnostic information", "</>"}
         );
         for (String[] row : rows) {
@@ -156,8 +157,12 @@ public class MainActivity extends Activity {
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
             lp.bottomMargin = dp(8);
             content.addView(item, lp);
-            TextView icon = text(row[2], 20, ACCENT, true);
-            icon.setGravity(Gravity.CENTER);
+            ImageView icon = new ImageView(this);
+            icon.setImageResource(iconResource(row[2]));
+            icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            icon.setPadding(dp(9), dp(9), dp(9), dp(9));
+            icon.setBackground(round(Color.rgb(247, 245, 251), dp(12)));
+            icon.setContentDescription(row[0]);
             item.addView(icon, new LinearLayout.LayoutParams(dp(42), dp(42)));
             LinearLayout words = new LinearLayout(this);
             words.setOrientation(LinearLayout.VERTICAL);
@@ -166,12 +171,28 @@ public class MainActivity extends Activity {
             addSpaceTo(words, 3);
             words.addView(text(row[1], 12, MUTED, false));
             item.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
-            item.addView(text("›", 25, MUTED, false));
+            ImageView chevron = new ImageView(this);
+            chevron.setImageResource(R.drawable.ic_chevron);
+            chevron.setContentDescription("Open " + row[0]);
+            item.addView(chevron, new LinearLayout.LayoutParams(dp(24), dp(24)));
             item.setClickable(true);
             item.setFocusable(true);
             item.setOnClickListener(v -> showSection(row[0]));
         }
         if (content.getChildCount() == 0) content.addView(text("No settings match that search.", 14, MUTED, false));
+    }
+
+    private int iconResource(String name) {
+        switch (name) {
+            case "language": return R.drawable.ic_language;
+            case "keyboard": return R.drawable.ic_keyboard;
+            case "prediction": return R.drawable.ic_prediction;
+            case "voice": return R.drawable.ic_voice;
+            case "dictionary": return R.drawable.ic_dictionary;
+            case "theme": return R.drawable.ic_theme;
+            case "help": return R.drawable.ic_help;
+            default: return R.drawable.ic_developer;
+        }
     }
 
     private void renderDetail(String section) {
