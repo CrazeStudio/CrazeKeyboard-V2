@@ -222,8 +222,17 @@ public class CrazeKeyboardService extends InputMethodService {
                 for (String label : row) {
                     float w = available * weight(label) / total;
                     float y = top + r * (keyHeight + gap);
+                    p.setStyle(Paint.Style.FILL);
                     p.setColor(special(label) ? actionColor : keyColor);
-                    c.drawRoundRect(new RectF(x, y, x + w, y + keyHeight), dp(7), dp(7), p);
+                    RectF keyRect = new RectF(x, y, x + w, y + keyHeight);
+                    c.drawRoundRect(keyRect, dp(7), dp(7), p);
+                    if (getSharedPreferences("crazekeyboard", MODE_PRIVATE).getBoolean("key_borders", false)) {
+                        p.setStyle(Paint.Style.STROKE);
+                        p.setStrokeWidth(dp(1));
+                        p.setColor(background == Color.rgb(31, 29, 36) ? Color.rgb(100, 96, 110) : Color.rgb(210, 208, 218));
+                        c.drawRoundRect(keyRect, dp(7), dp(7), p);
+                        p.setStyle(Paint.Style.FILL);
+                    }
                     p.setColor(ink);
                     p.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
                     p.setTextAlign(Paint.Align.CENTER);
