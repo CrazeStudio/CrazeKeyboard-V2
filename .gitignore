@@ -1,10 +1,15 @@
-*.iml
+# Gradle
+.externalNativeBuild/
 .gradle/
 .idea/
-local.properties
-.DS_Store
+LatinIME.iml
 build/
-app/build/
-captures/
-.externalNativeBuild/
-.cxx/
+local.properties
+crashreporting.properties
+keystore.properties
+key.jks
+java/res/raw/mozc.data
+.cxx
+java/src/org/futo/inputmethod/keyboard/internal/KeyboardTextsTable.java
+
+atl/

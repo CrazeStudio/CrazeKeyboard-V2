@@ -1,0 +1,66 @@
+name: Documentation Issue
+description: Report an issue or suggest a change in the documentation.
+labels: ["Documentation"]
+title: "Documentation: "
+type: task
+body:
+  - type: markdown
+    attributes:
+      value: |
+        # Thank you for opening a documentation change request.
+
+        Use this form for CrazeKeyboard documentation and in-app text. CrazeKeyboard is a non-commercial modification of FUTO Keyboard; please report upstream documentation issues to [FUTO](https://github.com/futo-org/android-keyboard).
+
+        Report CrazeKeyboard bugs or feature requests with their dedicated issue types instead.
+
+        For upstream FUTO Keyboard community resources, see the [FUTO Zulip channel](https://chat.futo.org/#narrow/stream/53-Keyboard) or [FUTO Discord](https://keyboard.futo.tech/discord).
+
+  - type: textarea
+    id: keyboard-affected-pages
+    attributes:
+      label: Affected Pages
+      description: |
+          Link to or describe the pages relevant to your documentation change request.
+      placeholder:
+      value:
+    validations:
+      required: false
+
+  - type: textarea
+    id: keyboard-problem
+    attributes:
+      label: What is the docs issue?
+      description: What problems or suggestions do you have about the documentation?
+      placeholder:
+      value:
+    validations:
+      required: true
+
+  - type: textarea
+    id: keyboard-proposal
+    attributes:
+      label: Proposal
+      description: What documentation changes would fix this issue and where would you expect to find them? Are one or more page headings unclear? Do one or more pages need additional context, examples, or warnings? Do we need a new page or section dedicated to a specific topic?  Your ideas help us understand what you and other users need from our documentation and how we can improve the content.
+      placeholder:
+      value:
+    validations:
+      required: false
+
+  - type: textarea
+    id: keyboard-references
+    attributes:
+      label: References
+      description: |
+        Are there any other open or closed GitLab/GitHub issues related to the problem or solution you described? If so, list them below. For example:
+        ```
+          - #10
+        ```
+      placeholder:
+      value:
+    validations:
+      required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        **Note:** If the submit button is disabled and you have filled out all required fields, please check that you did not forget a **Title** for the issue.

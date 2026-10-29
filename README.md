@@ -1,34 +1,37 @@
 # CrazeKeyboard
 
-CrazeKeyboard is an independent, offline-first Android keyboard project by CrazeStudio.
+**CrazeKeyboard is a modified version of FUTO Keyboard, rebranded and maintained by CrazeStudio.** This is a community derivative, not an official FUTO release and not endorsed by FUTO. The FUTO Source First License, copyright notices, attribution, and payment-related functionality are retained.
 
-## Current build
+CrazeKeyboard includes a CrazeStudio-branded settings dashboard and launcher mark, Craze Night and Craze Day keyboard palettes with different key-corner shapes, and direct shortcuts to the existing theme, keyboard-size, typing, and language customization screens. The upstream theme editor and other keyboard features remain available.
 
-The first clean-room implementation provides:
-- An Android settings/launcher screen with keyboard setup shortcuts
-- A working custom QWERTY input method with letters, shift, backspace, space, enter, and a symbols layer
-- Local-only typing; no network permission or cloud dependency
-- Password-field safeguards that disable suggestions (suggestions are not implemented yet)
+## Source and attribution
+
+This project is based on the official [FUTO Keyboard source repository](https://github.com/futo-org/android-keyboard), snapshot commit `31e720ddcc2df6259069b2ae7cf0f1defaf2cb74`. Its checked-out source dependencies are included as regular files in this repository:
+
+- `java/assets/futo-swipe`: `93931877c0083d0de7f51fad82325dcbe10421bf`
+- `java/assets/layouts`: `fb4dad270790d980c32417b60359104bd0c32c1c`
+- `java/assets/themes`: `4799ad5a597522d42d4cdfe34cdaf064aa0c434c`
+- `java/res-large`: `d87d9dbdf3966bbe18413be375dab2f6c7bbdfdd`
+- `libs`: `be4362cf82022e613cd34ff95d579c8502eaad8e`
+- `translations`: `8cd47ae043e8d9fe23878ac7e473f4817b9e2681`
+- `voiceinput-shared/src/main/ml`: `7692bc6096c51c44beba716a3c429ff09dbfffd9`
+
+Upstream copyright, third-party, and licensing notices are preserved in the source tree. The FUTO license text is in [`LICENSE.md`](LICENSE.md); review it before modifying or redistributing this project. In particular, the license limits modifications and redistribution to non-commercial purposes, requires preserving notices and payment-related functionality, and requires modified copies to carry a prominent modification notice. CrazeStudio is not claiming ownership of FUTO’s original code or marks.
+
+For compatibility with the upstream payment flow, the Android namespace/application ID and the FUTO payment screens/strings remain unchanged. Consequently, the stable build uses the upstream package ID and cannot be installed alongside another app with that same ID; the development build uses the upstream `.unstable` suffix.
 
 ## Build
 
-Open this repository in Android Studio with Android SDK 35 and JDK 17. Sync the Gradle project and run the `app` configuration. The GitHub Actions workflow runs `assembleDebug`.
+Use JDK 17 or newer and install Android SDK Platform 35, then open the repository root in Android Studio or use the included Gradle wrapper:
 
-## Install and enable
+```bash
+./gradlew assembleUnstableDebug
+```
 
-1. Install the debug APK on an Android device.
-2. Open CrazeKeyboard and tap **Enable keyboard**.
-3. Select **CrazeKeyboard** in Android's input-method settings.
-4. Tap **Choose keyboard** and select it as the current input method.
+A signed release build requires a local `keystore.properties` file and a signing key. Do not commit private signing credentials. The wrapper and all imported source assets are already present in this repository snapshot; no recursive submodule checkout is needed.
 
-## Privacy
+## FUTO project information
 
-The app requests no Internet permission. Text is sent only to the focused editor through Android's `InputConnection`. This initial build does not include cloud sync, telemetry, or online suggestions.
-
-## Project direction
-
-The implementation will grow screen-by-screen from the feature plan in `replica/recon.md`. CrazeKeyboard is independent and is not affiliated with Google or Gboard.
-
-## FUTO Keyboard source snapshot
-
-An unmodified source-tree snapshot of FUTO Keyboard is kept in `futo-keyboard/` as a separate Android project. It is not wired into the root CrazeKeyboard build and does not replace the existing app. See [`FUTO_KEYBOARD_IMPORT.md`](FUTO_KEYBOARD_IMPORT.md) for upstream revision and license notes.
+- Official upstream: <https://github.com/futo-org/android-keyboard>
+- Upstream website: <https://keyboard.futo.tech/>
+- License and notice files: [`LICENSE.md`](LICENSE.md) and the other retained notices in this repository
