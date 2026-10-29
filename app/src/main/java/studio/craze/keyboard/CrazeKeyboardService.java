@@ -78,6 +78,13 @@ public class CrazeKeyboardService extends InputMethodService {
                 {"?123",",","☺","space",".","↵"}
             };
         }
+        @Override protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+            int desiredHeight = dp(270);
+            int width = MeasureSpec.getSize(widthMeasureSpec);
+            int height = resolveSize(desiredHeight, heightMeasureSpec);
+            setMeasuredDimension(width, height);
+        }
+
         @Override protected void onDraw(Canvas c) {
             super.onDraw(c); c.drawColor(bg); updateRows();
             float gap = dp(5), top = dp(8), side = dp(4);
