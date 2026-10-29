@@ -28,3 +28,7 @@ The app requests no Internet permission. Text is sent only to the focused editor
 ## Project direction
 
 The implementation will grow screen-by-screen from the feature plan in `replica/recon.md`. CrazeKeyboard is independent and is not affiliated with Google or Gboard.
+
+## FUTO Keyboard source snapshot
+
+An unmodified source-tree snapshot of FUTO Keyboard is kept in `futo-keyboard/` as a separate Android project. It is not wired into the root CrazeKeyboard build and does not replace the existing app. See [`FUTO_KEYBOARD_IMPORT.md`](FUTO_KEYBOARD_IMPORT.md) for upstream revision and license notes.
