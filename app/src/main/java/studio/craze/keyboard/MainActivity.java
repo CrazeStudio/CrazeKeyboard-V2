@@ -75,6 +75,35 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams detailsLp = params(-1, -2); detailsLp.topMargin = dp(10);
         privacy.addView(details, detailsLp);
 
+        LinearLayout appearance = new LinearLayout(this);
+        appearance.setOrientation(LinearLayout.VERTICAL);
+        appearance.setPadding(dp(18), dp(18), dp(18), dp(18));
+        appearance.setBackground(panel(Color.WHITE, dp(20)));
+        LinearLayout.LayoutParams appearanceLp = params(-1, -2); appearanceLp.topMargin = dp(16);
+        page.addView(appearance, appearanceLp);
+        appearance.addView(text("KEYBOARD APPEARANCE", 12, accent, true));
+        boolean darkKeyboard = getSharedPreferences("crazekeyboard", MODE_PRIVATE).getBoolean("dark", false);
+        Button themeButton = button(darkKeyboard ? "Switch keyboard to light" : "Switch keyboard to dark",
+                Color.rgb(238,233,247), ink);
+        LinearLayout.LayoutParams themeLp = params(-1, dp(50)); themeLp.topMargin = dp(12);
+        appearance.addView(themeButton, themeLp);
+        themeButton.setOnClickListener(v -> {
+            boolean current = getSharedPreferences("crazekeyboard", MODE_PRIVATE).getBoolean("dark", false);
+            getSharedPreferences("crazekeyboard", MODE_PRIVATE).edit().putBoolean("dark", !current).apply();
+            themeButton.setText(!current ? "Switch keyboard to light" : "Switch keyboard to dark");
+        });
+        int keyboardHeight = getSharedPreferences("crazekeyboard", MODE_PRIVATE).getInt("height", 304);
+        Button heightButton = button("Keyboard height: " + keyboardHeight + " dp  ·  Change",
+                Color.rgb(238,233,247), ink);
+        LinearLayout.LayoutParams heightLp = params(-1, dp(50)); heightLp.topMargin = dp(10);
+        appearance.addView(heightButton, heightLp);
+        heightButton.setOnClickListener(v -> {
+            int current = getSharedPreferences("crazekeyboard", MODE_PRIVATE).getInt("height", 304);
+            int next = current >= 344 ? 280 : current + 20;
+            getSharedPreferences("crazekeyboard", MODE_PRIVATE).edit().putInt("height", next).apply();
+            heightButton.setText("Keyboard height: " + next + " dp  ·  Change");
+        });
+
         TextView footer = text("Version 0.1.0  •  Early build", 12, muted, false);
         LinearLayout.LayoutParams footerLp = params(-1, -2); footerLp.topMargin = dp(24);
         page.addView(footer, footerLp);

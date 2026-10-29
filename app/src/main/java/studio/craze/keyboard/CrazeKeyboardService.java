@@ -82,11 +82,11 @@ public class CrazeKeyboardService extends InputMethodService {
 
     private final class KeyboardView extends View {
         private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final int background = Color.rgb(239, 237, 244);
-        private final int keyColor = Color.WHITE;
-        private final int actionColor = Color.rgb(218, 211, 232);
-        private final int ink = Color.rgb(39, 36, 47);
-        private final int muted = Color.rgb(104, 99, 114);
+        private int background = Color.rgb(239, 237, 244);
+        private int keyColor = Color.WHITE;
+        private int actionColor = Color.rgb(218, 211, 232);
+        private int ink = Color.rgb(39, 36, 47);
+        private int muted = Color.rgb(104, 99, 114);
         private boolean shifted = true;
         private boolean symbols;
         private boolean password;
@@ -105,8 +105,26 @@ public class CrazeKeyboardService extends InputMethodService {
 
         @Override protected void onMeasure(int widthSpec, int heightSpec) {
             int width = MeasureSpec.getSize(widthSpec);
-            int desired = dp(304);
+            int heightSetting = getSharedPreferences("crazekeyboard", MODE_PRIVATE).getInt("height", 304);
+            int desired = dp(Math.max(260, Math.min(360, heightSetting)));
             setMeasuredDimension(width, resolveSize(desired, heightSpec));
+        }
+
+        private void applyAppearance() {
+            boolean dark = getSharedPreferences("crazekeyboard", MODE_PRIVATE).getBoolean("dark", false);
+            if (dark) {
+                background = Color.rgb(31, 29, 36);
+                keyColor = Color.rgb(55, 52, 62);
+                actionColor = Color.rgb(91, 78, 119);
+                ink = Color.rgb(248, 246, 252);
+                muted = Color.rgb(199, 193, 209);
+            } else {
+                background = Color.rgb(239, 237, 244);
+                keyColor = Color.WHITE;
+                actionColor = Color.rgb(218, 211, 232);
+                ink = Color.rgb(39, 36, 47);
+                muted = Color.rgb(104, 99, 114);
+            }
         }
 
         private void makeRows() {
@@ -173,6 +191,7 @@ public class CrazeKeyboardService extends InputMethodService {
 
         @Override protected void onDraw(Canvas c) {
             super.onDraw(c);
+            applyAppearance();
             c.drawColor(background);
             makeRows();
             toolbarHeight = dp(40);
