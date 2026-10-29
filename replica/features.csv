@@ -1,0 +1,34 @@
+feature,area,priority,original,clone,notes
+IME registration and setup,Core,must,yes,no,Verify service metadata and onboarding
+QWERTY typing and InputConnection,Typing,must,yes,no,Tap correctness and cursor behavior
+Input type layouts,Typing,must,yes,no,Numeric phone email URL password multiline
+Shift and caps,Typing,must,yes,no,Single tap and double tap state
+Symbols and number layouts,Typing,must,yes,no,Switch layouts and return
+Backspace and repeat,Typing,must,yes,no,Word deletion and long hold
+Enter/editor actions,Typing,must,yes,no,Respect EditorInfo action
+Suggestion strip separate layer,Prediction,must,yes,no,Fix visibility positioning and gaps
+Offline English suggestions,Prediction,must,yes,no,Audit dictionary license and lookup
+Autocorrection and revert,Prediction,should,yes,no,Must avoid destructive correction
+Clipboard toolbar,Toolbar,must,yes,no,Platform policy and current-field paste
+Text editor toolbar,Toolbar,must,yes,no,Cursor select cut copy paste
+Expandable toolbar menu,Toolbar,must,yes,no,No overlapping keyboard rows
+Emoji picker and recents,Emoji,should,yes,no,Search and category navigation
+GIF/sticker sharing,Media,could,yes,no,Only supported content commit APIs
+Settings persistence,Settings,must,yes,no,Preferences survive process restart
+Theme selection,Appearance,should,yes,no,Original Craze identity and contrast
+Key height/spacing controls,Appearance,must,yes,no,Prevent excess gaps and clipping
+Number row and long-press symbols,Typing,should,yes,no,Configurable
+Bengali and English,Languages,should,yes,no,Test Unicode and layouts
+IME language/system switch,Languages,must,yes,no,Use Android subtype APIs
+One-handed/compact mode,Appearance,should,yes,no,Responsive alignment
+Portrait and landscape,Layout,must,yes,no,Toolbar and keys remain visible
+Password privacy behavior,Privacy,must,yes,no,Never learn or persist sensitive input
+Offline-first operation,Privacy,must,yes,no,No network requirement for core typing
+Voice input,Input modes,could,yes,no,Optional Android speech recognizer with consent
+Glide typing,Input modes,should,yes,no,Requires suitable licensed decoder/model
+Handwriting,Input modes,could,yes,no,Decoder/model and script support required
+Multilingual prediction,Prediction,could,yes,no,Incremental language-aware engine
+Translation,Connected tools,could,yes,no,Optional external service; not core/offline
+Performance and memory,Quality,must,yes,no,Fast show and low idle memory
+Accessibility and touch targets,Quality,must,yes,no,TalkBack labels and scalable layout
+Build and install verification,Quality,must,yes,no,CI plus actual Android device
