@@ -1,28 +1,30 @@
 # CrazeKeyboard
 
-CrazeKeyboard is an independent Android keyboard project by CrazeStudio.
+CrazeKeyboard is an independent, offline-first Android keyboard project by CrazeStudio.
 
-## Project goals
+## Current build
 
-- Reliable offline-first typing
-- Responsive QWERTY, number, and symbol layouts
-- A separate suggestion strip and functional toolbar
-- Clipboard and text-editing tools
-- Local dictionary-backed suggestions
-- Customizable themes, key sizing, and spacing
-- English and Bengali typing support
-- Privacy-safe handling of password and sensitive fields
+The first clean-room implementation provides:
+- An Android settings/launcher screen with keyboard setup shortcuts
+- A working custom QWERTY input method with letters, shift, backspace, space, enter, and a symbols layer
+- Local-only typing; no network permission or cloud dependency
+- Password-field safeguards that disable suggestions (suggestions are not implemented yet)
 
-Gboard is used only as a public product reference for feature expectations. CrazeKeyboard is independent and is not affiliated with Google.
+## Build
 
-## Status
+Open this repository in Android Studio with Android SDK 35 and JDK 17. Sync the Gradle project and run the `app` configuration. The GitHub Actions workflow runs `assembleDebug`.
 
-The repository has been reset to a minimal baseline. Android application source, build configuration, tests, and development instructions will be added in subsequent implementation steps.
+## Install and enable
+
+1. Install the debug APK on an Android device.
+2. Open CrazeKeyboard and tap **Enable keyboard**.
+3. Select **CrazeKeyboard** in Android's input-method settings.
+4. Tap **Choose keyboard** and select it as the current input method.
 
 ## Privacy
 
-Core typing should work offline. Sensitive text must not be logged or learned. Optional network-connected features must be disclosed and opt-in.
+The app requests no Internet permission. Text is sent only to the focused editor through Android's `InputConnection`. This initial build does not include cloud sync, telemetry, or online suggestions.
 
-## License and attribution
+## Project direction
 
-License and attribution details for new code and dependencies will be documented before redistribution.
+The implementation will grow screen-by-screen from the feature plan in `replica/recon.md`. CrazeKeyboard is independent and is not affiliated with Google or Gboard.

@@ -1,0 +1,16 @@
+id,feature,priority,clone,status,note
+F01,Native Android IME service,must,yes,implemented,InputMethodService registered in manifest
+F02,Enable and choose keyboard flow,must,yes,implemented,Android system settings and IME picker shortcuts
+F03,QWERTY letters,must,yes,implemented,Custom view inserts characters through InputConnection
+F04,Shift and case toggle,must,yes,implemented,Initial uppercase then lower after typing
+F05,Backspace,must,yes,implemented,Deletes preceding text
+F06,Space and enter/editor action,must,yes,implemented,Uses editor action when available
+F07,Numbers and symbols layer,must,partial,implemented,Initial common symbol layer; more punctuation to follow
+F08,Offline-first core,must,yes,implemented,No Internet permission or cloud service
+F09,Password field suggestion suppression,must,partial,implemented,No suggestions exist yet; password state tracked
+F10,Separate suggestion strip,must,no,planned,Next milestone
+F11,Clipboard toolbar,should,no,planned,Next milestone after typing stability
+F12,Text editing toolbar,should,no,planned,Select/copy/cut/paste actions
+F13,Local dictionary predictions,should,no,planned,Dictionary and word-learning controls
+F14,Theme and sizing preferences,should,no,planned,Settings UI expansion
+F15,Bengali layout,should,no,planned,Locale-specific layout and dictionary
