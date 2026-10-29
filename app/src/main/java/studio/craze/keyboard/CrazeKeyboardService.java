@@ -9,6 +9,7 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.inputmethodservice.InputMethodService;
 import android.view.MotionEvent;
 import android.view.View;
@@ -247,16 +248,26 @@ public class CrazeKeyboardService extends InputMethodService {
         private void drawToolbar(Canvas c) {
             String[] items = editTools
                     ? new String[]{"Select all","Copy","Cut","Paste","Done"}
-                    : new String[]{"▤","✎","☺","⚙"};
+                    : new String[]{"clipboard","edit","emoji","settings"};
+            int[] iconIds = new int[]{R.drawable.ic_clipboard, R.drawable.ic_edit, R.drawable.ic_emoji, R.drawable.ic_settings};
             float cell = getWidth() / (float) items.length;
             for (int i = 0; i < items.length; i++) {
                 p.setColor(i == 0 ? actionColor : background);
                 c.drawRoundRect(new RectF(i * cell + dp(3), dp(3), (i + 1) * cell - dp(3), toolbarHeight - dp(3)), dp(9), dp(9), p);
-                p.setColor(i == 0 ? ink : muted);
-                p.setTextAlign(Paint.Align.CENTER);
-                p.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-                p.setTextSize(items[i].length() > 2 ? dp(11) : dp(19));
-                c.drawText(items[i], i * cell + cell / 2, toolbarHeight / 2 - (p.ascent() + p.descent()) / 2, p);
+                if (!editTools) {
+                    Drawable icon = getResources().getDrawable(iconIds[i], getContext().getTheme());
+                    int size = dp(22);
+                    int left = (int)(i * cell + (cell - size) / 2);
+                    int top = (int)((toolbarHeight - size) / 2);
+                    icon.setBounds(left, top, left + size, top + size);
+                    icon.draw(c);
+                } else {
+                    p.setColor(i == 0 ? ink : muted);
+                    p.setTextAlign(Paint.Align.CENTER);
+                    p.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+                    p.setTextSize(dp(11));
+                    c.drawText(items[i], i * cell + cell / 2, toolbarHeight / 2 - (p.ascent() + p.descent()) / 2, p);
+                }
             }
         }
 
