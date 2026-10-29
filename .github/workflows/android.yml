@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: android-ci-${{ github.ref }}
@@ -19,18 +19,38 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Extract uploaded project archive
+        if: hashFiles('CrazeKeyboard-V2-ready.zip') != ''
+        run: |
+          unzip -q CrazeKeyboard-V2-ready.zip
+          cp -a craze-keyboard-build/. .
+          rm -rf craze-keyboard-build CrazeKeyboard-V2-ready.zip
+          git add -A
+          if ! git diff --cached --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "Extract CrazeKeyboard project from uploaded archive"
+            git push
+          fi
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
           cache: gradle
+
       - name: Run fast dictionary tests
         run: sh run-core-tests.sh
+
       - name: Build debug APK
         uses: gradle/gradle-build-action@v3
         with:
           gradle-version: '8.9'
           arguments: --no-daemon assembleDebug
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
