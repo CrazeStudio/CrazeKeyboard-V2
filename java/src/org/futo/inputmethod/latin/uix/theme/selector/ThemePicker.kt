@@ -116,7 +116,7 @@ fun ThemePreview(colors: KeyboardColorScheme, name: String, loading: Boolean, is
     val spacebarColor = colors.keyboardContainer
     val actionColor = colors.primary
 
-    val keyboardShape = RoundedCornerShape(8.dp)
+    val keyboardShape = RoundedCornerShape(16.dp)
 
     val previewModifier = if(LocalInspectionMode.current) {
         modifier.width(172.dp)
@@ -126,8 +126,8 @@ fun ThemePreview(colors: KeyboardColorScheme, name: String, loading: Boolean, is
 
     Box(
         modifier = previewModifier
-            .padding(12.dp)
-            .height(128.dp)
+            .padding(8.dp)
+            .height(142.dp)
             .border(borderWidth, borderColor, keyboardShape)
             .combinedClickable(
                 onClick = onClick,
@@ -338,6 +338,12 @@ fun ThemePicker(onDeleteCustomTheme: (String) -> Unit, onCustomTheme: () -> Unit
             }
         }
     }
+    val crazeStudioOptions = availableThemeOptions.filter {
+        it.first == "CrazeNight" || it.first == "CrazeDay"
+    }
+    val otherThemeOptions = availableThemeOptions.filterNot {
+        it.first == "CrazeNight" || it.first == "CrazeDay"
+    }
 
     val originalDirection = LocalLayoutDirection.current
 
@@ -396,8 +402,24 @@ fun ThemePicker(onDeleteCustomTheme: (String) -> Unit, onCustomTheme: () -> Unit
                     }
                 }
 
-                items(availableThemeOptions.size) {
-                    val themeOption = availableThemeOptions[it].second
+                item(span = { GridItemSpan(maxCurrentLineSpan) }) {
+                    ScreenTitle(stringResource(R.string.craze_theme_picker_originals))
+                }
+                items(crazeStudioOptions.size) {
+                    val themeOption = crazeStudioOptions[it].second
+
+                    ThemePreview(themeOption, isSelected = themeOption.key == currentTheme) {
+                        lifecycle.lifecycleScope.launch {
+                            context.setSetting(THEME_KEY, themeOption.key)
+                        }
+                    }
+                }
+
+                item(span = { GridItemSpan(maxCurrentLineSpan) }) {
+                    ScreenTitle(stringResource(R.string.craze_theme_picker_more))
+                }
+                items(otherThemeOptions.size) {
+                    val themeOption = otherThemeOptions[it].second
 
                     ThemePreview(themeOption, isSelected = themeOption.key == currentTheme) {
                         lifecycle.lifecycleScope.launch {

@@ -30,6 +30,12 @@ Use JDK 17 or newer and install Android SDK Platform 35, then open the repositor
 
 A signed release build requires a local `keystore.properties` file and a signing key. Do not commit private signing credentials. The wrapper and all imported source assets are already present in this repository snapshot; no recursive submodule checkout is needed.
 
+## Exporting APKs
+
+The **Build and export APKs** GitHub Actions workflow runs when changes are pushed to `main`, or can be started manually from the repository’s **Actions** tab. Each successful run builds stable and unstable debug APKs and uploads them as a downloadable artifact for 14 days. Download the `CrazeKeyboard-APKs` artifact from the workflow run page.
+
+These are debug-signed test builds, not release-signed distribution packages. The stable flavor uses the upstream application ID; the unstable flavor adds `.unstable` and can be installed alongside the stable app.
+
 ## FUTO project information
 
 - Official upstream: <https://github.com/futo-org/android-keyboard>

@@ -17,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SmallFloatingActionButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -26,6 +27,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalTextInputService
 import androidx.compose.ui.res.stringResource
@@ -205,6 +207,27 @@ fun ThemeScreen(navController: NavHostController = rememberNavController()) {
     ) { innerPadding ->
         Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             ScreenTitle(stringResource(R.string.theme_settings_title), showBack = true, navController)
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 2.dp),
+                shape = RoundedCornerShape(22.dp),
+                color = MaterialTheme.colorScheme.primaryContainer
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp)) {
+                    Text(
+                        stringResource(R.string.craze_theme_picker_originals),
+                        style = Typography.Body.Medium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Text(
+                        stringResource(R.string.craze_theme_picker_subtitle),
+                        style = Typography.Small,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.84f),
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
             ThemePicker({
                 navController.navigate(Route.DeleteTheme(it))
             }, {

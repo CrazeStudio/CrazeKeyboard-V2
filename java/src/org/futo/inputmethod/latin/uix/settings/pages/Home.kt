@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -191,20 +192,24 @@ fun HomeScreen(navController: NavHostController = rememberNavController()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 20.dp, end = 12.dp, top = 8.dp, bottom = 16.dp),
+                    .padding(start = 20.dp, end = 12.dp, top = 14.dp, bottom = 18.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
                     modifier = Modifier
-                        .size(52.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer),
+                        .size(54.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(
+                            Brush.linearGradient(
+                                listOf(Color(0xFF8068FF), Color(0xFF3CCFC5))
+                            )
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     Image(
                         painter = painterResource(R.drawable.ic_launcher_foreground),
                         contentDescription = stringResource(R.string.english_ime_name),
-                        modifier = Modifier.size(42.dp)
+                        modifier = Modifier.size(46.dp)
                     )
                 }
                 Spacer(Modifier.width(14.dp))
@@ -216,7 +221,12 @@ fun HomeScreen(navController: NavHostController = rememberNavController()) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                IconButton(onClick = { navController.navigate("search") }) {
+                IconButton(
+                    onClick = { navController.navigate("search") },
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(15.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                ) {
                     Icon(
                         Icons.Default.Search,
                         contentDescription = stringResource(R.string.settings_search_menu_title)
@@ -232,8 +242,8 @@ fun HomeScreen(navController: NavHostController = rememberNavController()) {
                 onClick = { navController.navigate("themes") },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 6.dp),
-                shape = RoundedCornerShape(26.dp),
+                    .padding(horizontal = 18.dp, vertical = 7.dp),
+                shape = RoundedCornerShape(30.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.Transparent)
             ) {
                 Column(
@@ -241,17 +251,37 @@ fun HomeScreen(navController: NavHostController = rememberNavController()) {
                         .fillMaxWidth()
                         .background(
                             Brush.linearGradient(
-                                listOf(Color(0xFF5141C9), Color(0xFF7050D8), Color(0xFF3169C7))
+                                listOf(Color(0xFF171629), Color(0xFF382C87), Color(0xFF283C83))
                             )
                         )
-                        .padding(20.dp)
+                        .padding(22.dp)
                 ) {
-                    Text(
-                        "CRAZESTUDIO  /  KEYBOARD",
-                        style = Typography.Small,
-                        color = Color.White.copy(alpha = 0.82f)
-                    )
-                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            modifier = Modifier.size(9.dp),
+                            shape = CircleShape,
+                            color = Color(0xFFB9F45A)
+                        ) { }
+                        Spacer(Modifier.width(9.dp))
+                        Text(
+                            stringResource(R.string.craze_dashboard_eyebrow),
+                            style = Typography.Small,
+                            color = Color.White.copy(alpha = 0.84f)
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = Color.White.copy(alpha = 0.12f)
+                        ) {
+                            Text(
+                                stringResource(R.string.craze_dashboard_version_label),
+                                style = Typography.Small,
+                                color = Color(0xFFB9F45A),
+                                modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp)
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
                     Text(
                         stringResource(R.string.craze_dashboard_hero_title),
                         style = Typography.Heading.Medium,
@@ -260,17 +290,29 @@ fun HomeScreen(navController: NavHostController = rememberNavController()) {
                     Text(
                         stringResource(R.string.craze_dashboard_hero_subtitle),
                         style = Typography.Body.Regular,
-                        color = Color.White.copy(alpha = 0.9f)
+                        color = Color(0xFFE1E4FF),
+                        modifier = Modifier.padding(top = 4.dp)
                     )
-                    Spacer(Modifier.height(18.dp))
+                    Row(
+                        modifier = Modifier.padding(top = 17.dp, bottom = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            stringResource(R.string.craze_dashboard_explore_themes),
+                            style = Typography.Body.Medium,
+                            color = Color(0xFFB9F45A)
+                        )
+                        Spacer(Modifier.width(7.dp))
+                        Icon(Icons.Default.ArrowForward, contentDescription = null, tint = Color(0xFFB9F45A), modifier = Modifier.size(18.dp))
+                    }
                     CrazeKeyboardPreview()
                 }
             }
 
             Text(
                 stringResource(R.string.craze_dashboard_customize_title),
-                style = Typography.Body.Medium,
-                modifier = Modifier.padding(start = 20.dp, top = 18.dp, bottom = 8.dp)
+                style = Typography.Heading.RegularMl,
+                modifier = Modifier.padding(start = 20.dp, top = 21.dp, bottom = 9.dp)
             )
             Column(
                 modifier = Modifier
@@ -371,23 +413,31 @@ private fun CrazeQuickAction(
     Card(
         onClick = onClick,
         modifier = modifier,
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(23.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(17.dp)
         ) {
-            Icon(
-                painter = painterResource(iconRes),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(Modifier.height(12.dp))
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.size(42.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        painter = painterResource(iconRes),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.height(13.dp))
             Text(stringResource(titleRes), style = Typography.Body.Medium)
             Text(
                 stringResource(subtitleRes),
@@ -400,19 +450,19 @@ private fun CrazeQuickAction(
 
 @Composable
 private fun CrazeKeyboardPreview() {
-    val keyColor = Color.White.copy(alpha = 0.18f)
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    val keyColor = Color.White.copy(alpha = 0.12f)
+    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             listOf("Q", "W", "E", "R", "T", "Y").forEach { letter ->
                 Surface(
                     modifier = Modifier
                         .weight(1f)
-                        .height(30.dp),
-                    shape = RoundedCornerShape(8.dp),
+                        .height(32.dp),
+                    shape = RoundedCornerShape(10.dp),
                     color = keyColor
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Text(letter, color = Color.White, style = Typography.Small)
+                        Text(letter, color = Color(0xFFE7E4FF), style = Typography.Small)
                     }
                 }
             }
@@ -421,22 +471,22 @@ private fun CrazeKeyboardPreview() {
             Surface(
                 modifier = Modifier
                     .weight(1f)
-                    .height(30.dp),
-                shape = RoundedCornerShape(8.dp),
+                    .height(32.dp),
+                shape = RoundedCornerShape(10.dp),
                 color = keyColor
             ) { }
             Surface(
                 modifier = Modifier
                     .weight(4f)
-                    .height(30.dp),
-                shape = RoundedCornerShape(8.dp),
-                color = keyColor
+                    .height(32.dp),
+                shape = RoundedCornerShape(10.dp),
+                color = Color(0xFFB9F45A)
             ) { }
             Surface(
                 modifier = Modifier
                     .weight(1f)
-                    .height(30.dp),
-                shape = RoundedCornerShape(8.dp),
+                    .height(32.dp),
+                shape = RoundedCornerShape(10.dp),
                 color = keyColor
             ) { }
         }

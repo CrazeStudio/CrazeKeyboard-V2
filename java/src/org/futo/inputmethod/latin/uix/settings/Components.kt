@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
@@ -109,38 +110,54 @@ import kotlin.math.pow
 
 @Composable
 fun ScreenTitle(title: String, showBack: Boolean = false, navController: NavHostController? = LocalNavController.current ?: rememberNavController()) {
-    val rowModifier = if(showBack) {
-        Modifier
+    Row(
+        modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClickLabel = "Navigate back") {
-                navController!!.navigateUp()
+            .padding(start = 16.dp, end = 20.dp, top = 8.dp, bottom = 10.dp),
+        verticalAlignment = CenterVertically
+    ) {
+        if (showBack) {
+            IconButton(
+                onClick = { navController!!.navigateUp() },
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            ) {
+                Icon(
+                    Icons.Default.ArrowBack,
+                    contentDescription = "Navigate back",
+                    tint = MaterialTheme.colorScheme.primary
+                )
             }
-    } else {
-        Modifier.fillMaxWidth()
-    }
-    Row(modifier = rowModifier) {
-        Spacer(modifier = Modifier.width(16.dp))
-
-        if(showBack) {
-            Icon(Icons.Default.ArrowBack, contentDescription = null, modifier = Modifier.align(CenterVertically))
-            Spacer(modifier = Modifier.width(18.dp))
+            Spacer(modifier = Modifier.width(14.dp))
         }
-        Text(title, style = Typography.Heading.Medium, modifier = Modifier
-            .align(CenterVertically)
-            .padding(0.dp, 16.dp))
+        Text(
+            title,
+            style = Typography.Heading.Medium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 
 @Composable
 fun ScreenTitleWithIcon(title: String, painter: Painter) {
-    Row(modifier = Modifier.fillMaxWidth()) {
-        Spacer(modifier = Modifier.width(16.dp))
-
-        Icon(painter, contentDescription = null, modifier = Modifier.align(CenterVertically))
-        Spacer(modifier = Modifier.width(18.dp))
-        Text(title, style = Typography.Heading.Medium, modifier = Modifier
-            .align(CenterVertically)
-            .padding(0.dp, 16.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 10.dp),
+        verticalAlignment = CenterVertically
+    ) {
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.primaryContainer,
+            modifier = Modifier.size(40.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(painter, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            }
+        }
+        Spacer(modifier = Modifier.width(14.dp))
+        Text(title, style = Typography.Heading.Medium, color = MaterialTheme.colorScheme.onSurface)
     }
 }
 
@@ -670,11 +687,24 @@ enum class NavigationItemStyle {
 
 @Composable
 fun NavigationItem(title: String, style: NavigationItemStyle, navigate: () -> Unit, icon: Painter? = null, subtitle: String? = null, compact: Boolean = false) {
+    val isHomeStyle = style == NavigationItemStyle.HomePrimary ||
+        style == NavigationItemStyle.HomeSecondary ||
+        style == NavigationItemStyle.HomeTertiary
+    val itemShape = RoundedCornerShape(18.dp)
     SettingItem(
         title = title,
         subtitle = subtitle,
         onClick = navigate,
         compact = compact,
+        modifier = if (isHomeStyle) {
+            Modifier
+                .padding(horizontal = 14.dp, vertical = 4.dp)
+                .clip(itemShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f), itemShape)
+        } else {
+            Modifier
+        },
         icon = {
             icon?.let {
                 val circleColor = when(style) {
@@ -700,7 +730,12 @@ fun NavigationItem(title: String, style: NavigationItemStyle, navigate: () -> Un
                 }
 
                 Canvas(modifier = Modifier.size(48.dp)) {
-                    drawCircle(circleColor, this.size.maxDimension / 2.4f)
+                    drawRoundRect(
+                        color = circleColor,
+                        topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.08f, size.height * 0.08f),
+                        size = androidx.compose.ui.geometry.Size(size.width * 0.84f, size.height * 0.84f),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.width * 0.26f)
+                    )
                     translate(
                         left = this.size.width / 2.0f - icon.intrinsicSize.width / 2.0f,
                         top = this.size.height / 2.0f - icon.intrinsicSize.height / 2.0f

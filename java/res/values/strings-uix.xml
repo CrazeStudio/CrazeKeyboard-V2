@@ -506,6 +506,9 @@
 
     <!-- misc titles -->
     <string name="settings_keyboard_typing_title">Keyboard &amp; Typing</string>
+    <string name="craze_dashboard_eyebrow">CRAZESTUDIO  /  YOUR KEYBOARD</string>
+    <string name="craze_dashboard_version_label">BUILT FOR YOU</string>
+    <string name="craze_dashboard_explore_themes">Explore your style</string>
     <string name="craze_dashboard_tagline">A keyboard that feels like yours</string>
     <string name="craze_dashboard_hero_title">Make it yours</string>
     <string name="craze_dashboard_hero_subtitle">Choose a look, tune the feel, and make every key fit your style.</string>
@@ -519,6 +522,9 @@
     <string name="craze_dashboard_languages_title">Languages</string>
     <string name="craze_dashboard_languages_subtitle">Choose your layouts</string>
     <string name="craze_modified_notice">Modified by CrazeStudio from FUTO Keyboard. FUTO license and payment features are retained.</string>
+    <string name="craze_theme_picker_subtitle">Set the mood for every message. Choose a CrazeStudio original or build your own look.</string>
+    <string name="craze_theme_picker_originals">CrazeStudio originals</string>
+    <string name="craze_theme_picker_more">Explore more themes</string>
 
     <!-- Theme, as in visual style -->
     <string name="theme_settings_title">Theme</string>
