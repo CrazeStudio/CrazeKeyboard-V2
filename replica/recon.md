@@ -1,6 +1,17 @@
 # CrazeKeyboard clean-room recon
 
-Reference product: FUTO Keyboard, researched through public product pages, settings documentation, and feature documentation. This is an independent implementation of common keyboard behaviours and settings patterns. It does not reuse FUTO code, logos, icons, fonts, illustrations, or product copy.
+Reference product: FUTO Keyboard, researched through its public product pages and settings/action documentation. This is an independent implementation of common keyboard behaviours and settings patterns. It does not reuse FUTO code, logos, icons, fonts, illustrations, or product copy.
+
+## Public sources
+| Source | What was used |
+| --- | --- |
+| https://keyboard.futo.tech/ | Public product positioning and feature overview |
+| https://docs.keyboard.futo.tech/settings | Public settings information architecture |
+| https://docs.keyboard.futo.tech/settings/languagesmodels | Language/layout selection behaviours |
+| https://docs.keyboard.futo.tech/actions/supportedactions | Public toolbar/action categories |
+| https://keyboard.futo.tech/privacy | Privacy/offline claims to consider in product UX |
+
+Research is limited to public documentation; no private account, app binary, private API, or source code was inspected.
 
 ## Reference UX observations
 - Privacy-first positioning and offline operation are prominent.
@@ -26,7 +37,7 @@ Reference product: FUTO Keyboard, researched through public product pages, setti
 - S14 Theme: dark mode and key borders.
 - S15 Help & Feedback: privacy notes and known limitations.
 - S16 Developer Settings: build/network info.
-- S17 Editor variants: password/numeric fields suppress suggestions; runtime matrix testing pending.
+- S17 Editor variants: password/numeric fields suppress suggestions; runtime matrix testing pending.\n- S18 Vector icon system: original SVG source assets with native Android VectorDrawable runtime assets for settings categories and toolbar.
 
 ## Core flow
 Install -> open CrazeKeyboard -> enable input method -> choose keyboard -> type into an editor -> switch symbols/language -> use toolbar -> change preferences -> return to typing.

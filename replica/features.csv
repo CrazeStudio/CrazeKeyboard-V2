@@ -24,3 +24,4 @@ F22,Personal dictionary screen,should,no,planned,UI explains feature is not avai
 F23,Theme settings screen,should,partial,implemented,Dark mode and key borders toggle
 F24,Help & feedback screen,should,partial,implemented,Privacy and known limitations
 F25,Developer settings screen,could,partial,implemented,Build/network information only
+F26,Original SVG icon system and native vector assets,should,yes,implemented,13 original SVG sources mirrored as Android VectorDrawable XML and used in settings and keyboard toolbar
