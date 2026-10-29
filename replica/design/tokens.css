@@ -1,0 +1,19 @@
+:root {
+  --color-bg: #F7F7FA;
+  --color-surface: #FFFFFF;
+  --color-border: #E4E3E9;
+  --color-border-input: #777582;
+  --color-text: #1F1F25;
+  --color-text-muted: #656571;
+  --color-accent: #6852A8;
+  --color-on-accent: #FFFFFF;
+  --color-danger: #B3261E;
+  --color-success: #236A45;
+  --color-keyboard: #F5F5F9;
+  --color-key: #FFFFFF;
+  --color-key-action: #E1DCEF;
+  --font-sans: Roboto, system-ui, sans-serif;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-12: 48px;
+  --radius-sm: 8px; --radius-md: 13px; --radius-lg: 17px; --radius-pill: 999px;
+}

@@ -5,14 +5,22 @@ F03,QWERTY letters,must,yes,implemented,Custom view inserts text through InputCo
 F04,Shift and case toggle,must,yes,implemented,Shift state toggles; returns to lowercase after typing
 F05,Backspace,must,yes,implemented,Deletes selected text or preceding Unicode code point
 F06,Space and enter/editor action,must,yes,implemented,Editor actions supported
-F07,Numbers and symbols layer,must,partial,implemented,Common symbols and digits; expanded punctuation planned
+F07,Numbers and symbols layer,must,partial,implemented,Common symbols and punctuation; extended layers planned
 F08,Offline-first core,must,yes,implemented,Manifest has no Internet permission
 F09,Password field suggestion suppression,must,yes,implemented,Prediction strip hidden for password fields
-F10,Separate suggestion strip,must,partial,implemented,Offline small built-in word list; not a full dictionary
-F11,Clipboard toolbar,should,partial,implemented,Clipboard paste and copy/cut selected text
-F12,Text editing toolbar,should,partial,implemented,Select all, copy, cut, paste; selection depends on editor support
-F13,Local dictionary predictions,should,partial,implemented,Small bundled heuristic word list; full dictionary/learning not included
-F14,Theme and sizing preferences,should,partial,implemented,Dark/light keyboard theme and adjustable height
-F15,Bengali layout,should,partial,implemented,Direct Bengali character layout with language switch; no phonetic transliteration
-F16,Emoji picker,could,partial,implemented,Emoji key inserts one emoji; full picker planned
-F17,Landscape and dynamic sizing,must,partial,implemented,Custom view measures to available bounds; device matrix testing pending
+F10,Separate suggestion strip,must,partial,implemented,Small built-in English list; toggle in settings
+F11,Clipboard toolbar,should,partial,implemented,Paste and selected text copy/cut
+F12,Text editing toolbar,should,partial,implemented,Select-all/copy/cut/paste actions
+F13,Local dictionary predictions,should,partial,implemented,Static word list; no autocorrection or learning
+F14,Theme and sizing preferences,should,partial,implemented,Light/dark, height, border preference UI
+F15,Bengali layout,should,partial,implemented,Direct character layout, no phonetic transliteration
+F16,Emoji picker,could,partial,implemented,Single emoji insertion only; full picker planned
+F17,Settings home and search,must,yes,implemented,Searchable FUTO-inspired settings categories
+F18,Languages & models screen,should,partial,implemented,English/Bengali selection and model status
+F19,Keyboard & typing screen,should,partial,implemented,Height and key border settings; haptics UI is not wired
+F20,Text prediction screen,should,partial,implemented,Local suggestion toggle and capability disclosure
+F21,Voice input screen,should,no,planned,Offline voice model not bundled
+F22,Personal dictionary screen,should,no,planned,UI explains feature is not available yet
+F23,Theme settings screen,should,partial,implemented,Dark mode and key borders toggle
+F24,Help & feedback screen,should,partial,implemented,Privacy and known limitations
+F25,Developer settings screen,could,partial,implemented,Build/network information only

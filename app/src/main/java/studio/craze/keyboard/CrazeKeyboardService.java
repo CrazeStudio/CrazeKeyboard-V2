@@ -83,11 +83,11 @@ public class CrazeKeyboardService extends InputMethodService {
 
     private final class KeyboardView extends View {
         private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private int background = Color.rgb(239, 237, 244);
-        private int keyColor = Color.WHITE;
-        private int actionColor = Color.rgb(218, 211, 232);
-        private int ink = Color.rgb(39, 36, 47);
-        private int muted = Color.rgb(104, 99, 114);
+        private int background = Color.rgb(245, 245, 249);
+        private int keyColor = Color.rgb(255, 255, 255);
+        private int actionColor = Color.rgb(225, 220, 239);
+        private int ink = Color.rgb(33, 33, 39);
+        private int muted = Color.rgb(104, 103, 115);
         private boolean shifted = true;
         private boolean symbols;
         private boolean password;
@@ -120,11 +120,11 @@ public class CrazeKeyboardService extends InputMethodService {
                 ink = Color.rgb(248, 246, 252);
                 muted = Color.rgb(199, 193, 209);
             } else {
-                background = Color.rgb(239, 237, 244);
-                keyColor = Color.WHITE;
-                actionColor = Color.rgb(218, 211, 232);
-                ink = Color.rgb(39, 36, 47);
-                muted = Color.rgb(104, 99, 114);
+                background = Color.rgb(245, 245, 249);
+                keyColor = Color.rgb(255, 255, 255);
+                actionColor = Color.rgb(225, 220, 239);
+                ink = Color.rgb(33, 33, 39);
+                muted = Color.rgb(104, 103, 115);
             }
         }
 
@@ -170,7 +170,7 @@ public class CrazeKeyboardService extends InputMethodService {
 
         private void refreshSuggestions() {
             suggestions.clear();
-            if (password || numeric || symbols || "bn".equals(getSharedPreferences("crazekeyboard", MODE_PRIVATE).getString("language", "en"))) return;
+            if (password || numeric || symbols || !getSharedPreferences("crazekeyboard", MODE_PRIVATE).getBoolean("suggestions", true) || "bn".equals(getSharedPreferences("crazekeyboard", MODE_PRIVATE).getString("language", "en"))) return;
             InputConnection ic = connection();
             if (ic == null) return;
             CharSequence before = ic.getTextBeforeCursor(80, 0);
