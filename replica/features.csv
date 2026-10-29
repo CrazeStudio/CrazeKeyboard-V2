@@ -1,16 +1,18 @@
 id,feature,priority,clone,status,note
 F01,Native Android IME service,must,yes,implemented,InputMethodService registered in manifest
 F02,Enable and choose keyboard flow,must,yes,implemented,Android system settings and IME picker shortcuts
-F03,QWERTY letters,must,yes,implemented,Custom view inserts characters through InputConnection
-F04,Shift and case toggle,must,yes,implemented,Initial uppercase then lower after typing
-F05,Backspace,must,yes,implemented,Deletes preceding text
-F06,Space and enter/editor action,must,yes,implemented,Uses editor action when available
-F07,Numbers and symbols layer,must,partial,implemented,Initial common symbol layer; more punctuation to follow
-F08,Offline-first core,must,yes,implemented,No Internet permission or cloud service
-F09,Password field suggestion suppression,must,partial,implemented,No suggestions exist yet; password state tracked
-F10,Separate suggestion strip,must,no,planned,Next milestone
-F11,Clipboard toolbar,should,no,planned,Next milestone after typing stability
-F12,Text editing toolbar,should,no,planned,Select/copy/cut/paste actions
-F13,Local dictionary predictions,should,no,planned,Dictionary and word-learning controls
-F14,Theme and sizing preferences,should,no,planned,Settings UI expansion
-F15,Bengali layout,should,no,planned,Locale-specific layout and dictionary
+F03,QWERTY letters,must,yes,implemented,Custom view inserts text through InputConnection
+F04,Shift and case toggle,must,yes,implemented,Shift state toggles; returns to lowercase after typing
+F05,Backspace,must,yes,implemented,Deletes selected text or preceding Unicode code point
+F06,Space and enter/editor action,must,yes,implemented,Editor actions supported
+F07,Numbers and symbols layer,must,partial,implemented,Common symbols and digits; expanded punctuation planned
+F08,Offline-first core,must,yes,implemented,Manifest has no Internet permission
+F09,Password field suggestion suppression,must,yes,implemented,Prediction strip hidden for password fields
+F10,Separate suggestion strip,must,partial,implemented,Offline small built-in word list; not a full dictionary
+F11,Clipboard toolbar,should,partial,implemented,Clipboard paste and copy/cut selected text
+F12,Text editing toolbar,should,partial,implemented,Select all, copy, cut, paste; selection depends on editor support
+F13,Local dictionary predictions,should,partial,implemented,Small bundled heuristic word list; full dictionary/learning not included
+F14,Theme and sizing preferences,should,no,planned,Settings expansion
+F15,Bengali layout,should,no,planned,Bengali layout and dictionary not yet implemented
+F16,Emoji picker,could,partial,implemented,Toolbar/key inserts a default emoji; full picker planned
+F17,Landscape and dynamic sizing,must,partial,implemented,Custom view measures to available bounds; device matrix testing pending
