@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- CrazeStudio-branded modified version; see the root README for FUTO attribution and license notice. -->
-    <string name="english_ime_name">CrazeKeyboard</string>
-
-    <string name="spell_checker_service_name">CrazeKeyboard Spell Checker</string>
-    <string name="english_ime_settings">CrazeKeyboard Settings</string>
-    <string name="android_spell_checker_settings">CrazeKeyboard Spell Checker Settings</string>
-</resources>
