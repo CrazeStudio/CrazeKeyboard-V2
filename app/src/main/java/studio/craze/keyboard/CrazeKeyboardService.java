@@ -32,11 +32,12 @@ public class CrazeKeyboardService extends InputMethodService {
         if (keyboard != null) {
             int inputClass = info == null ? 0 : info.inputType & 0x0f;
             int variation = info == null ? 0 : info.inputType & 0xff0;
-            boolean password = inputClass == 2 && (variation == 0x10 || variation == 0x80)
-                    || inputClass == 1 && (variation == 0x80 || variation == 0x90)
-                    || inputClass == 2 && variation == 0x80;
+            boolean password = inputClass == 2 && variation == 0x10
+                    || inputClass == 1 && (variation == 0x80 || variation == 0x90 || variation == 0xe0);
             keyboard.setPasswordField(password);
             keyboard.setNumericMode(inputClass == 2 || inputClass == 3);
+            keyboard.requestLayout();
+            keyboard.invalidate();
         }
     }
 
@@ -73,7 +74,7 @@ public class CrazeKeyboardService extends InputMethodService {
         EditorInfo info = getCurrentInputEditorInfo();
         int action = info == null ? EditorInfo.IME_ACTION_NONE : info.imeOptions & EditorInfo.IME_MASK_ACTION;
         if (action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED
-                && action != EditorInfo.IME_ACTION_NONE) {
+                ) {
             ic.performEditorAction(action);
         } else {
             ic.commitText("\n", 1);
