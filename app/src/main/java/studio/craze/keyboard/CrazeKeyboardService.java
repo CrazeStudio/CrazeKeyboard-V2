@@ -137,12 +137,22 @@ public class CrazeKeyboardService extends InputMethodService {
                     {"ABC",",","?123","space",".","↵"}
                 };
             } else {
-                rows = new String[][] {
-                    shifted ? new String[]{"Q","W","E","R","T","Y","U","I","O","P"} : new String[]{"q","w","e","r","t","y","u","i","o","p"},
-                    shifted ? new String[]{"A","S","D","F","G","H","J","K","L"} : new String[]{"a","s","d","f","g","h","j","k","l"},
-                    {"⇧", shifted?"Z":"z",shifted?"X":"x",shifted?"C":"c",shifted?"V":"v",shifted?"B":"b",shifted?"N":"n",shifted?"M":"m","⌫"},
-                    {"?123",",","☺","space",".","↵"}
-                };
+                String language = getSharedPreferences("crazekeyboard", MODE_PRIVATE).getString("language", "en");
+                if ("bn".equals(language)) {
+                    rows = new String[][] {
+                        {"অ","আ","ই","ঈ","উ","ঊ","এ","ঐ","ও","ঔ"},
+                        {"ক","খ","গ","ঘ","ঙ","চ","ছ","জ","ঝ"},
+                        {"⇧","ট","ঠ","ড","ঢ","ণ","ত","থ","দ","⌫"},
+                        {"?123","ম","☺","space","।","↵"}
+                    };
+                } else {
+                    rows = new String[][] {
+                        shifted ? new String[]{"Q","W","E","R","T","Y","U","I","O","P"} : new String[]{"q","w","e","r","t","y","u","i","o","p"},
+                        shifted ? new String[]{"A","S","D","F","G","H","J","K","L"} : new String[]{"a","s","d","f","g","h","j","k","l"},
+                        {"⇧", shifted?"Z":"z",shifted?"X":"x",shifted?"C":"c",shifted?"V":"v",shifted?"B":"b",shifted?"N":"n",shifted?"M":"m","⌫"},
+                        {"?123",",","☺","space",".","↵"}
+                    };
+                }
             }
         }
 
@@ -160,7 +170,7 @@ public class CrazeKeyboardService extends InputMethodService {
 
         private void refreshSuggestions() {
             suggestions.clear();
-            if (password || numeric || symbols) return;
+            if (password || numeric || symbols || "bn".equals(getSharedPreferences("crazekeyboard", MODE_PRIVATE).getString("language", "en"))) return;
             InputConnection ic = connection();
             if (ic == null) return;
             CharSequence before = ic.getTextBeforeCursor(80, 0);

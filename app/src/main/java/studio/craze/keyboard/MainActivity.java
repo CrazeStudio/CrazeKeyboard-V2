@@ -104,6 +104,18 @@ public class MainActivity extends Activity {
             heightButton.setText("Keyboard height: " + next + " dp  ·  Change");
         });
 
+        String language = getSharedPreferences("crazekeyboard", MODE_PRIVATE).getString("language", "en");
+        Button languageButton = button("Keyboard language: " + ("bn".equals(language) ? "বাংলা" : "English") + "  ·  Change",
+                Color.rgb(238,233,247), ink);
+        LinearLayout.LayoutParams languageLp = params(-1, dp(50)); languageLp.topMargin = dp(10);
+        appearance.addView(languageButton, languageLp);
+        languageButton.setOnClickListener(v -> {
+            String current = getSharedPreferences("crazekeyboard", MODE_PRIVATE).getString("language", "en");
+            String next = "bn".equals(current) ? "en" : "bn";
+            getSharedPreferences("crazekeyboard", MODE_PRIVATE).edit().putString("language", next).apply();
+            languageButton.setText("Keyboard language: " + ("bn".equals(next) ? "বাংলা" : "English") + "  ·  Change");
+        });
+
         TextView footer = text("Version 0.1.0  •  Early build", 12, muted, false);
         LinearLayout.LayoutParams footerLp = params(-1, -2); footerLp.topMargin = dp(24);
         page.addView(footer, footerLp);
