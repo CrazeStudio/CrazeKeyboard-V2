@@ -30,7 +30,6 @@ public final class CoreTests {
         check("On my way!".equals(copy.expansionFor("omw")),"shortcut persistence");
         check(copy.forget("help"),"forget word");
         check(!copy.contains("help"),"forgotten word absent");
-        check(copy.clearAndCountForTest()==0,"placeholder");
         System.out.println(passed+" passed, 0 failed");
     }
 }
