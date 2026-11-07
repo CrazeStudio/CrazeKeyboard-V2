@@ -204,8 +204,8 @@ public class CrazeKeyboardService extends InputMethodService {
         private final Typeface mediumTypeface = Typeface.create("sans-serif-medium", Typeface.NORMAL);
         private int background = Color.rgb(245, 245, 249);
         private int keyColor = Color.rgb(255, 255, 255);
-        private int actionColor = Color.rgb(225, 220, 239);
-        private int pressedColor = Color.rgb(230, 226, 238);
+        private int actionColor = Color.rgb(255, 225, 190);
+        private int pressedColor = Color.rgb(255, 207, 153);
         private int ink = Color.rgb(33, 33, 39);
         private int muted = Color.rgb(104, 103, 115);
         private boolean shifted = true;
@@ -242,21 +242,31 @@ public class CrazeKeyboardService extends InputMethodService {
         }
 
         private void applyAppearance() {
-            boolean dark = getSharedPreferences("crazekeyboard", MODE_PRIVATE).getBoolean("dark", false);
-            if (dark) {
-                background = Color.rgb(31, 29, 36);
-                keyColor = Color.rgb(55, 52, 62);
-                actionColor = Color.rgb(91, 78, 119);
-                pressedColor = Color.rgb(79, 68, 103);
-                ink = Color.rgb(248, 246, 252);
-                muted = Color.rgb(199, 193, 209);
+            android.content.SharedPreferences preferences =
+                    getSharedPreferences("crazekeyboard", MODE_PRIVATE);
+            String theme = preferences.getString("theme",
+                    preferences.getBoolean("dark", false) ? "dark" : "light");
+            if ("amoled".equals(theme)) {
+                background = Color.BLACK;
+                keyColor = Color.rgb(17, 17, 17);
+                actionColor = Color.rgb(45, 27, 10);
+                pressedColor = Color.rgb(65, 38, 12);
+                ink = Color.WHITE;
+                muted = Color.rgb(180, 180, 180);
+            } else if ("dark".equals(theme)) {
+                background = Color.rgb(25, 26, 30);
+                keyColor = Color.rgb(45, 47, 53);
+                actionColor = Color.rgb(92, 51, 15);
+                pressedColor = Color.rgb(120, 66, 17);
+                ink = Color.rgb(250, 250, 252);
+                muted = Color.rgb(180, 182, 190);
             } else {
-                background = Color.rgb(245, 245, 249);
-                keyColor = Color.rgb(255, 255, 255);
-                actionColor = Color.rgb(225, 220, 239);
-                pressedColor = Color.rgb(230, 226, 238);
-                ink = Color.rgb(33, 33, 39);
-                muted = Color.rgb(104, 103, 115);
+                background = Color.rgb(246, 247, 250);
+                keyColor = Color.WHITE;
+                actionColor = Color.rgb(255, 225, 190);
+                pressedColor = Color.rgb(255, 207, 153);
+                ink = Color.rgb(27, 28, 32);
+                muted = Color.rgb(105, 108, 116);
             }
         }
 
