@@ -82,7 +82,31 @@ public class DictionaryActivity extends Activity {
             }
         });
         col.addView(languages);
-        col.addView(toggle("Dark keyboard", "dark", false));
+        col.addView(heading("Keyboard theme", 18));
+        RadioGroup themes = new RadioGroup(this);
+        themes.setOrientation(LinearLayout.VERTICAL);
+        String savedTheme = prefs().getString("theme", prefs().getBoolean("dark", false) ? "dark" : "light");
+        String[] themeIds = {"light", "dark", "amoled"};
+        String[] themeLabels = {"Light — clean white keys", "Dark — soft charcoal", "AMOLED — pure black"};
+        for (int i = 0; i < themeIds.length; i++) {
+            final String themeId = themeIds[i];
+            RadioButton option = new RadioButton(this);
+            option.setId(View.generateViewId());
+            option.setText(themeLabels[i]);
+            option.setTag(themeId);
+            option.setMinHeight(dp(48));
+            option.setChecked(themeId.equals(savedTheme));
+            themes.addView(option);
+        }
+        themes.setOnCheckedChangeListener((group, checkedId) -> {
+            RadioButton selected = group.findViewById(checkedId);
+            if (selected != null) {
+                String theme = String.valueOf(selected.getTag());
+                prefs().edit().putString("theme", theme)
+                        .putBoolean("dark", !"light".equals(theme)).apply();
+            }
+        });
+        col.addView(themes);
         col.addView(toggle("Show key borders", "key_borders", false));
         col.addView(text("Keyboard height", 14));
         final TextView heightValue = text("", 13);
