@@ -220,6 +220,15 @@ public class CrazeKeyboardService extends InputMethodService {
         private final List<Key> keys = new ArrayList<>();
         private Drawable[] toolbarIcons;
         private boolean keyPressed;
+        private boolean backspaceRepeated;
+        private final Runnable backspaceRepeat = new Runnable() {
+            @Override public void run() {
+                backspaceRepeated = true;
+                backspace();
+                updateSuggestions();
+                handler.postDelayed(this, 55);
+            }
+        };
         private float pressX, pressY;
         private List<String> suggestions = new ArrayList<>();
         // glide typing
@@ -626,6 +635,12 @@ public class CrazeKeyboardService extends InputMethodService {
                     downX = e.getX();
                     downY = e.getY();
                     keyPressed = downY >= toolbarHeight + suggestionHeight && keyAt(downX, downY) != null;
+                    backspaceRepeated = false;
+                    Key downKey = keyAt(downX, downY);
+                    if (downKey != null && "⌫".equals(downKey.label)) {
+                        handler.removeCallbacks(backspaceRepeat);
+                        handler.postDelayed(backspaceRepeat, 420);
+                    }
                     pressX = downX;
                     pressY = downY;
                     invalidate();
@@ -654,6 +669,7 @@ public class CrazeKeyboardService extends InputMethodService {
                     return true;
                 }
                 case MotionEvent.ACTION_CANCEL:
+                    handler.removeCallbacks(backspaceRepeat);
                     trail.clear();
                     gliding = false;
                     trackingGlide = false;
@@ -661,6 +677,15 @@ public class CrazeKeyboardService extends InputMethodService {
                     invalidate();
                     return true;
                 case MotionEvent.ACTION_UP: {
+                    handler.removeCallbacks(backspaceRepeat);
+                    if (backspaceRepeated) {
+                        backspaceRepeated = false;
+                        trail.clear();
+                        trackingGlide = false;
+                        keyPressed = false;
+                        invalidate();
+                        return true;
+                    }
                     if (gliding) {
                         trail.add(new float[]{e.getX(), e.getY()});
                         keyPressed = false;
