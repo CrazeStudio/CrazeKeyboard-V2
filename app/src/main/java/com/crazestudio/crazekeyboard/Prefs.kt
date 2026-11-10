@@ -37,6 +37,8 @@ object Prefs {
             learnedCache ?: list(c, "learned").also { learnedCache = it }
         }
     }
+    fun isLearned(w: String) = learnedCache?.contains(w) == true
+
     fun learn(c: Context, w: String) {
         val current = learned(c)
         if (w !in current) {
