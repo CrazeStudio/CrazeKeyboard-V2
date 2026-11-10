@@ -66,17 +66,43 @@ class CrazeKeyboardService : InputMethodService() {
     private var voiceListening = false
     private var speechRecognizer: SpeechRecognizer? = null
     private var micView: ImageView? = null
+    private var dictionaryLoadRequested = false
 
-    private val emojiCats = linkedMapOf(
-        "recent" to "", 
-        "smile" to "😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😝 😜 🤪 🤨 🧐 🤓 😎 🤩 🥳 😏 😒 😞 😔 😟 😕 🙁 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🤗 🤔 🤭 🤫 🤥 😶 😐 😑 😬 🙄 😯 😦 😧 😮 😲 🥱 😴 🤤 😪 😵 🤐 🥴 🤢 🤮 🤧 😷",
-        "people" to "👍 👎 👌 🤞 🤟 🤘 🤙 👈 👉 👆 👇 ✋ 🤚 🖐 🖖 👋 🤝 🙏 💪 👏 🙌 👐 🤲 🤳 💅 👀 👅 👄 🧠 👶 👦 👧 👨 👩 🧑 👴 👵",
-        "nature" to "🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🐔 🐧 🐦 🐤 🦆 🦅 🦉 🦇 🐺 🐗 🐴 🦄 🐝 🐛 🦋 🐌 🐞 🐜 🐢 🐍 🦎 🐙 🦑 🦐 🦀 🐡 🐠 🐟 🐬 🐳 🐋 🦈 🐊 🐘 🦒 🌵 🌲 🌳 🌴 🌱 🌿 🍀 🍁 🍂 🌺 🌻 🌹 🌷 🌼 🌸 🌙 ⭐ 🌈 🔥 💧 ⚡",
-        "food" to "🍏 🍎 🍐 🍊 🍋 🍌 🍉 🍇 🍓 🍒 🍑 🥭 🍍 🥥 🥝 🍅 🥑 🥦 🥕 🌽 🥔 🍞 🧀 🍗 🍖 🍔 🍟 🍕 🌭 🥪 🌮 🌯 🍝 🍜 🍣 🍤 🍦 🍩 🍪 🎂 🍰 🍫 🍬 🍭 ☕ 🍵 🍺 🍷 🥤",
-        "activity" to "⚽ 🏀 🏈 ⚾ 🎾 🏐 🏉 🎱 🏓 🏸 🥊 🎯 🎮 🎲 🎧 🎤 🎸 🎹 🎺 🎻 🥁 🎬 🎨 🏆 🥇 🥈 🥉",
-        "travel" to "🚗 🚕 🚌 🚓 🚑 🚒 🚲 🚀 🚁 🚢 🏠 🌍",
-        "objects" to "📱 💻 📷 📺 ⌚ 🔋 💡 🔦 📚 📖 📝 📎 🔑 🔒 🔔 💰 💳 🎁 🎈 🎉 ❤ 🧡 💛 💚 💙 💜 🖤 💔 💕 💞 💯 ✅ ❌ ⭕ ❗ ❓ ⚠ 💤 💬 💭"
-    )
+    private val emojiCats by lazy(LazyThreadSafetyMode.NONE) {
+        val categories = linkedMapOf(
+            "recent" to "",
+            "smile" to "",
+            "people" to "",
+            "nature" to "",
+            "food" to "",
+            "activity" to "",
+            "travel" to "",
+            "objects" to "",
+            "symbols" to "",
+            "flags" to ""
+        )
+        var current: String? = null
+        try {
+            ctx.assets.open("emoji_catalog.txt").bufferedReader().useLines { lines ->
+                lines.forEach { line ->
+                    val value = line.trim()
+                    if (value.startsWith("[") && value.endsWith("]")) {
+                        current = value.substring(1, value.length - 1)
+                    } else if (value.isNotEmpty()) {
+                        val key = current ?: return@forEach
+                        if (key in categories) {
+                            val existing = categories[key].orEmpty()
+                            categories[key] = if (existing.isEmpty()) value else "$existing $value"
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            // Keep the panel usable with a small built-in set if the optional catalogue is missing.
+            categories["smile"] = "😀 😃 😄 😁 😆 😅 😂 🤣 😊 🙂 😉 😍 🥰 😎 🥳 😢 😭 ❤️ 💯"
+        }
+        categories
+    }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private fun lp(w: Int, h: Int, wt: Float = 0f) = LinearLayout.LayoutParams(w, h, wt)
@@ -84,28 +110,38 @@ class CrazeKeyboardService : InputMethodService() {
 
     override fun onCreate() {
         super.onCreate()
-        val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-        clipboardManager = cm
-        clipListener = ClipboardManager.OnPrimaryClipChangedListener {
+        // Clipboard services and listeners are created only when clipboard history is used.
+    }
+
+    private fun setClipboardMonitoring(enabled: Boolean) {
+        clipboardCaptureAllowed = enabled
+
+        if (!enabled) {
+            val existingManager = clipboardManager ?: return
+            val existingListener = clipListener ?: return
+            if (clipboardListening) existingManager.removePrimaryClipChangedListener(existingListener)
+            clipboardListening = false
+            return
+        }
+
+        val cm = clipboardManager ?: (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).also {
+            clipboardManager = it
+        }
+        val listener = clipListener ?: ClipboardManager.OnPrimaryClipChangedListener {
             if (clipboardCaptureAllowed) {
                 try {
-                    val item = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
+                    val item = clipboardManager?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
                     item?.text?.toString()?.takeIf { it.isNotBlank() }?.let { Prefs.addClip(ctx, it) }
                 } catch (_: Exception) {
                     // Clipboard access can be restricted by the OS or the source app.
                 }
             }
-        }
-    }
+        }.also { clipListener = it }
 
-    private fun setClipboardMonitoring(enabled: Boolean) {
-        clipboardCaptureAllowed = enabled
-        val cm = clipboardManager ?: return
-        val listener = clipListener ?: return
-        if (clipboardListening == enabled) return
-        if (enabled) cm.addPrimaryClipChangedListener(listener)
-        else cm.removePrimaryClipChangedListener(listener)
-        clipboardListening = enabled
+        if (!clipboardListening) {
+            cm.addPrimaryClipChangedListener(listener)
+            clipboardListening = true
+        }
     }
 
     private fun configureEditor(info: EditorInfo) {
@@ -151,6 +187,7 @@ class CrazeKeyboardService : InputMethodService() {
         inputViewVisible = false
         setClipboardMonitoring(false)
         clipboardManager = null
+        clipListener = null
         cancelVoiceInput()
         speechRecognizer?.destroy()
         speechRecognizer = null
@@ -399,6 +436,19 @@ class CrazeKeyboardService : InputMethodService() {
         val canSuggest = suggestOn && !hasSelection && word.length < 48 &&
             (word.isNotEmpty() || Prefs.b(this, "nextWord", true))
         suggestionPrefix = if (canSuggest) word else null
+
+        // Load the full bundled lexicon off the IME thread. The compact fallback vocabulary
+        // remains available immediately, and this callback refreshes the strip when ready.
+        if (canSuggest && !Words.isLoaded() && !dictionaryLoadRequested) {
+            dictionaryLoadRequested = true
+            Words.preload(applicationContext) {
+                hd.post {
+                    dictionaryLoadRequested = false
+                    if (inputViewVisible && mode == "letters") updateSuggestions()
+                }
+            }
+        }
+
         val list = if (canSuggest) Words.suggest(this, word, previousWord()) else emptyList()
         for (i in 0..2) sugViews[i].text = list.getOrNull(i) ?: ""
     }
@@ -860,8 +910,11 @@ class CrazeKeyboardService : InputMethodService() {
             }
             body.removeAllViews(); body.addView(g)
         }
-        val iconIds = listOf(R.drawable.ic_recent, R.drawable.ic_smile, R.drawable.ic_people, R.drawable.ic_nature,
-            R.drawable.ic_food, R.drawable.ic_activity, R.drawable.ic_travel, R.drawable.ic_objects)
+        val iconIds = listOf(
+            R.drawable.ic_recent, R.drawable.ic_smile, R.drawable.ic_people, R.drawable.ic_nature,
+            R.drawable.ic_food, R.drawable.ic_activity, R.drawable.ic_travel, R.drawable.ic_objects,
+            R.drawable.ic_symbols, R.drawable.ic_globe
+        )
         emojiCats.entries.forEachIndexed { index, entry ->
             val (category, data) = entry
             tabs.addView(iconImage(iconIds[index]) {
@@ -871,7 +924,7 @@ class CrazeKeyboardService : InputMethodService() {
         col.addView(tabs, lp(MATCH, dp(42)))
         col.addView(body, lp(MATCH, bodyHeight()))
         col.addView(backBar())
-        fill(Prefs.recents(this).ifEmpty { emojiCats["smile"]!!.split(" ") })
+        fill(Prefs.recents(this).ifEmpty { emojiCats["smile"].orEmpty().split(" ").filter { it.isNotBlank() } })
         return col
     }
 
