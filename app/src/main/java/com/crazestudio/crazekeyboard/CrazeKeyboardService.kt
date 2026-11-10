@@ -48,7 +48,9 @@ class CrazeKeyboardService : InputMethodService() {
     private var lastShiftTap = 0L
     private var popup: PopupWindow? = null
     private var lastSig = ""
+    private var clipboardManager: ClipboardManager? = null
     private var clipListener: ClipboardManager.OnPrimaryClipChangedListener? = null
+    private var clipboardListening = false
 
     private val emojiCats = linkedMapOf(
         "recent" to "", 
@@ -67,14 +69,29 @@ class CrazeKeyboardService : InputMethodService() {
     override fun onCreate() {
         super.onCreate()
         val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboardManager = cm
         clipListener = ClipboardManager.OnPrimaryClipChangedListener {
-            try { cm.primaryClip?.getItemAt(0)?.text?.toString()?.let { Prefs.addClip(ctx, it) } } catch (e: Exception) { }
+            try {
+                val item = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
+                item?.text?.toString()?.takeIf { it.isNotBlank() }?.let { Prefs.addClip(ctx, it) }
+            } catch (_: Exception) {
+                // Clipboard access can be restricted by the OS or the source app.
+            }
         }
-        cm.addPrimaryClipChangedListener(clipListener)
+    }
+
+    private fun setClipboardMonitoring(enabled: Boolean) {
+        val cm = clipboardManager ?: return
+        val listener = clipListener ?: return
+        if (clipboardListening == enabled) return
+        if (enabled) cm.addPrimaryClipChangedListener(listener)
+        else cm.removePrimaryClipChangedListener(listener)
+        clipboardListening = enabled
     }
 
     override fun onDestroy() {
-        (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).removePrimaryClipChangedListener(clipListener)
+        setClipboardMonitoring(false)
+        clipboardManager = null
         super.onDestroy()
     }
 
@@ -104,8 +121,19 @@ class CrazeKeyboardService : InputMethodService() {
             InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD, InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
             InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS, InputType.TYPE_TEXT_VARIATION_URI)
         hapticsEnabled = Prefs.b(this, "haptics", true)
-        suggestOn = Prefs.b(this, "suggest", true) && cls == InputType.TYPE_CLASS_TEXT && v !in noSug &&
+        val passwordField =
+            (cls == InputType.TYPE_CLASS_TEXT && v in listOf(
+                InputType.TYPE_TEXT_VARIATION_PASSWORD,
+                InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
+                InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
+            )) ||
+            (cls == InputType.TYPE_CLASS_NUMBER && v == InputType.TYPE_NUMBER_VARIATION_PASSWORD)
+        val noPersonalizedLearning =
+            (info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0
+        suggestOn = Prefs.b(this, "suggest", true) && cls == InputType.TYPE_CLASS_TEXT &&
+            v !in noSug && !noPersonalizedLearning &&
             (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0
+        setClipboardMonitoring(!passwordField && !noPersonalizedLearning)
         shift = 0
         toolbarOpen = false
         buildTop()
@@ -115,6 +143,7 @@ class CrazeKeyboardService : InputMethodService() {
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
+        setClipboardMonitoring(false)
         dismissPopups()
         hd.removeCallbacks(refreshSuggestions)
         super.onFinishInputView(finishingInput)
@@ -176,13 +205,15 @@ class CrazeKeyboardService : InputMethodService() {
     }
 
     private fun currentWord(): String {
-        val before = currentInputConnection?.getTextBeforeCursor(30, 0)?.toString() ?: ""
+        val before = currentInputConnection?.getTextBeforeCursor(64, 0)?.toString() ?: ""
         return before.takeLastWhile { it.isLetter() || it == '\'' }
     }
 
     private fun updateSuggestions() {
         if (toolbarOpen || sugViews.isEmpty()) return
-        val list = if (suggestOn) Words.suggest(this, currentWord()) else emptyList()
+        val word = currentWord()
+        // Avoid offering a replacement when the cursor query may contain only a truncated word.
+        val list = if (suggestOn && word.length < 48) Words.suggest(this, word) else emptyList()
         for (i in 0..2) sugViews[i].text = list.getOrNull(i) ?: ""
     }
 
@@ -190,11 +221,15 @@ class CrazeKeyboardService : InputMethodService() {
         val ic = currentInputConnection ?: return
         if (s.isEmpty()) return
         val w = currentWord()
+        if (w.length >= 48) return
         ic.beginBatchEdit()
-        ic.deleteSurroundingText(w.length, 0)
-        ic.commitText("$s ", 1)
-        ic.endBatchEdit()
-        if (s.length >= 3 && !Words.known(s)) Prefs.learn(this, s)
+        try {
+            ic.deleteSurroundingText(w.length, 0)
+            ic.commitText("$s ", 1)
+        } finally {
+            ic.endBatchEdit()
+        }
+        if (suggestOn && s.length >= 3 && !Words.known(s)) Prefs.learn(this, s)
         afterEdit()
     }
 
@@ -289,20 +324,39 @@ class CrazeKeyboardService : InputMethodService() {
 
     private fun attach(v: TextView, repeat: Boolean = false, showPrev: Boolean = false, onLong: (() -> Unit)? = null, tap: () -> Unit) {
         var fired = false
+        var cancelled = false
         val longR = Runnable { fired = true; onLong?.invoke() }
         val repR = object : Runnable { override fun run() { tap(); hd.postDelayed(this, 65) } }
         v.setOnTouchListener { view, e ->
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    fired = false; view.alpha = 0.72f
+                    fired = false
+                    cancelled = false
+                    view.alpha = 0.72f
                     if (hapticsEnabled) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                    if (repeat) { tap(); hd.postDelayed(repR, 400) } else if (onLong != null) hd.postDelayed(longR, 350)
+                    if (repeat) { tap(); hd.postDelayed(repR, 400) }
+                    else if (onLong != null) hd.postDelayed(longR, 350)
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (!cancelled && (e.x < 0f || e.y < 0f || e.x > view.width || e.y > view.height)) {
+                        cancelled = true
+                        view.alpha = 1f
+                        hd.removeCallbacks(longR)
+                        hd.removeCallbacks(repR)
+                    }
                 }
                 MotionEvent.ACTION_UP -> {
-                    view.alpha = 1f; hd.removeCallbacks(longR); hd.removeCallbacks(repR)
-                    if (!repeat && !fired) tap()
+                    view.alpha = 1f
+                    hd.removeCallbacks(longR)
+                    hd.removeCallbacks(repR)
+                    if (!repeat && !fired && !cancelled) tap()
                 }
-                MotionEvent.ACTION_CANCEL -> { view.alpha = 1f; hd.removeCallbacks(longR); hd.removeCallbacks(repR) }
+                MotionEvent.ACTION_CANCEL -> {
+                    cancelled = true
+                    view.alpha = 1f
+                    hd.removeCallbacks(longR)
+                    hd.removeCallbacks(repR)
+                }
             }
             true
         }
