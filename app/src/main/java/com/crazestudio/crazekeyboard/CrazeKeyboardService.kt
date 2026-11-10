@@ -143,6 +143,7 @@ class CrazeKeyboardService : InputMethodService() {
 
     override fun onStartInput(attribute: EditorInfo, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
+        cancelVoiceInput()
         configureEditor(attribute)
     }
 
