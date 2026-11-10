@@ -31,6 +31,7 @@ class CrazeKeyboardService : InputMethodService() {
     private val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
     private val ctx: Context get() = this
     private val hd = Handler(Looper.getMainLooper())
+    private val refreshSuggestions = Runnable { autoCap(); updateSuggestions() }
 
     private lateinit var outer: FrameLayout
     private lateinit var top: FrameLayout
@@ -113,6 +114,7 @@ class CrazeKeyboardService : InputMethodService() {
 
     override fun onFinishInputView(finishingInput: Boolean) {
         dismissPopups()
+        hd.removeCallbacks(refreshSuggestions)
         super.onFinishInputView(finishingInput)
     }
 
@@ -191,7 +193,11 @@ class CrazeKeyboardService : InputMethodService() {
     }
 
     // ---------- typing actions ----------
-    private fun afterEdit() { autoCap(); updateSuggestions() }
+    // Cursor queries and dictionary matching are deliberately debounced off the key-down path.
+    private fun afterEdit() {
+        hd.removeCallbacks(refreshSuggestions)
+        hd.postDelayed(refreshSuggestions, 85)
+    }
 
     private fun autoCap() {
         if (shift == 2 || mode != "letters") return
@@ -264,7 +270,7 @@ class CrazeKeyboardService : InputMethodService() {
     // ---------- key building ----------
     private fun mk(label: String, w: Float, bg: Int, fg: Int, size: Float = 20f) = TextView(ctx).apply {
         text = label; gravity = Gravity.CENTER; setTextColor(fg); textSize = size; background = rounded(bg)
-        layoutParams = lp(0, dp(Prefs.keyH(ctx)), w).apply { setMargins(dp(2), dp(3), dp(2), dp(3)) }
+        layoutParams = lp(0, dp(keyHeight()), w).apply { setMargins(dp(2), dp(3), dp(2), dp(3)) }
     }
 
     private fun dismissPopups() { popup?.dismiss(); popup = null }
@@ -334,7 +340,16 @@ class CrazeKeyboardService : InputMethodService() {
     private fun backKey(w: Float): TextView { val b = iconKey(R.drawable.ic_backspace, w, t.special, t.text); attach(b, repeat = true) { del() }; return b }
 
     private fun rowCount() = if (Prefs.b(this, "numrow", true)) 5 else 4
-    private fun totalH() = rowCount() * (dp(Prefs.keyH(this)) + dp(6)) + dp(4)
+
+    // Keep every panel on the same measured key grid, while shrinking keys on short displays.
+    private fun keyHeight(): Int {
+        val screenDp = resources.displayMetrics.heightPixels / resources.displayMetrics.density
+        val availableForKeys = screenDp * 0.42f - 48f
+        val heightLimit = (availableForKeys / rowCount() - 6f).toInt().coerceAtLeast(34)
+        return minOf(Prefs.keyH(this), heightLimit).coerceIn(34, 64)
+    }
+
+    private fun totalH() = rowCount() * (dp(keyHeight()) + dp(6)) + dp(4)
 
     private fun column() = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(2), 0, dp(2), dp(4)) }
 
@@ -394,7 +409,7 @@ class CrazeKeyboardService : InputMethodService() {
         addView(backKey(1.5f))
     }
 
-    private fun bodyHeight() = totalH() - dp(40) - (dp(Prefs.keyH(this)) + dp(6))
+    private fun bodyHeight() = (totalH() - dp(40) - (dp(keyHeight()) + dp(6))).coerceAtLeast(dp(72))
 
     private fun buildEmoji(): View {
         val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(2), 0, dp(2), dp(4)) }
