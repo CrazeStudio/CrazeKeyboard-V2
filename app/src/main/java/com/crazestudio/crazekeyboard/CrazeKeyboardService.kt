@@ -68,16 +68,39 @@ class CrazeKeyboardService : InputMethodService() {
     private var micView: ImageView? = null
     private var dictionaryLoadRequested = false
 
-    private val emojiCats by lazy(LazyThreadSafetyMode.NONE) { linkedMapOf(
-        "recent" to "", 
-        "smile" to "😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😝 😜 🤪 🤨 🧐 🤓 😎 🤩 🥳 😏 😒 😞 😔 😟 😕 🙁 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🤗 🤔 🤭 🤫 🤥 😶 😐 😑 😬 🙄 😯 😦 😧 😮 😲 🥱 😴 🤤 😪 😵 🤐 🥴 🤢 🤮 🤧 😷",
-        "people" to "👍 👎 👌 🤞 🤟 🤘 🤙 👈 👉 👆 👇 ✋ 🤚 🖐 🖖 👋 🤝 🙏 💪 👏 🙌 👐 🤲 🤳 💅 👀 👅 👄 🧠 👶 👦 👧 👨 👩 🧑 👴 👵",
-        "nature" to "🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🐔 🐧 🐦 🐤 🦆 🦅 🦉 🦇 🐺 🐗 🐴 🦄 🐝 🐛 🦋 🐌 🐞 🐜 🐢 🐍 🦎 🐙 🦑 🦐 🦀 🐡 🐠 🐟 🐬 🐳 🐋 🦈 🐊 🐘 🦒 🌵 🌲 🌳 🌴 🌱 🌿 🍀 🍁 🍂 🌺 🌻 🌹 🌷 🌼 🌸 🌙 ⭐ 🌈 🔥 💧 ⚡",
-        "food" to "🍏 🍎 🍐 🍊 🍋 🍌 🍉 🍇 🍓 🍒 🍑 🥭 🍍 🥥 🥝 🍅 🥑 🥦 🥕 🌽 🥔 🍞 🧀 🍗 🍖 🍔 🍟 🍕 🌭 🥪 🌮 🌯 🍝 🍜 🍣 🍤 🍦 🍩 🍪 🎂 🍰 🍫 🍬 🍭 ☕ 🍵 🍺 🍷 🥤",
-        "activity" to "⚽ 🏀 🏈 ⚾ 🎾 🏐 🏉 🎱 🏓 🏸 🥊 🎯 🎮 🎲 🎧 🎤 🎸 🎹 🎺 🎻 🥁 🎬 🎨 🏆 🥇 🥈 🥉",
-        "travel" to "🚗 🚕 🚌 🚓 🚑 🚒 🚲 🚀 🚁 🚢 🏠 🌍",
-        "objects" to "📱 💻 📷 📺 ⌚ 🔋 💡 🔦 📚 📖 📝 📎 🔑 🔒 🔔 💰 💳 🎁 🎈 🎉 ❤ 🧡 💛 💚 💙 💜 🖤 💔 💕 💞 💯 ✅ ❌ ⭕ ❗ ❓ ⚠ 💤 💬 💭"
-    ) }
+    private val emojiCats by lazy(LazyThreadSafetyMode.NONE) {
+        val categories = linkedMapOf(
+            "recent" to "",
+            "smile" to "",
+            "people" to "",
+            "nature" to "",
+            "food" to "",
+            "activity" to "",
+            "travel" to "",
+            "objects" to "",
+            "symbols" to "",
+            "flags" to ""
+        )
+        var current: String? = null
+        try {
+            ctx.assets.open("emoji_catalog.txt").bufferedReader().useLines { lines ->
+                lines.forEach { line ->
+                    val value = line.trim()
+                    if (value.startsWith("[") && value.endsWith("]")) {
+                        current = value.substring(1, value.length - 1)
+                    } else if (value.isNotEmpty() && current in categories.keys) {
+                        val key = current!!
+                        categories[key] = if (categories[key].isNullOrEmpty()) value
+                            else categories[key] + " " + value
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            // Keep the panel usable with a small built-in set if the optional catalogue is missing.
+            categories["smile"] = "😀 😃 😄 😁 😆 😅 😂 🤣 😊 🙂 😉 😍 🥰 😎 🥳 😢 😭 ❤️ 💯"
+        }
+        categories
+    }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private fun lp(w: Int, h: Int, wt: Float = 0f) = LinearLayout.LayoutParams(w, h, wt)
@@ -885,8 +908,11 @@ class CrazeKeyboardService : InputMethodService() {
             }
             body.removeAllViews(); body.addView(g)
         }
-        val iconIds = listOf(R.drawable.ic_recent, R.drawable.ic_smile, R.drawable.ic_people, R.drawable.ic_nature,
-            R.drawable.ic_food, R.drawable.ic_activity, R.drawable.ic_travel, R.drawable.ic_objects)
+        val iconIds = listOf(
+            R.drawable.ic_recent, R.drawable.ic_smile, R.drawable.ic_people, R.drawable.ic_nature,
+            R.drawable.ic_food, R.drawable.ic_activity, R.drawable.ic_travel, R.drawable.ic_objects,
+            R.drawable.ic_settings, R.drawable.ic_globe
+        )
         emojiCats.entries.forEachIndexed { index, entry ->
             val (category, data) = entry
             tabs.addView(iconImage(iconIds[index]) {
@@ -896,7 +922,7 @@ class CrazeKeyboardService : InputMethodService() {
         col.addView(tabs, lp(MATCH, dp(42)))
         col.addView(body, lp(MATCH, bodyHeight()))
         col.addView(backBar())
-        fill(Prefs.recents(this).ifEmpty { emojiCats["smile"]!!.split(" ") })
+        fill(Prefs.recents(this).ifEmpty { emojiCats["smile"].orEmpty().split(" ").filter { it.isNotBlank() } })
         return col
     }
 
