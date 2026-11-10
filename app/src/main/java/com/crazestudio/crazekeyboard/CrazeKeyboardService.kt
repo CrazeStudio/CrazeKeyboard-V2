@@ -20,6 +20,7 @@ import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.ScrollView
@@ -49,13 +50,13 @@ class CrazeKeyboardService : InputMethodService() {
     private var clipListener: ClipboardManager.OnPrimaryClipChangedListener? = null
 
     private val emojiCats = linkedMapOf(
-        "🕘" to "", 
-        "😀" to "😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😝 😜 🤪 🤨 🧐 🤓 😎 🤩 🥳 😏 😒 😞 😔 😟 😕 🙁 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🤗 🤔 🤭 🤫 🤥 😶 😐 😑 😬 🙄 😯 😦 😧 😮 😲 🥱 😴 🤤 😪 😵 🤐 🥴 🤢 🤮 🤧 😷",
-        "👍" to "👍 👎 👌 🤞 🤟 🤘 🤙 👈 👉 👆 👇 ✋ 🤚 🖐 🖖 👋 🤝 🙏 💪 👏 🙌 👐 🤲 🤳 💅 👀 👅 👄 🧠 👶 👦 👧 👨 👩 🧑 👴 👵",
-        "🐶" to "🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🐔 🐧 🐦 🐤 🦆 🦅 🦉 🦇 🐺 🐗 🐴 🦄 🐝 🐛 🦋 🐌 🐞 🐜 🐢 🐍 🦎 🐙 🦑 🦐 🦀 🐡 🐠 🐟 🐬 🐳 🐋 🦈 🐊 🐘 🦒 🌵 🌲 🌳 🌴 🌱 🌿 🍀 🍁 🍂 🌺 🌻 🌹 🌷 🌼 🌸",
-        "🍔" to "🍏 🍎 🍐 🍊 🍋 🍌 🍉 🍇 🍓 🍒 🍑 🥭 🍍 🥥 🥝 🍅 🥑 🥦 🥕 🌽 🥔 🍞 🧀 🍗 🍖 🍔 🍟 🍕 🌭 🥪 🌮 🌯 🍝 🍜 🍣 🍤 🍦 🍩 🍪 🎂 🍰 🍫 🍬 🍭 ☕ 🍵 🍺 🍷 🥤",
-        "⚽" to "⚽ 🏀 🏈 ⚾ 🎾 🏐 🏉 🎱 🏓 🏸 🥊 🎯 🎮 🎲 🎧 🎤 🎸 🎹 🎺 🎻 🥁 🎬 🎨 🏆 🥇 🥈 🥉 🚗 🚕 🚌 🚓 🚑 🚒 🚲 🚀 🚁 🚢 🏠 🌍 🌙 ⭐ 🌈 🔥 💧 ⚡",
-        "💡" to "📱 💻 📷 📺 ⌚ 🔋 💡 🔦 📚 📖 📝 📎 🔑 🔒 🔔 💰 💳 🎁 🎈 🎉 ❤ 🧡 💛 💚 💙 💜 🖤 💔 💕 💞 💯 ✅ ❌ ⭕ ❗ ❓ ⚠ 💤 💬 💭"
+        "recent" to "", 
+        "smile" to "😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😝 😜 🤪 🤨 🧐 🤓 😎 🤩 🥳 😏 😒 😞 😔 😟 😕 🙁 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🤗 🤔 🤭 🤫 🤥 😶 😐 😑 😬 🙄 😯 😦 😧 😮 😲 🥱 😴 🤤 😪 😵 🤐 🥴 🤢 🤮 🤧 😷",
+        "people" to "👍 👎 👌 🤞 🤟 🤘 🤙 👈 👉 👆 👇 ✋ 🤚 🖐 🖖 👋 🤝 🙏 💪 👏 🙌 👐 🤲 🤳 💅 👀 👅 👄 🧠 👶 👦 👧 👨 👩 🧑 👴 👵",
+        "nature" to "🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🐔 🐧 🐦 🐤 🦆 🦅 🦉 🦇 🐺 🐗 🐴 🦄 🐝 🐛 🦋 🐌 🐞 🐜 🐢 🐍 🦎 🐙 🦑 🦐 🦀 🐡 🐠 🐟 🐬 🐳 🐋 🦈 🐊 🐘 🦒 🌵 🌲 🌳 🌴 🌱 🌿 🍀 🍁 🍂 🌺 🌻 🌹 🌷 🌼 🌸",
+        "food" to "🍏 🍎 🍐 🍊 🍋 🍌 🍉 🍇 🍓 🍒 🍑 🥭 🍍 🥥 🥝 🍅 🥑 🥦 🥕 🌽 🥔 🍞 🧀 🍗 🍖 🍔 🍟 🍕 🌭 🥪 🌮 🌯 🍝 🍜 🍣 🍤 🍦 🍩 🍪 🎂 🍰 🍫 🍬 🍭 ☕ 🍵 🍺 🍷 🥤",
+        "activity" to "⚽ 🏀 🏈 ⚾ 🎾 🏐 🏉 🎱 🏓 🏸 🥊 🎯 🎮 🎲 🎧 🎤 🎸 🎹 🎺 🎻 🥁 🎬 🎨 🏆 🥇 🥈 🥉 🚗 🚕 🚌 🚓 🚑 🚒 🚲 🚀 🚁 🚢 🏠 🌍 🌙 ⭐ 🌈 🔥 💧 ⚡",
+        "objects" to "📱 💻 📷 📺 ⌚ 🔋 💡 🔦 📚 📖 📝 📎 🔑 🔒 🔔 💰 💳 🎁 🎈 🎉 ❤ 🧡 💛 💚 💙 💜 🖤 💔 💕 💞 💯 ✅ ❌ ⭕ ❗ ❓ ⚠ 💤 💬 💭"
     )
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -84,10 +85,10 @@ class CrazeKeyboardService : InputMethodService() {
         top = FrameLayout(this)
         panel = FrameLayout(this)
         root.addView(top, lp(MATCH, dp(44)))
-        root.addView(panel, lp(MATCH, WRAP))
+        root.addView(panel, lp(MATCH, totalH()))
         val oh = Prefs.i(this, "onehand", 0)
         val w = if (oh == 0) MATCH else (resources.displayMetrics.widthPixels * 0.82f).toInt()
-        outer.addView(root, FrameLayout.LayoutParams(w, WRAP, if (oh == 2) Gravity.END else Gravity.START))
+        outer.addView(root, FrameLayout.LayoutParams(w, dp(44) + totalH(), if (oh == 2) Gravity.END else Gravity.START))
         buildTop()
         showPanel(mode)
         return outer
@@ -122,21 +123,35 @@ class CrazeKeyboardService : InputMethodService() {
         setOnClickListener { a() }
     }
 
+    private fun iconImage(res: Int, a: () -> Unit) = ImageView(ctx).apply {
+        setImageResource(res)
+        imageTintList = android.content.res.ColorStateList.valueOf(t.text)
+        scaleType = ImageView.ScaleType.CENTER
+        setPadding(dp(10), dp(10), dp(10), dp(10))
+        setOnClickListener { a() }
+        isClickable = true
+        isFocusable = true
+    }
+
+    private fun iconKey(res: Int, w: Float, bg: Int, fg: Int): TextView = mk("", w, bg, fg).apply {
+        setCompoundDrawablesWithIntrinsicBounds(res, 0, 0, 0)
+        compoundDrawableTintList = android.content.res.ColorStateList.valueOf(fg)
+    }
+
     private fun buildTop() {
         top.removeAllViews()
         sugViews.clear()
         val row = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
         row.addView(iconBtn(if (toolbarOpen) "✕" else "⋮⋮") { toolbarOpen = !toolbarOpen; buildTop(); updateSuggestions() }, lp(dp(44), MATCH))
         if (toolbarOpen) {
-            val items = listOf<Pair<String, () -> Unit>>(
-                "😀" to { showPanel("emoji") },
-                "📋" to { showPanel("clip") },
-                "🎤" to { startVoice() },
-                "🎨" to { Prefs.nextTheme(ctx); setInputView(onCreateInputView()) },
-                "◧" to { Prefs.nextOneHand(ctx); setInputView(onCreateInputView()) },
-                "⚙" to { startActivity(Intent(ctx, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            val items = listOf<Pair<Int, () -> Unit>>(
+                R.drawable.ic_smile to { showPanel("emoji") },
+                R.drawable.ic_clipboard to { showPanel("clip") },
+                R.drawable.ic_palette to { Prefs.nextTheme(ctx); setInputView(onCreateInputView()) },
+                R.drawable.ic_onehand to { Prefs.nextOneHand(ctx); setInputView(onCreateInputView()) },
+                R.drawable.ic_settings to { startActivity(Intent(ctx, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             )
-            items.forEach { (l, a) -> row.addView(iconBtn(l, a), lp(0, MATCH, 1f)) }
+            items.forEach { (res, a) -> row.addView(iconImage(res, a), lp(0, MATCH, 1f)) }
         } else {
             for (i in 0..2) {
                 val tv = TextView(ctx).apply {
@@ -235,16 +250,15 @@ class CrazeKeyboardService : InputMethodService() {
     }
 
     private fun enterLabel() = when (actionId()) {
-        EditorInfo.IME_ACTION_SEARCH -> "🔍"; EditorInfo.IME_ACTION_SEND -> "➤"; EditorInfo.IME_ACTION_GO -> "→"
-        EditorInfo.IME_ACTION_NEXT -> "⇥"; EditorInfo.IME_ACTION_DONE -> "✓"; else -> "↵"
+        EditorInfo.IME_ACTION_SEARCH -> "Search"
+        EditorInfo.IME_ACTION_SEND -> "Send"
+        EditorInfo.IME_ACTION_GO -> "Go"
+        EditorInfo.IME_ACTION_NEXT -> "Next"
+        EditorInfo.IME_ACTION_DONE -> "Done"
+        else -> "Enter"
     }
 
-    private fun startVoice() {
-        VoiceActivity.callback = { txt -> currentInputConnection?.commitText("$txt ", 1); afterEdit() }
-        startActivity(Intent(this, VoiceActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-    }
-
-    private fun switchKeyboard() {
+     private fun switchKeyboard() {
         if (!switchToNextInputMethod(false)) (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker()
     }
 
@@ -270,7 +284,7 @@ class CrazeKeyboardService : InputMethodService() {
     private fun attach(v: TextView, repeat: Boolean = false, showPrev: Boolean = false, onLong: (() -> Unit)? = null, tap: () -> Unit) {
         var fired = false
         val longR = Runnable { fired = true; preview?.dismiss(); onLong?.invoke() }
-        val repR = object : Runnable { override fun run() { tap(); hd.postDelayed(this, 50) } }
+        val repR = object : Runnable { override fun run() { tap(); hd.postDelayed(this, 65) } }
         v.setOnTouchListener { view, e ->
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -323,14 +337,14 @@ class CrazeKeyboardService : InputMethodService() {
     private fun bottomRow(left: String, leftTarget: String): LinearLayout = hrow().apply {
         val l = mk(left, 1.5f, t.special, t.text, 16f); attach(l) { showPanel(leftTarget) }; addView(l)
         val c = mk(",", 1f, t.special, t.text); attach(c, onLong = { showPanel("emoji") }) { type(",") }; addView(c)
-        val g = mk("🌐", 1f, t.special, t.text, 18f); attach(g) { switchKeyboard() }; addView(g)
+        val g = iconKey(R.drawable.ic_globe, 1f, t.special, t.text); attach(g) { switchKeyboard() }; addView(g)
         val sp = mk("CrazeKeyboard", 4f, t.key, t.text, 12f)
         attach(sp, onLong = { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker() }) { type(" ") }; addView(sp)
         val d = mk(".", 1f, t.special, t.text); attach(d, onLong = { showAlts(d, Alts.map["."]!!) }) { type(".") }; addView(d)
         val e = mk(enterLabel(), 1.5f, t.accent, t.accentText); attach(e) { enter() }; addView(e)
     }
 
-    private fun backKey(w: Float): TextView { val b = mk("⌫", w, t.special, t.text); attach(b, repeat = true) { del() }; return b }
+    private fun backKey(w: Float): TextView { val b = iconKey(R.drawable.ic_backspace, w, t.special, t.text); attach(b, repeat = true) { del() }; return b }
 
     private fun rowCount() = if (Prefs.b(this, "numrow", true)) 5 else 4
     private fun totalH() = rowCount() * (dp(Prefs.keyH(this)) + dp(6)) + dp(4)
@@ -414,13 +428,18 @@ class CrazeKeyboardService : InputMethodService() {
             }
             body.removeAllViews(); body.addView(g)
         }
-        emojiCats.forEach { (icon, data) ->
-            tabs.addView(iconBtn(icon) { fill(if (icon == "🕘") Prefs.recents(ctx) else data.split(" ")) }, lp(0, MATCH, 1f))
+        val iconIds = listOf(R.drawable.ic_recent, R.drawable.ic_smile, R.drawable.ic_people, R.drawable.ic_nature,
+            R.drawable.ic_food, R.drawable.ic_activity, R.drawable.ic_travel, R.drawable.ic_objects)
+        emojiCats.entries.forEachIndexed { index, entry ->
+            val (category, data) = entry
+            tabs.addView(iconImage(iconIds[index]) {
+                fill(if (category == "recent") Prefs.recents(ctx) else data.split(" ").filter { it.isNotBlank() })
+            }, lp(0, MATCH, 1f))
         }
         col.addView(tabs, lp(MATCH, dp(40)))
         col.addView(body, lp(MATCH, bodyHeight()))
         col.addView(backBar())
-        fill(Prefs.recents(this).ifEmpty { emojiCats["😀"]!!.split(" ") })
+        fill(Prefs.recents(this).ifEmpty { emojiCats["smile"]!!.split(" ") })
         return col
     }
 
@@ -428,7 +447,7 @@ class CrazeKeyboardService : InputMethodService() {
         val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(2), 0, dp(2), dp(4)) }
         val head = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
         head.addView(TextView(ctx).apply { text = "  Clipboard"; textSize = 16f; setTextColor(t.text) }, lp(0, MATCH, 1f))
-        head.addView(iconBtn("🗑") { Prefs.clearClips(ctx); showPanel("clip") }, lp(dp(48), MATCH))
+        head.addView(iconImage(R.drawable.ic_trash) { Prefs.clearClips(ctx); showPanel("clip") }, lp(dp(48), MATCH))
         col.addView(head, lp(MATCH, dp(40)))
         val body = ScrollView(ctx)
         val list = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
@@ -457,7 +476,7 @@ class CrazeKeyboardService : InputMethodService() {
             "emoji" -> buildEmoji()
             "clip" -> buildClip()
             else -> buildLetters()
-        })
+        }, FrameLayout.LayoutParams(MATCH, totalH()))
         if (m == "letters") autoCap()
     }
 }
