@@ -22,36 +22,35 @@ object Prefs {
     fun nextTheme(c: Context) = setI(c, "theme", (i(c, "theme", 0) + 1) % themes.size)
     fun nextOneHand(c: Context) = setI(c, "onehand", (i(c, "onehand", 0) + 1) % 3)
     fun keyH(c: Context) = i(c, "keyh", 46)
-    fun sig(c: Context) = "${i(c, "theme", 0)}|${i(c, "onehand", 0)}|${keyH(c)}|${b(c, "numrow", true)}|${b(c, "clipboardHistory", true)}"
+    fun sig(c: Context) = "${i(c, "theme", 0)}|${i(c, "onehand", 0)}|${keyH(c)}|${b(c, "numrow", true)}|${b(c, "clipboardHistory", true)}|${b(c, "autocorrect", true)}|${b(c, "nextWord", true)}|${b(c, "doubleSpacePeriod", true)}"
 
     private fun list(c: Context, k: String) = (sp(c).getString(k, "") ?: "").split(SEP).filter { it.isNotEmpty() }
     private fun put(c: Context, k: String, l: List<String>) = sp(c).edit().putString(k, l.joinToString(SEP)).apply()
     fun clips(c: Context) = list(c, "clips")
     fun addClip(c: Context, s: String) {
         val safeText = s.take(4_000)
-        if (safeText.isNotBlank()) {
-            put(c, "clips", (listOf(safeText) + clips(c).filter { it != safeText }).take(20))
-        }
+        if (safeText.isNotBlank()) put(c, "clips", (listOf(safeText) + clips(c).filter { it != safeText }).take(20))
     }
     fun clearClips(c: Context) = put(c, "clips", emptyList())
     fun recents(c: Context) = list(c, "recent")
     fun addRecent(c: Context, e: String) = put(c, "recent", (listOf(e) + recents(c).filter { it != e }).take(32))
     fun learned(c: Context): List<String> {
         learnedCache?.let { return it }
-        return synchronized(this) {
-            learnedCache ?: list(c, "learned").also { learnedCache = it }
-        }
+        return synchronized(this) { learnedCache ?: list(c, "learned").also { learnedCache = it } }
     }
     fun isLearned(w: String) = learnedCache?.any { it.equals(w, ignoreCase = true) } == true
-
     fun learn(c: Context, w: String) {
         val word = w.trim().lowercase()
-        if (word.isEmpty()) return
+        if (word.isEmpty() || word.length > 40 || !word.any { it.isLetter() }) return
         val current = learned(c).map { it.lowercase() }
         if (word !in current) {
             val updated = (listOf(word) + current).take(500)
             put(c, "learned", updated)
             learnedCache = updated
         }
+    }
+    fun clearLearned(c: Context) {
+        put(c, "learned", emptyList())
+        learnedCache = emptyList()
     }
 }
