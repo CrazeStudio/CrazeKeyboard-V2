@@ -25,13 +25,14 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.ScrollView
 import android.widget.TextView
 
-// A key = full-size touch cell (includes the gap around the key, so taps between keys still land) + the visible face.
-internal class K(val cell: FrameLayout, val tv: TextView)
+// A key = full-size touch cell (includes the gap around the key, so taps between keys still land) + the visible face (+ optional SVG icon).
+internal class K(val cell: FrameLayout, val tv: TextView, val iv: ImageView?)
 
 class CrazeKeyboardService : InputMethodService() {
     private val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
@@ -40,17 +41,18 @@ class CrazeKeyboardService : InputMethodService() {
     private val hd = Handler(Looper.getMainLooper())
 
     private lateinit var outer: FrameLayout
+    private lateinit var kbd: LinearLayout
     private lateinit var top: FrameLayout
     private lateinit var panel: FrameLayout
     private val sugViews = ArrayList<TextView>()
     private val letterKeys = ArrayList<Pair<TextView, String>>()
     private val seen = HashMap<String, Int>()
-    private var shiftKey: TextView? = null
+    private var shiftKey: K? = null
     private var t = Prefs.themes[0]
     private var shift = 0
     private var autoShift = false
     private var mode = "letters"
-    private var toolbarOpen = false
+    private var floating = false
     private var suggestOn = true
     private var lastShiftTap = 0L
     private var popup: PopupWindow? = null
@@ -78,7 +80,8 @@ class CrazeKeyboardService : InputMethodService() {
     private fun lp(w: Int, h: Int, wt: Float = 0f) = LinearLayout.LayoutParams(w, h, wt)
     private fun landscape() = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     private fun loadPrefs() {
-        kh = if (landscape()) minOf(Prefs.keyH(this), 38) else Prefs.keyH(this)
+        val base = if (landscape()) minOf(Prefs.keyH(this), 38) else Prefs.keyH(this)
+        kh = if (floating) (base * 0.84f).toInt() else base
         cellH = dp(kh) + dp(6)
         hapticsOn = Prefs.b(this, "haptics", true)
         numRow = Prefs.b(this, "numrow", true)
@@ -99,6 +102,12 @@ class CrazeKeyboardService : InputMethodService() {
     private fun keyBg(c: Int, r: Int = 9): Drawable =
         LayerDrawable(arrayOf<Drawable>(rounded(darken(c), r), rounded(c, r))).apply { setLayerInset(1, 0, 0, 0, dp(2)) }
 
+    // Tinted SVG (vector drawable) button
+    private fun iconImg(res: Int, a: () -> Unit) = ImageView(ctx).apply {
+        setImageResource(res); setColorFilter(t.text); scaleType = ImageView.ScaleType.CENTER_INSIDE
+        setPadding(dp(10), dp(10), dp(10), dp(10)); setOnClickListener { a() }
+    }
+
     override fun onCreate() {
         super.onCreate()
         val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
@@ -116,28 +125,102 @@ class CrazeKeyboardService : InputMethodService() {
     // Fullscreen extract mode in landscape is slow and covers the app, so turn it off.
     override fun onEvaluateFullscreenMode(): Boolean = false
 
+    // Floating mode: the keyboard window is tall and transparent, but only the keyboard itself takes touches
+    // and the app underneath is not resized.
+    override fun onComputeInsets(outInsets: InputMethodService.Insets) {
+        super.onComputeInsets(outInsets)
+        if (floating && ::kbd.isInitialized && ::outer.isInitialized && kbd.height > 0) {
+            val h = maxOf(outer.height, window.window?.decorView?.height ?: 0)
+            outInsets.contentTopInsets = h
+            outInsets.visibleTopInsets = h
+            val loc = IntArray(2)
+            kbd.getLocationInWindow(loc)
+            outInsets.touchableInsets = InputMethodService.Insets.TOUCHABLE_INSETS_REGION
+            outInsets.touchableRegion.set(loc[0], loc[1], loc[0] + kbd.width, loc[1] + kbd.height)
+        }
+    }
+
     override fun onCreateInputView(): View {
         t = Prefs.theme(this)
         lastSig = Prefs.sig(this)
+        floating = Prefs.b(this, "float", false)
         loadPrefs()
         dismissPopups()
+        val sw = resources.displayMetrics.widthPixels
+        val sh = resources.displayMetrics.heightPixels
         outer = FrameLayout(this)
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(t.bg); setPadding(0, 0, 0, dp(6)) }
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        kbd = root
         top = FrameLayout(this)
         panel = FrameLayout(this)
+        if (floating) {
+            root.background = rounded(t.bg, 18)
+            root.elevation = dp(8).toFloat()
+            root.setPadding(dp(2), 0, dp(2), dp(6))
+            root.addView(buildHandle(), lp(MATCH, dp(26)))
+        } else {
+            root.setBackgroundColor(t.bg)
+            root.setPadding(0, 0, 0, dp(6))
+        }
         root.addView(top, lp(MATCH, topH()))
         root.addView(panel, lp(MATCH, panelH()))
-        val oh = Prefs.i(this, "onehand", 0)
-        val w = if (oh == 0) MATCH else (resources.displayMetrics.widthPixels * 0.82f).toInt()
-        outer.addView(root, FrameLayout.LayoutParams(w, WRAP, if (oh == 2) Gravity.END else Gravity.START))
+        if (floating) {
+            val fw = if (landscape()) (sw * 0.55f).toInt() else (sw * 0.88f).toInt()
+            outer.minimumHeight = (sh * 0.92f).toInt()
+            val p = FrameLayout.LayoutParams(fw, WRAP, Gravity.TOP or Gravity.START)
+            p.leftMargin = Prefs.i(this, "fx", (sw - fw) / 2).coerceIn(0, maxOf(0, sw - fw))
+            p.topMargin = Prefs.i(this, "fy", (sh * 0.30f).toInt()).coerceIn(0, (sh * 0.5f).toInt())
+            outer.addView(root, p)
+        } else {
+            val oh = Prefs.i(this, "onehand", 0)
+            val w = if (oh == 0) MATCH else (sw * 0.82f).toInt()
+            outer.addView(root, FrameLayout.LayoutParams(w, WRAP, if (oh == 2) Gravity.END else Gravity.START))
+        }
         buildTop()
         showPanel(mode)
         return outer
     }
 
+    private fun rebuild() {
+        mode = "letters"
+        setInputView(onCreateInputView())
+    }
+
+    // Drag bar of the floating keyboard: drag anywhere on it to move, tap the dock icon to dock again.
+    private fun buildHandle(): View {
+        val row = FrameLayout(ctx)
+        val grip = ImageView(ctx).apply { setImageResource(R.drawable.ic_grip); setColorFilter(t.text); alpha = 0.6f }
+        row.addView(grip, FrameLayout.LayoutParams(dp(36), dp(22), Gravity.CENTER))
+        val dock = iconImg(R.drawable.ic_dock) { Prefs.setB(ctx, "float", false); rebuild() }
+        dock.setPadding(dp(4), dp(3), dp(4), dp(3))
+        row.addView(dock, FrameLayout.LayoutParams(dp(40), dp(26), Gravity.END or Gravity.CENTER_VERTICAL))
+        var downX = 0f
+        var downY = 0f
+        var startL = 0
+        var startT = 0
+        row.setOnTouchListener { _, e ->
+            val p = kbd.layoutParams as FrameLayout.LayoutParams
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { downX = e.rawX; downY = e.rawY; startL = p.leftMargin; startT = p.topMargin }
+                MotionEvent.ACTION_MOVE -> {
+                    val maxX = maxOf(0, outer.width - kbd.width)
+                    val maxY = maxOf(0, outer.height - kbd.height)
+                    p.leftMargin = (startL + (e.rawX - downX).toInt()).coerceIn(0, maxX)
+                    p.topMargin = (startT + (e.rawY - downY).toInt()).coerceIn(0, maxY)
+                    kbd.layoutParams = p
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    Prefs.setI(ctx, "fx", p.leftMargin); Prefs.setI(ctx, "fy", p.topMargin)
+                }
+            }
+            true
+        }
+        return row
+    }
+
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        if (Prefs.sig(this) != lastSig) setInputView(onCreateInputView())
+        if (Prefs.sig(this) != lastSig || Prefs.b(this, "float", false) != floating) setInputView(onCreateInputView())
         else loadPrefs()
         val cls = info.inputType and InputType.TYPE_MASK_CLASS
         val v = info.inputType and InputType.TYPE_MASK_VARIATION
@@ -148,9 +231,8 @@ class CrazeKeyboardService : InputMethodService() {
             (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0
         shift = 0
         autoShift = false
-        toolbarOpen = false
-        buildTop()
         mode = if (cls == InputType.TYPE_CLASS_NUMBER || cls == InputType.TYPE_CLASS_PHONE) "symbols" else "letters"
+        buildTop()
         showPanel(mode)
         updateSuggestions()
     }
@@ -171,7 +253,7 @@ class CrazeKeyboardService : InputMethodService() {
     private val refreshR = Runnable { autoCap(); updateSuggestions() }
     private fun scheduleRefresh() { hd.removeCallbacks(refreshR); hd.postDelayed(refreshR, 40) }
 
-    // ---------- top bar (suggestions / toolbar) ----------
+    // ---------- top bar: menu button + suggestions ----------
     private fun iconBtn(label: String, size: Float = 18f, a: () -> Unit) = TextView(ctx).apply {
         text = label; textSize = size; gravity = Gravity.CENTER; setTextColor(t.text)
         setOnClickListener { a() }
@@ -180,18 +262,14 @@ class CrazeKeyboardService : InputMethodService() {
     private fun buildTop() {
         top.removeAllViews()
         sugViews.clear()
+        val inMenu = mode == "menu"
         val row = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(4), dp(2), dp(4), dp(2)) }
-        row.addView(iconBtn(if (toolbarOpen) "✕" else "⋮⋮", 16f) { toolbarOpen = !toolbarOpen; buildTop() }, lp(dp(40), MATCH))
-        if (toolbarOpen) {
-            val items = listOf<Pair<String, () -> Unit>>(
-                "😀" to { showPanel("emoji") },
-                "📋" to { showPanel("clip") },
-                "🎤" to { startVoice() },
-                "🎨" to { Prefs.nextTheme(ctx); setInputView(onCreateInputView()) },
-                "◧" to { Prefs.nextOneHand(ctx); setInputView(onCreateInputView()) },
-                "⚙" to { startActivity(Intent(ctx, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-            )
-            items.forEach { (l, a) -> row.addView(iconBtn(l, 18f, a), lp(0, MATCH, 1f)) }
+        row.addView(iconImg(if (inMenu) R.drawable.ic_close else R.drawable.ic_menu) { showPanel(if (mode == "menu") "letters" else "menu") }, lp(dp(44), MATCH))
+        if (inMenu) {
+            row.addView(TextView(ctx).apply {
+                text = "Menu"; textSize = 15f; typeface = Typeface.DEFAULT_BOLD; setTextColor(t.text); gravity = Gravity.CENTER
+            }, lp(0, MATCH, 1f))
+            row.addView(View(ctx), lp(dp(44), 1))
         } else {
             for (i in 0..2) {
                 val tv = TextView(ctx).apply {
@@ -216,7 +294,7 @@ class CrazeKeyboardService : InputMethodService() {
     }
 
     private fun updateSuggestions() {
-        if (toolbarOpen || sugViews.isEmpty()) return
+        if (mode == "menu" || sugViews.isEmpty()) return
         val list = if (suggestOn) Words.suggest(this, currentWord()) else emptyList()
         for (i in 0..2) sugViews[i].text = list.getOrNull(i) ?: ""
     }
@@ -253,10 +331,11 @@ class CrazeKeyboardService : InputMethodService() {
 
     private fun updateCase() {
         letterKeys.forEach { (tv, c) -> tv.text = if (shift > 0) c.uppercase() else c }
-        shiftKey?.apply {
-            text = when (shift) { 2 -> "⇪"; 1 -> "⬆"; else -> "⇧" }
-            background = keyBg(if (shift > 0) t.accent else t.special)
-            setTextColor(if (shift > 0) t.accentText else t.text)
+        shiftKey?.let { k ->
+            val fg = if (shift > 0) t.accentText else t.text
+            k.iv?.setImageResource(when (shift) { 2 -> R.drawable.ic_caps; 1 -> R.drawable.ic_shift_on; else -> R.drawable.ic_shift })
+            k.iv?.setColorFilter(fg)
+            k.tv.background = keyBg(if (shift > 0) t.accent else t.special)
         }
     }
 
@@ -296,9 +375,12 @@ class CrazeKeyboardService : InputMethodService() {
         scheduleRefresh()
     }
 
-    private fun enterLabel() = when (actionId()) {
-        EditorInfo.IME_ACTION_SEARCH -> "🔍"; EditorInfo.IME_ACTION_SEND -> "➤"; EditorInfo.IME_ACTION_GO -> "→"
-        EditorInfo.IME_ACTION_NEXT -> "⇥"; EditorInfo.IME_ACTION_DONE -> "✓"; else -> "↵"
+    private fun enterIcon() = when (actionId()) {
+        EditorInfo.IME_ACTION_SEARCH -> R.drawable.ic_search
+        EditorInfo.IME_ACTION_SEND -> R.drawable.ic_send
+        EditorInfo.IME_ACTION_GO, EditorInfo.IME_ACTION_NEXT -> R.drawable.ic_go
+        EditorInfo.IME_ACTION_DONE -> R.drawable.ic_done
+        else -> R.drawable.ic_enter
     }
 
     private fun startVoice() {
@@ -311,19 +393,24 @@ class CrazeKeyboardService : InputMethodService() {
     }
 
     // ---------- key building ----------
-    private fun mk(label: String, w: Float, bg: Int, fg: Int, size: Float = 20f): K {
+    private fun mk(label: String, w: Float, bg: Int, fg: Int, size: Float = 20f, icon: Int = 0): K {
         val tv = TextView(ctx).apply {
             text = label; gravity = Gravity.CENTER; setTextColor(fg); textSize = size
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             includeFontPadding = false
             background = keyBg(bg)
         }
+        var iv: ImageView? = null
         val cell = FrameLayout(ctx).apply {
             setPadding(dp(2), dp(3), dp(2), dp(3))
             layoutParams = lp(0, cellH, w)
             addView(tv, FrameLayout.LayoutParams(MATCH, MATCH))
+            if (icon != 0) {
+                iv = ImageView(ctx).apply { setImageResource(icon); setColorFilter(fg); scaleType = ImageView.ScaleType.FIT_CENTER }
+                addView(iv, FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
+            }
         }
-        return K(cell, tv)
+        return K(cell, tv, iv)
     }
 
     private fun dismissAlts() { popup?.dismiss(); popup = null }
@@ -418,14 +505,14 @@ class CrazeKeyboardService : InputMethodService() {
     private fun bottomRow(left: String, leftTarget: String): LinearLayout = hrow().apply {
         val l = mk(left, 1.4f, t.special, t.text, 14f); attach(l) { showPanel(leftTarget) }; addView(l.cell)
         val c = mk(",", 0.9f, t.special, t.text); attach(c, onLong = { showPanel("emoji") }) { type(",") }; addView(c.cell)
-        val g = mk("🌐", 0.9f, t.special, t.text, 17f); attach(g) { switchKeyboard() }; addView(g.cell)
-        val sp = mk("CrazeKeyboard", 4f, t.key, t.text, 11f); sp.tv.alpha = 1f
+        val g = mk("", 0.9f, t.special, t.text, 17f, R.drawable.ic_globe); attach(g) { switchKeyboard() }; addView(g.cell)
+        val sp = mk("CrazeKeyboard", 4f, t.key, t.text, 11f)
         attach(sp, onLong = { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker() }) { type(" ") }; addView(sp.cell)
         val d = mk(".", 0.9f, t.special, t.text); attach(d, onLong = { showAlts(d.cell, Alts.map["."]!!) }) { type(".") }; addView(d.cell)
-        val e = mk(enterLabel(), 1.4f, t.accent, t.accentText, 18f); attach(e) { enter() }; addView(e.cell)
+        val e = mk("", 1.4f, t.accent, t.accentText, 18f, enterIcon()); attach(e) { enter() }; addView(e.cell)
     }
 
-    private fun backKey(w: Float): View { val b = mk("⌫", w, t.special, t.text, 18f); attach(b, repeat = true) { del() }; return b.cell }
+    private fun backKey(w: Float): View { val b = mk("", w, t.special, t.text, 18f, R.drawable.ic_backspace); attach(b, repeat = true) { del() }; return b.cell }
 
     private fun column() = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(3), dp(2), dp(3), 0) }
 
@@ -435,7 +522,7 @@ class CrazeKeyboardService : InputMethodService() {
         col.addView(charRow("qwertyuiop"))
         col.addView(charRow("asdfghjkl", 0.5f))
         col.addView(hrow().apply {
-            val s = mk("⇧", 1.4f, t.special, t.text, 18f); shiftKey = s.tv
+            val s = mk("", 1.4f, t.special, t.text, 18f, R.drawable.ic_shift); shiftKey = s
             attach(s) {
                 val now = SystemClock.uptimeMillis()
                 // Single tap toggles shift; a quick second tap turns on caps lock.
@@ -482,6 +569,43 @@ class CrazeKeyboardService : InputMethodService() {
             })
         }
         col.addView(bottomRow("ABC", "letters"))
+        return col
+    }
+
+    // ---------- menu (SVG icon tiles) ----------
+    private fun tile(icon: Int, label: String, a: () -> Unit): View {
+        val box = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; background = keyBg(t.key, 12)
+            setOnClickListener { a() }
+        }
+        box.addView(ImageView(ctx).apply { setImageResource(icon); setColorFilter(t.text) }, lp(dp(26), dp(26)))
+        box.addView(TextView(ctx).apply {
+            text = label; textSize = 11f; setTextColor(t.text); gravity = Gravity.CENTER; setPadding(0, dp(4), 0, 0)
+        })
+        val wrap = FrameLayout(ctx).apply { setPadding(dp(3), dp(3), dp(3), dp(3)) }
+        wrap.addView(box, FrameLayout.LayoutParams(MATCH, MATCH))
+        wrap.layoutParams = lp(0, MATCH, 1f)
+        return wrap
+    }
+
+    private fun buildMenu(): View {
+        val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(3), dp(4), dp(3), dp(2)) }
+        val r1 = LinearLayout(ctx)
+        r1.addView(tile(R.drawable.ic_emoji, "Emoji") { showPanel("emoji") })
+        r1.addView(tile(R.drawable.ic_clip, "Clipboard") { showPanel("clip") })
+        r1.addView(tile(R.drawable.ic_mic, "Voice") { startVoice(); showPanel("letters") })
+        r1.addView(tile(R.drawable.ic_palette, "Theme") { Prefs.nextTheme(ctx); rebuild() })
+        val r2 = LinearLayout(ctx)
+        r2.addView(tile(R.drawable.ic_onehand, "One-handed") { Prefs.nextOneHand(ctx); rebuild() })
+        r2.addView(tile(if (floating) R.drawable.ic_dock else R.drawable.ic_float, if (floating) "Dock" else "Floating") {
+            Prefs.setB(ctx, "float", !floating); rebuild()
+        })
+        r2.addView(tile(R.drawable.ic_settings, "Settings") {
+            startActivity(Intent(ctx, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        })
+        r2.addView(tile(R.drawable.ic_hide, "Hide") { showPanel("letters"); requestHideSelf(0) })
+        col.addView(r1, lp(MATCH, 0, 1f))
+        col.addView(r2, lp(MATCH, 0, 1f))
         return col
     }
 
@@ -537,7 +661,7 @@ class CrazeKeyboardService : InputMethodService() {
         val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(3), dp(2), dp(3), 0) }
         val head = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
         head.addView(TextView(ctx).apply { text = "  Clipboard"; textSize = 15f; setTextColor(t.text); gravity = Gravity.CENTER_VERTICAL }, lp(0, dp(40), 1f))
-        head.addView(iconBtn("🗑", 16f) { Prefs.clearClips(ctx); showPanel("clip") }, lp(dp(48), dp(40)))
+        head.addView(iconImg(R.drawable.ic_trash) { Prefs.clearClips(ctx); showPanel("clip") }, lp(dp(48), dp(40)))
         col.addView(head, lp(MATCH, dp(40)))
         val body = ScrollView(ctx)
         val list = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
@@ -557,6 +681,7 @@ class CrazeKeyboardService : InputMethodService() {
 
     private fun showPanel(m: String) {
         dismissPopups()
+        val prev = mode
         mode = m
         panel.removeAllViews()
         letterKeys.clear()   // stale keys from other pages must not be touched by updateCase()
@@ -566,9 +691,11 @@ class CrazeKeyboardService : InputMethodService() {
             "symbols2" -> buildSymbols(2)
             "emoji" -> buildEmoji()
             "clip" -> buildClip()
+            "menu" -> buildMenu()
             else -> buildLetters()
         }
         panel.addView(page, FrameLayout.LayoutParams(MATCH, panelH()))
+        if (m == "menu" || prev == "menu") buildTop()
         if (m == "letters") scheduleRefresh()
     }
 }
