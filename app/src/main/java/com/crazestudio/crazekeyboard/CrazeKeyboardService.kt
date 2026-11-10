@@ -52,6 +52,7 @@ class CrazeKeyboardService : InputMethodService() {
     private var clipboardManager: ClipboardManager? = null
     private var clipListener: ClipboardManager.OnPrimaryClipChangedListener? = null
     private var clipboardListening = false
+    private var clipboardCaptureAllowed = false
     private var inputViewVisible = false
 
     private val emojiCats = linkedMapOf(
@@ -74,16 +75,19 @@ class CrazeKeyboardService : InputMethodService() {
         val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         clipboardManager = cm
         clipListener = ClipboardManager.OnPrimaryClipChangedListener {
-            try {
-                val item = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
-                item?.text?.toString()?.takeIf { it.isNotBlank() }?.let { Prefs.addClip(ctx, it) }
-            } catch (_: Exception) {
-                // Clipboard access can be restricted by the OS or the source app.
+            if (clipboardCaptureAllowed) {
+                try {
+                    val item = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
+                    item?.text?.toString()?.takeIf { it.isNotBlank() }?.let { Prefs.addClip(ctx, it) }
+                } catch (_: Exception) {
+                    // Clipboard access can be restricted by the OS or the source app.
+                }
             }
         }
     }
 
     private fun setClipboardMonitoring(enabled: Boolean) {
+        clipboardCaptureAllowed = enabled
         val cm = clipboardManager ?: return
         val listener = clipListener ?: return
         if (clipboardListening == enabled) return
