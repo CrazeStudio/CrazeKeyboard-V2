@@ -39,8 +39,8 @@ object Words {
     fun suggest(c: Context, w: String): List<String> {
         if (w.isEmpty()) return listOf("I", "The", "Thanks")
         val lower = w.lowercase()
-        val learned = Prefs.learned(c)
-        val out = (learned.asSequence() + dictionary.asSequence())
+        val learned = Prefs.learned(c).asSequence().map { it.lowercase() }
+        val out = (learned + dictionary.asSequence())
             .filter { it.startsWith(lower) && it != lower }
             .distinct()
             .take(3)
