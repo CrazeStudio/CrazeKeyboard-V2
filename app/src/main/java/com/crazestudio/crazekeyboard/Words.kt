@@ -154,14 +154,14 @@ object Words {
         if (lower.length !in 3..20 || known(context, lower)) return null
         val words = dictionary(context)
         val learned = Prefs.learned(context)
-        val maxDistance = if (lower.length <= 5) 1 else 2
+        val maxDistance = 1
         val best = words.asSequence()
             .map { it to editDistance(lower, it, maxDistance) }
             .filter { it.second in 1..maxDistance }
             .minWithOrNull(compareBy<Pair<String, Int>> { it.second }.thenBy { rank(it.first, learned) })
             ?: return null
         // Require a close match; avoid aggressive replacement of unfamiliar names.
-        if (best.second > 1 && lower.length < 8) return null
+        if (best.second != 1) return null
         return cased(best.first, typed)
     }
 
