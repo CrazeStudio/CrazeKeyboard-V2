@@ -85,28 +85,38 @@ class CrazeKeyboardService : InputMethodService() {
 
     override fun onCreate() {
         super.onCreate()
-        val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-        clipboardManager = cm
-        clipListener = ClipboardManager.OnPrimaryClipChangedListener {
+        // Clipboard services and listeners are created only when clipboard history is used.
+    }
+
+    private fun setClipboardMonitoring(enabled: Boolean) {
+        clipboardCaptureAllowed = enabled
+
+        if (!enabled) {
+            val existingManager = clipboardManager ?: return
+            val existingListener = clipListener ?: return
+            if (clipboardListening) existingManager.removePrimaryClipChangedListener(existingListener)
+            clipboardListening = false
+            return
+        }
+
+        val cm = clipboardManager ?: (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).also {
+            clipboardManager = it
+        }
+        val listener = clipListener ?: ClipboardManager.OnPrimaryClipChangedListener {
             if (clipboardCaptureAllowed) {
                 try {
-                    val item = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
+                    val item = clipboardManager?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
                     item?.text?.toString()?.takeIf { it.isNotBlank() }?.let { Prefs.addClip(ctx, it) }
                 } catch (_: Exception) {
                     // Clipboard access can be restricted by the OS or the source app.
                 }
             }
-        }
-    }
+        }.also { clipListener = it }
 
-    private fun setClipboardMonitoring(enabled: Boolean) {
-        clipboardCaptureAllowed = enabled
-        val cm = clipboardManager ?: return
-        val listener = clipListener ?: return
-        if (clipboardListening == enabled) return
-        if (enabled) cm.addPrimaryClipChangedListener(listener)
-        else cm.removePrimaryClipChangedListener(listener)
-        clipboardListening = enabled
+        if (!clipboardListening) {
+            cm.addPrimaryClipChangedListener(listener)
+            clipboardListening = true
+        }
     }
 
     private fun configureEditor(info: EditorInfo) {
@@ -152,6 +162,7 @@ class CrazeKeyboardService : InputMethodService() {
         inputViewVisible = false
         setClipboardMonitoring(false)
         clipboardManager = null
+        clipListener = null
         cancelVoiceInput()
         speechRecognizer?.destroy()
         speechRecognizer = null
