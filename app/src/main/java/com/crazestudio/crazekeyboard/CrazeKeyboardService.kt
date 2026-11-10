@@ -47,6 +47,7 @@ class CrazeKeyboardService : InputMethodService() {
     private var suggestionPrefix: String? = null
     private var hapticsEnabled = true
     private var lastShiftTap = 0L
+    private var lastSpaceTap = 0L
     private var popup: PopupWindow? = null
     private var lastSig = ""
     private var clipboardManager: ClipboardManager? = null
@@ -324,6 +325,16 @@ class CrazeKeyboardService : InputMethodService() {
     private fun space(ic: android.view.inputmethod.InputConnection) {
         // Correction and learning are restricted to ordinary text fields by configureEditor().
         val selected = !ic.getSelectedText(0).isNullOrEmpty()
+        val now = SystemClock.uptimeMillis()
+        val previousChar = ic.getTextBeforeCursor(1, 0)?.toString()
+        if (!selected && Prefs.b(this, "doubleSpacePeriod", true) &&
+            previousChar == " " && now - lastSpaceTap in 1..350) {
+            ic.deleteSurroundingText(1, 0)
+            ic.commitText(". ", 1)
+            lastSpaceTap = 0L
+            afterEdit()
+            return
+        }
         if (!selected && suggestOn) {
             val typed = currentWord()
             if (typed.length in 2..40 && typed.any { it.isLetter() }) {
@@ -354,6 +365,19 @@ class CrazeKeyboardService : InputMethodService() {
         val ic = currentInputConnection ?: return
         if (!ic.getSelectedText(0).isNullOrEmpty()) ic.commitText("", 1)
         else if (!ic.deleteSurroundingTextInCodePoints(1, 0)) sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
+        lastSpaceTap = 0L
+        afterEdit()
+    }
+
+    private fun deleteWord() {
+        val ic = currentInputConnection ?: return
+        val before = ic.getTextBeforeCursor(96, 0)?.toString() ?: return
+        val spaces = before.takeLastWhile { it.isWhitespace() }
+        val preceding = before.dropLast(spaces.length)
+        val word = preceding.takeLastWhile { it.isLetterOrDigit() || it == '\'' || it == '_' }
+        val count = spaces.length + word.length
+        if (count > 0) ic.deleteSurroundingText(count, 0)
+        lastSpaceTap = 0L
         afterEdit()
     }
 
@@ -411,8 +435,11 @@ class CrazeKeyboardService : InputMethodService() {
                     cancelled = false
                     view.alpha = 0.72f
                     if (hapticsEnabled) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                    if (repeat) { tap(); hd.postDelayed(repR, 400) }
-                    else if (onLong != null) hd.postDelayed(longR, 350)
+                    if (repeat) {
+                        tap()
+                        hd.postDelayed(repR, 400)
+                        if (onLong != null) hd.postDelayed(longR, 500)
+                    } else if (onLong != null) hd.postDelayed(longR, 350)
                 }
                 MotionEvent.ACTION_MOVE -> {
                     if (!cancelled && (e.x < 0f || e.y < 0f || e.x > view.width || e.y > view.height)) {
@@ -480,7 +507,11 @@ class CrazeKeyboardService : InputMethodService() {
         val e = mk(enterLabel(), 1.5f, t.accent, t.accentText); attach(e) { enter() }; addView(e)
     }
 
-    private fun backKey(w: Float): TextView { val b = iconKey(R.drawable.ic_backspace, w, t.special, t.text); attach(b, repeat = true) { del() }; return b }
+    private fun backKey(w: Float): TextView {
+        val b = iconKey(R.drawable.ic_backspace, w, t.special, t.text)
+        attach(b, repeat = true, onLong = { deleteWord() }) { del() }
+        return b
+    }
 
     private fun rowCount() = if (Prefs.b(this, "numrow", true)) 5 else 4
 
