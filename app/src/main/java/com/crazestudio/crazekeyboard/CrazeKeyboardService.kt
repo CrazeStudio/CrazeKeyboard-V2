@@ -134,7 +134,7 @@ class CrazeKeyboardService : InputMethodService() {
         suggestOn = Prefs.b(this, "suggest", true) && cls == InputType.TYPE_CLASS_TEXT &&
             v !in noSug && !noPersonalizedLearning &&
             (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0
-        setClipboardMonitoring(!passwordField && !noPersonalizedLearning)
+        setClipboardMonitoring(Prefs.b(this, "clipboardHistory", true) && !passwordField && !noPersonalizedLearning)
         shift = 0
         toolbarOpen = false
         buildTop()
