@@ -28,7 +28,7 @@ object Words {
     private val dictionary = dict.distinct()
     private val dictionarySet = dictionary.toHashSet()
 
-    fun known(w: String) = dictionarySet.contains(w.lowercase()) || Prefs.learnedCacheContains(w)
+    fun known(w: String) = dictionarySet.contains(w.lowercase()) || Prefs.isLearned(w.lowercase())
 
     private fun cased(s: String, w: String) = when {
         w.length > 1 && w.all { it.isUpperCase() } -> s.uppercase()
