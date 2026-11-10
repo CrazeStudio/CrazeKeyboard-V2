@@ -690,6 +690,8 @@ class CrazeKeyboardService : InputMethodService() {
                             sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_LEFT)
                             accumulated += step
                         }
+                    } else {
+                        lastX = event.x
                     }
                 }
                 MotionEvent.ACTION_UP -> {
