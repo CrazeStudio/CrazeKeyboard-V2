@@ -171,20 +171,23 @@ class SettingsActivity : Activity() {
         status.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            enabledBadge = pill("Checking…", false)
-            selectedBadge = pill("Checking…", false)
-            addView(enabledBadge, LinearLayout.LayoutParams(-2, -2))
+            val enabledStatus = pill("Checking…", false)
+            val selectedStatus = pill("Checking…", false)
+            enabledBadge = enabledStatus
+            selectedBadge = selectedStatus
+            addView(enabledStatus, LinearLayout.LayoutParams(-2, -2))
             addView(Space(this@SettingsActivity), LinearLayout.LayoutParams(dp(8), 1))
-            addView(selectedBadge, LinearLayout.LayoutParams(-2, -2))
+            addView(selectedStatus, LinearLayout.LayoutParams(-2, -2))
         })
-        setupAction = action("Check keyboard status", true) {
+        val setupButton = action("Check keyboard status", true) {
             if (!keyboardEnabled()) {
                 startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
             } else {
                 (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker()
             }
         }.apply { setPadding(dp(12), dp(11), dp(12), dp(11)) }
-        status.addView(setupAction)
+        setupAction = setupButton
+        status.addView(setupButton)
         content.addView(status, margin())
 
         val test = section("Try your keyboard", "Tap the field below to test typing, suggestions, cursor control and voice input.")
