@@ -22,7 +22,7 @@ object Prefs {
     fun nextTheme(c: Context) = setI(c, "theme", (i(c, "theme", 0) + 1) % themes.size)
     fun nextOneHand(c: Context) = setI(c, "onehand", (i(c, "onehand", 0) + 1) % 3)
     fun keyH(c: Context) = i(c, "keyh", 46)
-    fun sig(c: Context) = "${i(c, "theme", 0)}|${i(c, "onehand", 0)}|${keyH(c)}|${b(c, "numrow", true)}|${b(c, "clipboardHistory", true)}|${b(c, "autocorrect", true)}|${b(c, "nextWord", true)}"
+    fun sig(c: Context) = "${i(c, "theme", 0)}|${i(c, "onehand", 0)}|${keyH(c)}|${b(c, "numrow", true)}|${b(c, "clipboardHistory", true)}|${b(c, "autocorrect", true)}|${b(c, "nextWord", true)}|${b(c, "doubleSpacePeriod", true)}"
 
     private fun list(c: Context, k: String) = (sp(c).getString(k, "") ?: "").split(SEP).filter { it.isNotEmpty() }
     private fun put(c: Context, k: String, l: List<String>) = sp(c).edit().putString(k, l.joinToString(SEP)).apply()
