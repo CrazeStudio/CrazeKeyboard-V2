@@ -88,10 +88,12 @@ class CrazeKeyboardService : InputMethodService() {
                     val value = line.trim()
                     if (value.startsWith("[") && value.endsWith("]")) {
                         current = value.substring(1, value.length - 1)
-                    } else if (value.isNotEmpty() && current in categories.keys) {
-                        val key = current!!
-                        categories[key] = if (categories[key].isNullOrEmpty()) value
-                            else categories[key] + " " + value
+                    } else if (value.isNotEmpty()) {
+                        val key = current ?: return@forEach
+                        if (key in categories) {
+                            val existing = categories[key].orEmpty()
+                            categories[key] = if (existing.isEmpty()) value else "$existing $value"
+                        }
                     }
                 }
             }
@@ -911,7 +913,7 @@ class CrazeKeyboardService : InputMethodService() {
         val iconIds = listOf(
             R.drawable.ic_recent, R.drawable.ic_smile, R.drawable.ic_people, R.drawable.ic_nature,
             R.drawable.ic_food, R.drawable.ic_activity, R.drawable.ic_travel, R.drawable.ic_objects,
-            R.drawable.ic_settings, R.drawable.ic_globe
+            R.drawable.ic_symbols, R.drawable.ic_globe
         )
         emojiCats.entries.forEachIndexed { index, entry ->
             val (category, data) = entry
