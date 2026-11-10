@@ -117,6 +117,15 @@ class SettingsActivity : Activity() {
         prefs.addView(settingSwitch("Haptic feedback", "A light vibration on key press.", "haptics", true))
         content.addView(prefs, margin())
 
+        val privacy = section("Privacy & data", "Clipboard history is only collected while the keyboard is active. Password and no-personalized-learning fields are excluded.")
+        privacy.addView(settingSwitch("Clipboard history", "Save copied text for quick access from the keyboard.", "clipboardHistory", true))
+        privacy.addView(divider())
+        privacy.addView(action("Clear clipboard history") {
+            Prefs.clearClips(this)
+            Toast.makeText(this, "Clipboard history cleared", Toast.LENGTH_SHORT).show()
+        })
+        content.addView(privacy, margin())
+
         val appearance = section("Appearance", "Choose a colour style for your keyboard.")
         Prefs.themeNames.forEachIndexed { index, name ->
             val selected = Prefs.i(this, "theme", 0) == index
