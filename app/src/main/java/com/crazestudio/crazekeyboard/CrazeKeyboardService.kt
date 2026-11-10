@@ -2,6 +2,7 @@ package com.crazestudio.crazekeyboard
 
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.content.Intent
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
@@ -9,6 +10,10 @@ import android.inputmethodservice.InputMethodService
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.os.Bundle
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.text.InputType
 import android.text.TextUtils
 import android.view.Gravity
@@ -25,6 +30,8 @@ import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
+import java.util.Locale
 
 class CrazeKeyboardService : InputMethodService() {
     private val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
@@ -55,6 +62,10 @@ class CrazeKeyboardService : InputMethodService() {
     private var clipboardListening = false
     private var clipboardCaptureAllowed = false
     private var inputViewVisible = false
+    private var voiceAllowed = false
+    private var voiceListening = false
+    private var speechRecognizer: SpeechRecognizer? = null
+    private var micView: ImageView? = null
 
     private val emojiCats = linkedMapOf(
         "recent" to "", 
@@ -121,6 +132,9 @@ class CrazeKeyboardService : InputMethodService() {
         suggestOn = Prefs.b(this, "suggest", true) && cls == InputType.TYPE_CLASS_TEXT &&
             variation !in noSuggestions && !noPersonalizedLearning &&
             (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0
+        voiceAllowed = cls == InputType.TYPE_CLASS_TEXT &&
+            variation !in noSuggestions && !passwordField && !noPersonalizedLearning
+        if (!voiceAllowed) cancelVoiceInput()
         setClipboardMonitoring(
             inputViewVisible && Prefs.b(this, "clipboardHistory", true) &&
                 !passwordField && !noPersonalizedLearning
@@ -136,6 +150,9 @@ class CrazeKeyboardService : InputMethodService() {
         inputViewVisible = false
         setClipboardMonitoring(false)
         clipboardManager = null
+        cancelVoiceInput()
+        speechRecognizer?.destroy()
+        speechRecognizer = null
         super.onDestroy()
     }
 
@@ -176,6 +193,7 @@ class CrazeKeyboardService : InputMethodService() {
         dismissPopups()
         hd.removeCallbacks(refreshSuggestions)
         suggestionPrefix = null
+        cancelVoiceInput()
         super.onFinishInputView(finishingInput)
     }
 
@@ -243,7 +261,122 @@ class CrazeKeyboardService : InputMethodService() {
                     lp(dp(1), dp(24)).apply { gravity = Gravity.CENTER_VERTICAL })
             }
         }
+        val mic = iconImage(R.drawable.ic_mic) { startVoiceInput() }.apply {
+            contentDescription = "Voice typing"
+        }
+        micView = mic
+        row.addView(mic, lp(dp(42), MATCH))
         top.addView(row, FrameLayout.LayoutParams(MATCH, MATCH))
+        updateMicButton()
+    }
+
+    private fun updateMicButton() {
+        micView?.imageTintList = android.content.res.ColorStateList.valueOf(
+            if (voiceListening) t.accent else t.text
+        )
+        micView?.alpha = if (voiceAllowed) 1f else 0.45f
+    }
+
+    private fun startVoiceInput() {
+        if (!voiceAllowed) {
+            Toast.makeText(this, "Voice typing is unavailable in this field", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            startActivity(
+                Intent(this, SettingsActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    .putExtra("request_voice_permission", true)
+            )
+            return
+        }
+        if (voiceListening) {
+            cancelVoiceInput()
+            return
+        }
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            Toast.makeText(this, "No speech recognition service is installed", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val recognizer = speechRecognizer ?: SpeechRecognizer.createSpeechRecognizer(this).also { created ->
+                created.setRecognitionListener(object : RecognitionListener {
+                    override fun onReadyForSpeech(params: Bundle?) {
+                        voiceListening = true
+                        updateMicButton()
+                    }
+                    override fun onBeginningOfSpeech() {
+                        voiceListening = true
+                        updateMicButton()
+                    }
+                    override fun onRmsChanged(rmsdB: Float) {}
+                    override fun onBufferReceived(buffer: ByteArray?) {}
+                    override fun onEndOfSpeech() {}
+                    override fun onError(error: Int) {
+                        val wasListening = voiceListening
+                        voiceListening = false
+                        updateMicButton()
+                        if (wasListening && inputViewVisible) {
+                            val message = if (error == SpeechRecognizer.ERROR_NO_MATCH ||
+                                error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                                "Didn't catch that. Try again."
+                            } else {
+                                "Voice typing stopped."
+                            }
+                            Toast.makeText(this@CrazeKeyboardService, message, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    override fun onResults(results: Bundle?) {
+                        val active = voiceListening && inputViewVisible && voiceAllowed
+                        voiceListening = false
+                        updateMicButton()
+                        if (!active) return
+                        val spoken = results
+                            ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                            ?.firstOrNull()?.trim().orEmpty()
+                        if (spoken.isEmpty()) return
+                        val ic = currentInputConnection ?: return
+                        val before = ic.getTextBeforeCursor(1, 0)?.toString().orEmpty()
+                        val prefix = if (before.isNotEmpty() &&
+                            (before.last().isLetterOrDigit() || before.last() == ')')) " " else ""
+                        val suffix = if (spoken.last().isWhitespace()) "" else " "
+                        ic.beginBatchEdit()
+                        try {
+                            ic.commitText(prefix + spoken + suffix, 1)
+                        } finally {
+                            ic.endBatchEdit()
+                        }
+                        afterEdit()
+                    }
+                    override fun onPartialResults(partialResults: Bundle?) {}
+                    override fun onEvent(eventType: Int, params: Bundle?) {}
+                })
+            }.also { speechRecognizer = it }
+            val locale = currentInputEditorInfo?.hintLocales?.get(0)?.toLanguageTag()
+                ?: Locale.getDefault().toLanguageTag()
+            val request = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale)
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+            }
+            voiceListening = true
+            updateMicButton()
+            recognizer.startListening(request)
+        } catch (_: Exception) {
+            voiceListening = false
+            updateMicButton()
+            Toast.makeText(this, "Could not start voice typing", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun cancelVoiceInput() {
+        val wasListening = voiceListening
+        voiceListening = false
+        if (wasListening) {
+            try { speechRecognizer?.cancel() } catch (_: Exception) {}
+        }
+        updateMicButton()
     }
 
     private fun currentWord(): String {
@@ -427,6 +560,7 @@ class CrazeKeyboardService : InputMethodService() {
     private fun attach(v: TextView, repeat: Boolean = false, showPrev: Boolean = false, onLong: (() -> Unit)? = null, tap: () -> Unit) {
         var fired = false
         var cancelled = false
+        v.setOnClickListener { }
         val longR = Runnable { fired = true; onLong?.invoke() }
         val repR = object : Runnable { override fun run() { tap(); hd.postDelayed(this, 65) } }
         v.setOnTouchListener { view, e ->
@@ -434,7 +568,8 @@ class CrazeKeyboardService : InputMethodService() {
                 MotionEvent.ACTION_DOWN -> {
                     fired = false
                     cancelled = false
-                    view.alpha = 0.72f
+                    view.animate().cancel()
+                    view.animate().scaleX(0.96f).scaleY(0.96f).alpha(0.78f).setDuration(55).start()
                     if (hapticsEnabled) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     if (repeat) {
                         tap()
@@ -445,20 +580,26 @@ class CrazeKeyboardService : InputMethodService() {
                 MotionEvent.ACTION_MOVE -> {
                     if (!cancelled && (e.x < 0f || e.y < 0f || e.x > view.width || e.y > view.height)) {
                         cancelled = true
-                        view.alpha = 1f
+                        view.animate().cancel()
+                        view.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(65).start()
                         hd.removeCallbacks(longR)
                         hd.removeCallbacks(repR)
                     }
                 }
                 MotionEvent.ACTION_UP -> {
-                    view.alpha = 1f
                     hd.removeCallbacks(longR)
                     hd.removeCallbacks(repR)
-                    if (!repeat && !fired && !cancelled) tap()
+                    view.animate().cancel()
+                    view.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(65).start()
+                    if (!repeat && !fired && !cancelled) {
+                        view.performClick()
+                        tap()
+                    }
                 }
                 MotionEvent.ACTION_CANCEL -> {
                     cancelled = true
-                    view.alpha = 1f
+                    view.animate().cancel()
+                    view.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(65).start()
                     hd.removeCallbacks(longR)
                     hd.removeCallbacks(repR)
                 }
