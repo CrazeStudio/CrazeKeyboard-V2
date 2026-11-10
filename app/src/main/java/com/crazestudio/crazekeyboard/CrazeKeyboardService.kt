@@ -44,6 +44,7 @@ class CrazeKeyboardService : InputMethodService() {
     private var mode = "letters"
     private var toolbarOpen = false
     private var suggestOn = true
+    private var hapticsEnabled = true
     private var lastShiftTap = 0L
     private var popup: PopupWindow? = null
     private var lastSig = ""
@@ -61,7 +62,7 @@ class CrazeKeyboardService : InputMethodService() {
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private fun lp(w: Int, h: Int, wt: Float = 0f) = LinearLayout.LayoutParams(w, h, wt)
-    private fun rounded(c: Int) = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dp(8).toFloat(); setColor(c) }
+    private fun rounded(c: Int) = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dp(11).toFloat(); setColor(c) }
 
     override fun onCreate() {
         super.onCreate()
@@ -84,11 +85,11 @@ class CrazeKeyboardService : InputMethodService() {
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(t.bg) }
         top = FrameLayout(this)
         panel = FrameLayout(this)
-        root.addView(top, lp(MATCH, dp(44)))
+        root.addView(top, lp(MATCH, dp(48)))
         root.addView(panel, lp(MATCH, totalH()))
         val oh = Prefs.i(this, "onehand", 0)
         val w = if (oh == 0) MATCH else (resources.displayMetrics.widthPixels * 0.82f).toInt()
-        outer.addView(root, FrameLayout.LayoutParams(w, dp(44) + totalH(), if (oh == 2) Gravity.END else Gravity.START))
+        outer.addView(root, FrameLayout.LayoutParams(w, dp(48) + totalH(), if (oh == 2) Gravity.END else Gravity.START))
         buildTop()
         showPanel(mode)
         return outer
@@ -102,6 +103,7 @@ class CrazeKeyboardService : InputMethodService() {
         val noSug = listOf(InputType.TYPE_TEXT_VARIATION_PASSWORD, InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
             InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD, InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
             InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS, InputType.TYPE_TEXT_VARIATION_URI)
+        hapticsEnabled = Prefs.b(this, "haptics", true)
         suggestOn = Prefs.b(this, "suggest", true) && cls == InputType.TYPE_CLASS_TEXT && v !in noSug &&
             (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0
         shift = 0
@@ -120,7 +122,7 @@ class CrazeKeyboardService : InputMethodService() {
 
     // ---------- top bar (suggestions / toolbar) ----------
     private fun iconBtn(label: String, a: () -> Unit) = TextView(ctx).apply {
-        text = label; textSize = 20f; gravity = Gravity.CENTER; setTextColor(t.text)
+        text = label; textSize = 18f; gravity = Gravity.CENTER; setTextColor(t.text); typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
         setOnClickListener { a() }
     }
 
@@ -128,7 +130,7 @@ class CrazeKeyboardService : InputMethodService() {
         setImageResource(res)
         imageTintList = android.content.res.ColorStateList.valueOf(t.text)
         scaleType = ImageView.ScaleType.CENTER
-        setPadding(dp(10), dp(10), dp(10), dp(10))
+        setPadding(dp(9), dp(9), dp(9), dp(9)); alpha = 0.92f
         setOnClickListener { a() }
         isClickable = true
         isFocusable = true
@@ -142,8 +144,8 @@ class CrazeKeyboardService : InputMethodService() {
     private fun buildTop() {
         top.removeAllViews()
         sugViews.clear()
-        val row = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
-        row.addView(iconBtn(if (toolbarOpen) "✕" else "⋮⋮") { toolbarOpen = !toolbarOpen; buildTop(); updateSuggestions() }, lp(dp(44), MATCH))
+        val row = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(5), 0, dp(5), 0) }
+        row.addView(iconBtn(if (toolbarOpen) "×" else "•••") { toolbarOpen = !toolbarOpen; buildTop(); updateSuggestions() }, lp(dp(44), MATCH))
         if (toolbarOpen) {
             val items = listOf<Pair<Int, () -> Unit>>(
                 R.drawable.ic_smile to { showPanel("emoji") },
@@ -156,7 +158,7 @@ class CrazeKeyboardService : InputMethodService() {
         } else {
             for (i in 0..2) {
                 val tv = TextView(ctx).apply {
-                    gravity = Gravity.CENTER; textSize = 16f; setTextColor(t.text); maxLines = 1
+                    gravity = Gravity.CENTER; textSize = 15f; setTextColor(t.text); maxLines = 1; typeface = android.graphics.Typeface.create("sans-serif-medium", 0)
                     ellipsize = TextUtils.TruncateAt.END
                     setOnClickListener { pickSuggestion(text.toString()) }
                 }
@@ -227,12 +229,8 @@ class CrazeKeyboardService : InputMethodService() {
     }
 
     private fun space(ic: android.view.inputmethod.InputConnection) {
-        val w = currentWord()
-        if (w.length >= 3 && !Words.known(w)) Prefs.learn(this, w)
-        val before = ic.getTextBeforeCursor(2, 0)?.toString() ?: ""
-        if (before.length == 2 && before[1] == ' ' && before[0].isLetterOrDigit()) {
-            ic.deleteSurroundingText(1, 0); ic.commitText(". ", 1)
-        } else ic.commitText(" ", 1)
+        // Keep the spacebar path lean: do not read editor text or touch preferences here.
+        ic.commitText(" ", 1)
         afterEdit()
     }
 
@@ -269,7 +267,17 @@ class CrazeKeyboardService : InputMethodService() {
 
     // ---------- key building ----------
     private fun mk(label: String, w: Float, bg: Int, fg: Int, size: Float = 20f) = TextView(ctx).apply {
-        text = label; gravity = Gravity.CENTER; setTextColor(fg); textSize = size; background = rounded(bg)
+        text = label; gravity = Gravity.CENTER; setTextColor(fg); textSize = size
+        typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(11).toFloat()
+            setColor(bg)
+            setStroke(dp(1), if (bg == t.key) 0x18000000 else 0x12000000)
+        }
+        elevation = dp(if (bg == t.accent) 1 else 2).toFloat()
+        includeFontPadding = false
+        isClickable = true
         layoutParams = lp(0, dp(keyHeight()), w).apply { setMargins(dp(2), dp(3), dp(2), dp(3)) }
     }
 
@@ -282,8 +290,8 @@ class CrazeKeyboardService : InputMethodService() {
         v.setOnTouchListener { view, e ->
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    fired = false; view.alpha = 0.6f
-                    if (Prefs.b(ctx, "haptics", true)) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    fired = false; view.alpha = 0.72f
+                    if (hapticsEnabled) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     if (repeat) { tap(); hd.postDelayed(repR, 400) } else if (onLong != null) hd.postDelayed(longR, 350)
                 }
                 MotionEvent.ACTION_UP -> {
@@ -331,7 +339,7 @@ class CrazeKeyboardService : InputMethodService() {
         val l = mk(left, 1.5f, t.special, t.text, 16f); attach(l) { showPanel(leftTarget) }; addView(l)
         val c = mk(",", 1f, t.special, t.text); attach(c, onLong = { showPanel("emoji") }) { type(",") }; addView(c)
         val g = iconKey(R.drawable.ic_globe, 1f, t.special, t.text); attach(g) { switchKeyboard() }; addView(g)
-        val sp = mk("CrazeKeyboard", 4f, t.key, t.text, 12f)
+        val sp = mk("craze", 4f, t.key, t.text, 13f)
         attach(sp, onLong = { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker() }) { type(" ") }; addView(sp)
         val d = mk(".", 1f, t.special, t.text); attach(d, onLong = { showAlts(d, Alts.map["."]!!) }) { type(".") }; addView(d)
         val e = mk(enterLabel(), 1.5f, t.accent, t.accentText); attach(e) { enter() }; addView(e)
@@ -351,7 +359,7 @@ class CrazeKeyboardService : InputMethodService() {
 
     private fun totalH() = rowCount() * (dp(keyHeight()) + dp(6)) + dp(4)
 
-    private fun column() = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(2), 0, dp(2), dp(4)) }
+    private fun column() = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(3), 0, dp(3), dp(5)) }
 
     private fun buildLetters(): View {
         letterKeys.clear()
@@ -438,7 +446,7 @@ class CrazeKeyboardService : InputMethodService() {
                 fill(if (category == "recent") Prefs.recents(ctx) else data.split(" ").filter { it.isNotBlank() })
             }, lp(0, MATCH, 1f))
         }
-        col.addView(tabs, lp(MATCH, dp(40)))
+        col.addView(tabs, lp(MATCH, dp(42)))
         col.addView(body, lp(MATCH, bodyHeight()))
         col.addView(backBar())
         fill(Prefs.recents(this).ifEmpty { emojiCats["smile"]!!.split(" ") })
