@@ -18,7 +18,7 @@ CrazeKeyboard is an offline-first Android IME by CrazeStudio.
 
 ## Privacy and offline behaviour
 
-The keyboard does not request Internet permission and has no remote prediction endpoint. Dictionary lookup, spelling alternatives, contextual candidates, and learned words are processed locally. Clipboard history is opt-in and remains on-device. Do not enable clipboard history if you do not want copied text retained.
+The keyboard does not request Internet permission and has no remote prediction endpoint for text suggestions. Dictionary lookup, spelling alternatives, contextual candidates, and learned words are processed locally. Clipboard history is opt-in and remains on-device. Voice typing is different: it uses the Android-selected speech recognition service, which may send audio to its provider for recognition. Microphone access is permission-gated and voice input is suppressed in password and restricted fields.
 
 ## Build and install
 

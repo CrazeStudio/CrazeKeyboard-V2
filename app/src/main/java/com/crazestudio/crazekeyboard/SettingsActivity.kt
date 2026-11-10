@@ -1,6 +1,8 @@
 package com.crazestudio.crazekeyboard
 
+import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
@@ -13,6 +15,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.*
 
 class SettingsActivity : Activity() {
+    private val voicePermissionRequest = 701
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private val ink = Color.rgb(31, 37, 51)
     private val muted = Color.rgb(111, 119, 137)
@@ -109,6 +112,23 @@ class SettingsActivity : Activity() {
         } }.apply { setPadding(dp(12), dp(10), dp(12), dp(10)) })
         content.addView(setup, margin())
 
+        val voice = section(
+            "Voice typing",
+            "Uses Android's selected speech recognizer. Google voice recognition is used when Google is selected as the device provider."
+        )
+        val voiceGranted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        voice.addView(action(
+            if (voiceGranted) "Microphone permission enabled" else "Enable microphone permission",
+            true
+        ) {
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                Toast.makeText(this, "Voice typing is ready from the keyboard microphone", Toast.LENGTH_SHORT).show()
+            } else {
+                requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), voicePermissionRequest)
+            }
+        })
+        content.addView(voice, margin())
+
         val prefs = section("Typing preferences", "Control the keyboard behaviour.")
         prefs.addView(settingSwitch("Number row", "Keep digits visible above letters.", "numrow", true))
         prefs.addView(divider())
@@ -191,6 +211,25 @@ class SettingsActivity : Activity() {
         })
 
         setContentView(root)
+        if (intent.getBooleanExtra("request_voice_permission", false) &&
+            checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), voicePermissionRequest)
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == voicePermissionRequest) {
+            Toast.makeText(
+                this,
+                if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+                    "Microphone enabled. Tap the keyboard microphone to speak."
+                } else {
+                    "Microphone permission was not granted."
+                },
+                Toast.LENGTH_SHORT
+            ).show()
+        }
     }
 
     private fun oneHandName(value: Int) = when (value) {
