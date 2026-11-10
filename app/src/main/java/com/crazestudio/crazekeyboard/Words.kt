@@ -25,7 +25,10 @@ object Words {
         "although however already almost enough early late quick quickly slow slowly easy hard important different possible " +
         "keyboard android phone game music video photo picture camera app apps code file files link online internet website").split(" ")
 
-    fun known(w: String) = dict.contains(w.lowercase())
+    private val dictionary = dict.distinct()
+    private val dictionarySet = dictionary.toHashSet()
+
+    fun known(w: String) = dictionarySet.contains(w.lowercase()) || Prefs.learnedCacheContains(w)
 
     private fun cased(s: String, w: String) = when {
         w.length > 1 && w.all { it.isUpperCase() } -> s.uppercase()
@@ -36,7 +39,13 @@ object Words {
     fun suggest(c: Context, w: String): List<String> {
         if (w.isEmpty()) return listOf("I", "The", "Thanks")
         val lower = w.lowercase()
-        val out = (Prefs.learned(c) + dict).distinct().filter { it.startsWith(lower) && it != lower }.take(3).map { cased(it, w) }
+        val learned = Prefs.learned(c)
+        val out = (learned.asSequence() + dictionary.asSequence())
+            .filter { it.startsWith(lower) && it != lower }
+            .distinct()
+            .take(3)
+            .map { cased(it, w) }
+            .toList()
         return if (out.isEmpty()) listOf(w) else out
     }
 }
