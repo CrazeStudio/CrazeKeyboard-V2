@@ -118,6 +118,8 @@ class SettingsActivity : Activity() {
         prefs.addView(divider())
         prefs.addView(settingSwitch("Next-word suggestions", "Suggest likely words after a space.", "nextWord", true))
         prefs.addView(divider())
+        prefs.addView(settingSwitch("Double-space period", "Turn two quick spaces into a full stop.", "doubleSpacePeriod", true))
+        prefs.addView(divider())
         prefs.addView(settingSwitch("Haptic feedback", "A light vibration on key press.", "haptics", true))
         content.addView(prefs, margin())
 
