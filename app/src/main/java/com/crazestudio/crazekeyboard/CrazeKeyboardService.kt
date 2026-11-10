@@ -45,7 +45,6 @@ class CrazeKeyboardService : InputMethodService() {
     private var suggestOn = true
     private var lastShiftTap = 0L
     private var popup: PopupWindow? = null
-    private var preview: PopupWindow? = null
     private var lastSig = ""
     private var clipListener: ClipboardManager.OnPrimaryClipChangedListener? = null
 
@@ -268,36 +267,24 @@ class CrazeKeyboardService : InputMethodService() {
         layoutParams = lp(0, dp(Prefs.keyH(ctx)), w).apply { setMargins(dp(2), dp(3), dp(2), dp(3)) }
     }
 
-    private fun dismissPopups() { popup?.dismiss(); popup = null; preview?.dismiss(); preview = null }
-
-    private fun showPreview(v: TextView) {
-        preview?.dismiss()
-        val tv = TextView(ctx).apply {
-            text = v.text; textSize = 28f; gravity = Gravity.CENTER; setTextColor(t.text); background = rounded(t.key)
-        }
-        preview = PopupWindow(tv, dp(52), dp(56)).apply {
-            isClippingEnabled = false
-            showAsDropDown(v, (v.width - dp(52)) / 2, -(v.height + dp(60)))
-        }
-    }
+    private fun dismissPopups() { popup?.dismiss(); popup = null }
 
     private fun attach(v: TextView, repeat: Boolean = false, showPrev: Boolean = false, onLong: (() -> Unit)? = null, tap: () -> Unit) {
         var fired = false
-        val longR = Runnable { fired = true; preview?.dismiss(); onLong?.invoke() }
+        val longR = Runnable { fired = true; onLong?.invoke() }
         val repR = object : Runnable { override fun run() { tap(); hd.postDelayed(this, 65) } }
         v.setOnTouchListener { view, e ->
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     fired = false; view.alpha = 0.6f
                     if (Prefs.b(ctx, "haptics", true)) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                    if (showPrev) showPreview(v)
                     if (repeat) { tap(); hd.postDelayed(repR, 400) } else if (onLong != null) hd.postDelayed(longR, 350)
                 }
                 MotionEvent.ACTION_UP -> {
-                    view.alpha = 1f; hd.removeCallbacks(longR); hd.removeCallbacks(repR); preview?.dismiss()
+                    view.alpha = 1f; hd.removeCallbacks(longR); hd.removeCallbacks(repR)
                     if (!repeat && !fired) tap()
                 }
-                MotionEvent.ACTION_CANCEL -> { view.alpha = 1f; hd.removeCallbacks(longR); hd.removeCallbacks(repR); preview?.dismiss() }
+                MotionEvent.ACTION_CANCEL -> { view.alpha = 1f; hd.removeCallbacks(longR); hd.removeCallbacks(repR) }
             }
             true
         }
