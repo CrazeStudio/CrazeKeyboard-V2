@@ -7,9 +7,9 @@ class Theme(val bg: Int, val key: Int, val special: Int, val text: Int, val acce
 object Prefs {
     val themeNames = listOf("Light", "Dark", "Craze")
     val themes = listOf(
-        Theme(0xFFECEFF1.toInt(), 0xFFFFFFFF.toInt(), 0xFFCFD8DC.toInt(), 0xFF202124.toInt(), 0xFF6C4DFF.toInt(), 0xFFFFFFFF.toInt()),
-        Theme(0xFF1E1F24.toInt(), 0xFF3A3C43.toInt(), 0xFF2B2D33.toInt(), 0xFFECECEC.toInt(), 0xFFB39DFF.toInt(), 0xFF1E1F24.toInt()),
-        Theme(0xFF120A2A.toInt(), 0xFF2A1B54.toInt(), 0xFF1D1240.toInt(), 0xFFF3E8FF.toInt(), 0xFFFF4FD8.toInt(), 0xFF120A2A.toInt())
+        Theme(0xFFF1F3F8.toInt(), 0xFFFFFFFF.toInt(), 0xFFE2E7F0.toInt(), 0xFF202633.toInt(), 0xFF6656D9.toInt(), 0xFFFFFFFF.toInt()),
+        Theme(0xFF17191F.toInt(), 0xFF292D36.toInt(), 0xFF222630.toInt(), 0xFFF0F2F7.toInt(), 0xFFB9A9FF.toInt(), 0xFF17191F.toInt()),
+        Theme(0xFF100F1B.toInt(), 0xFF262238.toInt(), 0xFF1C192B.toInt(), 0xFFF5F0FF.toInt(), 0xFFFF75C8.toInt(), 0xFF231426.toInt())
     )
     private const val SEP = "\u0001"
     @Volatile private var learnedCache: List<String>? = null
