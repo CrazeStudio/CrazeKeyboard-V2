@@ -12,6 +12,7 @@ object Prefs {
         Theme(0xFF120A2A.toInt(), 0xFF2A1B54.toInt(), 0xFF1D1240.toInt(), 0xFFF3E8FF.toInt(), 0xFFFF4FD8.toInt(), 0xFF120A2A.toInt())
     )
     private const val SEP = "\u0001"
+    @Volatile private var learnedCache: List<String>? = null
     fun sp(c: Context) = c.getSharedPreferences("craze", Context.MODE_PRIVATE)
     fun b(c: Context, k: String, d: Boolean) = sp(c).getBoolean(k, d)
     fun setB(c: Context, k: String, v: Boolean) = sp(c).edit().putBoolean(k, v).apply()
@@ -30,6 +31,18 @@ object Prefs {
     fun clearClips(c: Context) = put(c, "clips", emptyList())
     fun recents(c: Context) = list(c, "recent")
     fun addRecent(c: Context, e: String) = put(c, "recent", (listOf(e) + recents(c).filter { it != e }).take(32))
-    fun learned(c: Context) = list(c, "learned")
-    fun learn(c: Context, w: String) { if (w !in learned(c)) put(c, "learned", (listOf(w) + learned(c)).take(500)) }
+    fun learned(c: Context): List<String> {
+        learnedCache?.let { return it }
+        return synchronized(this) {
+            learnedCache ?: list(c, "learned").also { learnedCache = it }
+        }
+    }
+    fun learn(c: Context, w: String) {
+        val current = learned(c)
+        if (w !in current) {
+            val updated = (listOf(w) + current).take(500)
+            put(c, "learned", updated)
+            learnedCache = updated
+        }
+    }
 }
