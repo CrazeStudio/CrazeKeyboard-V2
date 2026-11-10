@@ -247,17 +247,23 @@ class CrazeKeyboardService : InputMethodService() {
 
     private fun currentWord(): String {
         val before = currentInputConnection?.getTextBeforeCursor(64, 0)?.toString() ?: ""
-        return before.takeLastWhile { it.isLetter() || it == '\'' }
+        return before.takeLastWhile { it.isLetter() || it == '\'' || it == '-' }
+    }
+
+    private fun previousWord(): String {
+        val before = currentInputConnection?.getTextBeforeCursor(96, 0)?.toString() ?: ""
+        return before.trimEnd().split(Regex("[^\\p{L}'-]+")).lastOrNull { it.isNotBlank() } ?: ""
     }
 
     private fun updateSuggestions() {
         if (toolbarOpen || sugViews.isEmpty()) return
         val word = currentWord()
         val hasSelection = !currentInputConnection?.getSelectedText(0).isNullOrEmpty()
-        // Avoid replacing a truncated word or showing candidates for a selected range.
-        val canSuggest = suggestOn && !hasSelection && word.length < 48
+        // An empty prefix is intentional: it requests context-aware next-word candidates.
+        val canSuggest = suggestOn && !hasSelection && word.length < 48 &&
+            (word.isNotEmpty() || Prefs.b(this, "nextWord", true))
         suggestionPrefix = if (canSuggest) word else null
-        val list = if (canSuggest) Words.suggest(this, word) else emptyList()
+        val list = if (canSuggest) Words.suggest(this, word, previousWord()) else emptyList()
         for (i in 0..2) sugViews[i].text = list.getOrNull(i) ?: ""
     }
 
@@ -271,13 +277,13 @@ class CrazeKeyboardService : InputMethodService() {
             if (!ic.getSelectedText(0).isNullOrEmpty()) {
                 ic.commitText("$s ", 1)
             } else {
-                ic.deleteSurroundingText(w.length, 0)
+                if (w.isNotEmpty()) ic.deleteSurroundingText(w.length, 0)
                 ic.commitText("$s ", 1)
             }
         } finally {
             ic.endBatchEdit()
         }
-        if (suggestOn && s.length >= 3 && !Words.known(s)) Prefs.learn(this, s)
+        if (suggestOn && s.length >= 3 && !Words.known(this, s)) Prefs.learn(this, s)
         afterEdit()
     }
 
@@ -316,8 +322,31 @@ class CrazeKeyboardService : InputMethodService() {
     }
 
     private fun space(ic: android.view.inputmethod.InputConnection) {
-        // Keep the spacebar path lean: do not read editor text or touch preferences here.
-        ic.commitText(" ", 1)
+        // Correction and learning are restricted to ordinary text fields by configureEditor().
+        val selected = !ic.getSelectedText(0).isNullOrEmpty()
+        if (!selected && suggestOn) {
+            val typed = currentWord()
+            if (typed.length in 2..40 && typed.any { it.isLetter() }) {
+                val correction = if (Prefs.b(this, "autocorrect", true)) Words.correction(this, typed) else null
+                if (correction != null && !correction.equals(typed, ignoreCase = true)) {
+                    ic.beginBatchEdit()
+                    try {
+                        ic.deleteSurroundingText(typed.length, 0)
+                        ic.commitText(correction, 1)
+                        ic.commitText(" ", 1)
+                    } finally {
+                        ic.endBatchEdit()
+                    }
+                } else {
+                    if (!Words.known(this, typed)) Prefs.learn(this, typed)
+                    ic.commitText(" ", 1)
+                }
+            } else {
+                ic.commitText(" ", 1)
+            }
+        } else {
+            ic.commitText(" ", 1)
+        }
         afterEdit()
     }
 
