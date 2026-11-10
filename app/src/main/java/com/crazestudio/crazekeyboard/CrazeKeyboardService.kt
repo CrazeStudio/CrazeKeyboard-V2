@@ -66,8 +66,9 @@ class CrazeKeyboardService : InputMethodService() {
     private var voiceListening = false
     private var speechRecognizer: SpeechRecognizer? = null
     private var micView: ImageView? = null
+    private var dictionaryLoadRequested = false
 
-    private val emojiCats = linkedMapOf(
+    private val emojiCats by lazy(LazyThreadSafetyMode.NONE) { linkedMapOf(
         "recent" to "", 
         "smile" to "😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😝 😜 🤪 🤨 🧐 🤓 😎 🤩 🥳 😏 😒 😞 😔 😟 😕 🙁 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🤗 🤔 🤭 🤫 🤥 😶 😐 😑 😬 🙄 😯 😦 😧 😮 😲 🥱 😴 🤤 😪 😵 🤐 🥴 🤢 🤮 🤧 😷",
         "people" to "👍 👎 👌 🤞 🤟 🤘 🤙 👈 👉 👆 👇 ✋ 🤚 🖐 🖖 👋 🤝 🙏 💪 👏 🙌 👐 🤲 🤳 💅 👀 👅 👄 🧠 👶 👦 👧 👨 👩 🧑 👴 👵",
@@ -76,7 +77,7 @@ class CrazeKeyboardService : InputMethodService() {
         "activity" to "⚽ 🏀 🏈 ⚾ 🎾 🏐 🏉 🎱 🏓 🏸 🥊 🎯 🎮 🎲 🎧 🎤 🎸 🎹 🎺 🎻 🥁 🎬 🎨 🏆 🥇 🥈 🥉",
         "travel" to "🚗 🚕 🚌 🚓 🚑 🚒 🚲 🚀 🚁 🚢 🏠 🌍",
         "objects" to "📱 💻 📷 📺 ⌚ 🔋 💡 🔦 📚 📖 📝 📎 🔑 🔒 🔔 💰 💳 🎁 🎈 🎉 ❤ 🧡 💛 💚 💙 💜 🖤 💔 💕 💞 💯 ✅ ❌ ⭕ ❗ ❓ ⚠ 💤 💬 💭"
-    )
+    ) }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private fun lp(w: Int, h: Int, wt: Float = 0f) = LinearLayout.LayoutParams(w, h, wt)
@@ -399,6 +400,19 @@ class CrazeKeyboardService : InputMethodService() {
         val canSuggest = suggestOn && !hasSelection && word.length < 48 &&
             (word.isNotEmpty() || Prefs.b(this, "nextWord", true))
         suggestionPrefix = if (canSuggest) word else null
+
+        // Load the full bundled lexicon off the IME thread. The compact fallback vocabulary
+        // remains available immediately, and this callback refreshes the strip when ready.
+        if (canSuggest && !Words.isLoaded() && !dictionaryLoadRequested) {
+            dictionaryLoadRequested = true
+            Words.preload(applicationContext) {
+                hd.post {
+                    dictionaryLoadRequested = false
+                    if (inputViewVisible && mode == "letters") updateSuggestions()
+                }
+            }
+        }
+
         val list = if (canSuggest) Words.suggest(this, word, previousWord()) else emptyList()
         for (i in 0..2) sugViews[i].text = list.getOrNull(i) ?: ""
     }
