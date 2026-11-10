@@ -112,7 +112,11 @@ class SettingsActivity : Activity() {
         val prefs = section("Typing preferences", "Control the keyboard behaviour.")
         prefs.addView(settingSwitch("Number row", "Keep digits visible above letters.", "numrow", true))
         prefs.addView(divider())
-        prefs.addView(settingSwitch("Word suggestions", "Show suggestions while typing.", "suggest", true))
+        prefs.addView(settingSwitch("Word suggestions", "Show completions and spelling alternatives.", "suggest", true))
+        prefs.addView(divider())
+        prefs.addView(settingSwitch("Auto-correction", "Correct close spelling mistakes when you press space.", "autocorrect", true))
+        prefs.addView(divider())
+        prefs.addView(settingSwitch("Next-word suggestions", "Suggest likely words after a space.", "nextWord", true))
         prefs.addView(divider())
         prefs.addView(settingSwitch("Haptic feedback", "A light vibration on key press.", "haptics", true))
         content.addView(prefs, margin())
@@ -123,6 +127,10 @@ class SettingsActivity : Activity() {
         privacy.addView(action("Clear clipboard history") {
             Prefs.clearClips(this)
             Toast.makeText(this, "Clipboard history cleared", Toast.LENGTH_SHORT).show()
+        })
+        privacy.addView(action("Clear learned words") {
+            Prefs.clearLearned(this)
+            Toast.makeText(this, "Learned words cleared", Toast.LENGTH_SHORT).show()
         })
         content.addView(privacy, margin())
 
