@@ -27,7 +27,12 @@ object Prefs {
     private fun list(c: Context, k: String) = (sp(c).getString(k, "") ?: "").split(SEP).filter { it.isNotEmpty() }
     private fun put(c: Context, k: String, l: List<String>) = sp(c).edit().putString(k, l.joinToString(SEP)).apply()
     fun clips(c: Context) = list(c, "clips")
-    fun addClip(c: Context, s: String) { if (s.isNotBlank()) put(c, "clips", (listOf(s) + clips(c).filter { it != s }).take(20)) }
+    fun addClip(c: Context, s: String) {
+        val safeText = s.take(4_000)
+        if (safeText.isNotBlank()) {
+            put(c, "clips", (listOf(safeText) + clips(c).filter { it != safeText }).take(20))
+        }
+    }
     fun clearClips(c: Context) = put(c, "clips", emptyList())
     fun recents(c: Context) = list(c, "recent")
     fun addRecent(c: Context, e: String) = put(c, "recent", (listOf(e) + recents(c).filter { it != e }).take(32))
@@ -37,12 +42,14 @@ object Prefs {
             learnedCache ?: list(c, "learned").also { learnedCache = it }
         }
     }
-    fun isLearned(w: String) = learnedCache?.contains(w) == true
+    fun isLearned(w: String) = learnedCache?.any { it.equals(w, ignoreCase = true) } == true
 
     fun learn(c: Context, w: String) {
-        val current = learned(c)
-        if (w !in current) {
-            val updated = (listOf(w) + current).take(500)
+        val word = w.trim().lowercase()
+        if (word.isEmpty()) return
+        val current = learned(c).map { it.lowercase() }
+        if (word !in current) {
+            val updated = (listOf(word) + current).take(500)
             put(c, "learned", updated)
             learnedCache = updated
         }
