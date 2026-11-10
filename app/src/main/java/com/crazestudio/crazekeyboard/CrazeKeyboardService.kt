@@ -52,6 +52,7 @@ class CrazeKeyboardService : InputMethodService() {
     private var clipboardManager: ClipboardManager? = null
     private var clipListener: ClipboardManager.OnPrimaryClipChangedListener? = null
     private var clipboardListening = false
+    private var inputViewVisible = false
 
     private val emojiCats = linkedMapOf(
         "recent" to "", 
@@ -91,7 +92,43 @@ class CrazeKeyboardService : InputMethodService() {
         clipboardListening = enabled
     }
 
+    private fun configureEditor(info: EditorInfo) {
+        val cls = info.inputType and InputType.TYPE_MASK_CLASS
+        val variation = info.inputType and InputType.TYPE_MASK_VARIATION
+        val noSuggestions = listOf(
+            InputType.TYPE_TEXT_VARIATION_PASSWORD,
+            InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
+            InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD,
+            InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
+            InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS,
+            InputType.TYPE_TEXT_VARIATION_URI
+        )
+        hapticsEnabled = Prefs.b(this, "haptics", true)
+        val passwordField =
+            (cls == InputType.TYPE_CLASS_TEXT && variation in listOf(
+                InputType.TYPE_TEXT_VARIATION_PASSWORD,
+                InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
+                InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
+            )) ||
+            (cls == InputType.TYPE_CLASS_NUMBER && variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD)
+        val noPersonalizedLearning =
+            (info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0
+        suggestOn = Prefs.b(this, "suggest", true) && cls == InputType.TYPE_CLASS_TEXT &&
+            variation !in noSuggestions && !noPersonalizedLearning &&
+            (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0
+        setClipboardMonitoring(
+            inputViewVisible && Prefs.b(this, "clipboardHistory", true) &&
+                !passwordField && !noPersonalizedLearning
+        )
+    }
+
+    override fun onStartInput(attribute: EditorInfo, restarting: Boolean) {
+        super.onStartInput(attribute, restarting)
+        configureEditor(attribute)
+    }
+
     override fun onDestroy() {
+        inputViewVisible = false
         setClipboardMonitoring(false)
         clipboardManager = null
         super.onDestroy()
@@ -116,26 +153,10 @@ class CrazeKeyboardService : InputMethodService() {
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        inputViewVisible = true
         if (Prefs.sig(this) != lastSig) setInputView(onCreateInputView())
         val cls = info.inputType and InputType.TYPE_MASK_CLASS
-        val v = info.inputType and InputType.TYPE_MASK_VARIATION
-        val noSug = listOf(InputType.TYPE_TEXT_VARIATION_PASSWORD, InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
-            InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD, InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
-            InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS, InputType.TYPE_TEXT_VARIATION_URI)
-        hapticsEnabled = Prefs.b(this, "haptics", true)
-        val passwordField =
-            (cls == InputType.TYPE_CLASS_TEXT && v in listOf(
-                InputType.TYPE_TEXT_VARIATION_PASSWORD,
-                InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
-                InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
-            )) ||
-            (cls == InputType.TYPE_CLASS_NUMBER && v == InputType.TYPE_NUMBER_VARIATION_PASSWORD)
-        val noPersonalizedLearning =
-            (info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0
-        suggestOn = Prefs.b(this, "suggest", true) && cls == InputType.TYPE_CLASS_TEXT &&
-            v !in noSug && !noPersonalizedLearning &&
-            (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0
-        setClipboardMonitoring(Prefs.b(this, "clipboardHistory", true) && !passwordField && !noPersonalizedLearning)
+        configureEditor(info)
         shift = 0
         toolbarOpen = false
         buildTop()
@@ -145,6 +166,7 @@ class CrazeKeyboardService : InputMethodService() {
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
+        inputViewVisible = false
         setClipboardMonitoring(false)
         dismissPopups()
         hd.removeCallbacks(refreshSuggestions)
