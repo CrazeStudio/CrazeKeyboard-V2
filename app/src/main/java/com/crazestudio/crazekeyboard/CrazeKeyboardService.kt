@@ -145,7 +145,11 @@ class CrazeKeyboardService : InputMethodService() {
         top.removeAllViews()
         sugViews.clear()
         val row = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(5), 0, dp(5), 0) }
-        row.addView(iconBtn(if (toolbarOpen) "×" else "•••") { toolbarOpen = !toolbarOpen; buildTop(); updateSuggestions() }, lp(dp(44), MATCH))
+        row.addView(iconImage(if (toolbarOpen) R.drawable.ic_close else R.drawable.ic_menu) {
+            toolbarOpen = !toolbarOpen
+            buildTop()
+            updateSuggestions()
+        }, lp(dp(44), MATCH))
         if (toolbarOpen) {
             val items = listOf<Pair<Int, () -> Unit>>(
                 R.drawable.ic_smile to { showPanel("emoji") },
