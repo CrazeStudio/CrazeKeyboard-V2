@@ -1,7 +1,26 @@
-# CrazeKeyboard (com.crazestudio.crazekeyboard)
-Open this folder in Android Studio, let Gradle sync, run on a device, then open the app:
-1. Enable keyboard  2. Select keyboard.
-Implemented: letters/symbols/more-symbols pages, shift + caps lock, number row, key preview, long-press accents,
-backspace repeat, suggestions bar + learned words, auto-capitalize, double-space period, emoji (with recents),
-clipboard history, voice typing (system recognizer), 3 themes, one-handed mode, haptics, key height, IME action key.
-Not yet: glide typing, GIF/stickers, multi-language, translate, spell correction.
+# CrazeKeyboard
+
+CrazeKeyboard is an offline-first Android keyboard by CrazeStudio (`com.crazestudio.crazekeyboard`).
+
+## Current features
+
+- Responsive keyboard panel with a fixed, preference-aware height and one-handed layouts.
+- English QWERTY layout, optional number row, symbols, shift/caps lock, and editor-aware action key.
+- Local suggestions and on-device learned words; no remote dictionary or network service.
+- Emoji picker with category navigation and recent emoji.
+- Local clipboard history, accent long-press alternatives, repeat backspace, auto-capitalization, and double-space period.
+- Light, dark, and Craze themes; adjustable key height and haptics.
+- Scalable Android VectorDrawable icons for keyboard controls instead of emoji glyphs.
+- Password and no-suggestions editor types suppress suggestions.
+
+## Offline and privacy
+
+The keyboard has no Internet permission and does not send typed text to a server. Suggestions and learned words are stored locally. Voice dictation is intentionally not included in this offline build because Android's speech recognizer may use an external service.
+
+## Build
+
+Open the project in Android Studio and run the app on an Android device. Enable CrazeKeyboard in system keyboard settings, then select it as the active input method. GitHub Actions builds the debug APK on pushes to `main`.
+
+## Current scope
+
+Glide typing, multilingual layouts, GIF/sticker search, translation, and a larger downloadable dictionary are not implemented. The built-in English word list is local and intentionally lightweight.
