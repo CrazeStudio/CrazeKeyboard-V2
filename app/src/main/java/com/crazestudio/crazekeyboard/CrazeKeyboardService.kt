@@ -44,6 +44,7 @@ class CrazeKeyboardService : InputMethodService() {
     private var mode = "letters"
     private var toolbarOpen = false
     private var suggestOn = true
+    private var suggestionPrefix: String? = null
     private var hapticsEnabled = true
     private var lastShiftTap = 0L
     private var popup: PopupWindow? = null
@@ -147,7 +148,20 @@ class CrazeKeyboardService : InputMethodService() {
         setClipboardMonitoring(false)
         dismissPopups()
         hd.removeCallbacks(refreshSuggestions)
+        suggestionPrefix = null
         super.onFinishInputView(finishingInput)
+    }
+
+    override fun onUpdateSelection(
+        oldSelStart: Int,
+        oldSelEnd: Int,
+        newSelStart: Int,
+        newSelEnd: Int,
+        candidatesStart: Int,
+        candidatesEnd: Int
+    ) {
+        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        if (oldSelStart != newSelStart || oldSelEnd != newSelEnd) afterEdit()
     }
 
     // ---------- top bar (suggestions / toolbar) ----------
@@ -213,8 +227,11 @@ class CrazeKeyboardService : InputMethodService() {
     private fun updateSuggestions() {
         if (toolbarOpen || sugViews.isEmpty()) return
         val word = currentWord()
-        // Avoid offering a replacement when the cursor query may contain only a truncated word.
-        val list = if (suggestOn && word.length < 48) Words.suggest(this, word) else emptyList()
+        val hasSelection = !currentInputConnection?.getSelectedText(0).isNullOrEmpty()
+        // Avoid replacing a truncated word or showing candidates for a selected range.
+        val canSuggest = suggestOn && !hasSelection && word.length < 48
+        suggestionPrefix = if (canSuggest) word else null
+        val list = if (canSuggest) Words.suggest(this, word) else emptyList()
         for (i in 0..2) sugViews[i].text = list.getOrNull(i) ?: ""
     }
 
@@ -222,11 +239,15 @@ class CrazeKeyboardService : InputMethodService() {
         val ic = currentInputConnection ?: return
         if (s.isEmpty()) return
         val w = currentWord()
-        if (w.length >= 48) return
+        if (w.length >= 48 || w != suggestionPrefix) return
         ic.beginBatchEdit()
         try {
-            ic.deleteSurroundingText(w.length, 0)
-            ic.commitText("$s ", 1)
+            if (!ic.getSelectedText(0).isNullOrEmpty()) {
+                ic.commitText("$s ", 1)
+            } else {
+                ic.deleteSurroundingText(w.length, 0)
+                ic.commitText("$s ", 1)
+            }
         } finally {
             ic.endBatchEdit()
         }
@@ -546,6 +567,9 @@ class CrazeKeyboardService : InputMethodService() {
             "clip" -> buildClip()
             else -> buildLetters()
         }, FrameLayout.LayoutParams(MATCH, totalH()))
-        if (m == "letters") autoCap()
+        if (m == "letters") {
+            autoCap()
+            updateSuggestions()
+        }
     }
 }
