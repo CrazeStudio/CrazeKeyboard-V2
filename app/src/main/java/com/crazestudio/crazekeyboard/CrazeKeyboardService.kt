@@ -244,6 +244,7 @@ class CrazeKeyboardService : InputMethodService() {
             val items = listOf<Pair<Int, () -> Unit>>(
                 R.drawable.ic_smile to { showPanel("emoji") },
                 R.drawable.ic_clipboard to { showPanel("clip") },
+                R.drawable.ic_edit to { showPanel("edit") },
                 R.drawable.ic_palette to { Prefs.nextTheme(ctx); setInputView(onCreateInputView()) },
                 R.drawable.ic_onehand to { Prefs.nextOneHand(ctx); setInputView(onCreateInputView()) },
                 R.drawable.ic_settings to { startActivity(Intent(ctx, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
@@ -644,10 +645,122 @@ class CrazeKeyboardService : InputMethodService() {
         val l = mk(left, 1.5f, t.special, t.text, 16f); attach(l) { showPanel(leftTarget) }; addView(l)
         val c = mk(",", 1f, t.special, t.text); attach(c, onLong = { showPanel("emoji") }) { type(",") }; addView(c)
         val g = iconKey(R.drawable.ic_globe, 1f, t.special, t.text); attach(g) { switchKeyboard() }; addView(g)
-        val sp = mk("craze", 4f, t.key, t.text, 13f)
-        attach(sp, onLong = { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker() }) { type(" ") }; addView(sp)
+        val sp = cursorSpaceKey()
+        addView(sp)
         val d = mk(".", 1f, t.special, t.text); attach(d, onLong = { showAlts(d, Alts.map["."]!!) }) { type(".") }; addView(d)
         val e = mk(enterLabel(), 1.5f, t.accent, t.accentText); attach(e) { enter() }; addView(e)
+    }
+
+    private fun cursorSpaceKey(): TextView {
+        val key = mk("craze", 4f, t.key, t.text, 13f)
+        val normalBackground = key.background
+        var cursorMode = false
+        var cancelled = false
+        var lastX = 0f
+        var accumulated = 0f
+        val activateCursor = Runnable {
+            cursorMode = true
+            key.text = "↔"
+            key.background = rounded(t.accent)
+            key.setTextColor(t.accentText)
+            if (hapticsEnabled) key.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+        }
+        key.setOnTouchListener { view, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    cursorMode = false
+                    cancelled = false
+                    accumulated = 0f
+                    lastX = event.x
+                    hd.removeCallbacks(activateCursor)
+                    hd.postDelayed(activateCursor, 260)
+                    view.animate().cancel()
+                    view.animate().scaleX(0.98f).scaleY(0.96f).setDuration(55).start()
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (cursorMode) {
+                        accumulated += event.x - lastX
+                        lastX = event.x
+                        val step = dp(12).toFloat().coerceAtLeast(1f)
+                        while (accumulated >= step) {
+                            sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_RIGHT)
+                            accumulated -= step
+                        }
+                        while (accumulated <= -step) {
+                            sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_LEFT)
+                            accumulated += step
+                        }
+                    } else {
+                        lastX = event.x
+                    }
+                }
+                MotionEvent.ACTION_UP -> {
+                    hd.removeCallbacks(activateCursor)
+                    view.animate().cancel()
+                    view.animate().scaleX(1f).scaleY(1f).setDuration(65).start()
+                    if (!cursorMode && !cancelled) type(" ")
+                    key.text = "craze"
+                    key.background = normalBackground
+                    key.setTextColor(t.text)
+                    cursorMode = false
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    cancelled = true
+                    hd.removeCallbacks(activateCursor)
+                    view.animate().cancel()
+                    view.animate().scaleX(1f).scaleY(1f).setDuration(65).start()
+                    key.text = "craze"
+                    key.background = normalBackground
+                    key.setTextColor(t.text)
+                    cursorMode = false
+                }
+            }
+            true
+        }
+        key.contentDescription = "Space. Hold and slide to move the cursor."
+        return key
+    }
+
+    private fun editCommand(actionId: Int) {
+        currentInputConnection?.performContextMenuAction(actionId)
+        showPanel("letters")
+        afterEdit()
+    }
+
+    private fun editRow(items: List<Pair<String, () -> Unit>>): LinearLayout = hrow().apply {
+        items.forEach { (label, action) ->
+            val key = mk(label, 1f, t.special, t.text, 13f)
+            attach(key, tap = action)
+            addView(key)
+        }
+    }
+
+    private fun buildEdit(): View {
+        val col = column()
+        col.addView(editRow(listOf(
+            "Select all" to { editCommand(android.R.id.selectAll) },
+            "Copy" to { editCommand(android.R.id.copy) },
+            "Cut" to { editCommand(android.R.id.cut) },
+            "Paste" to { editCommand(android.R.id.paste) }
+        )))
+        col.addView(editRow(listOf(
+            "←" to { sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_LEFT) },
+            "→" to { sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_RIGHT) },
+            "Home" to { sendDownUpKeyEvents(KeyEvent.KEYCODE_MOVE_HOME) },
+            "End" to { sendDownUpKeyEvents(KeyEvent.KEYCODE_MOVE_END) }
+        )))
+        col.addView(hrow().apply {
+            val back = mk("ABC", 1.5f, t.accent, t.accentText, 16f)
+            attach(back) { showPanel("letters") }
+            addView(back)
+            addView(TextView(ctx).apply {
+                text = "Edit text · hold space and slide to move cursor"
+                textSize = 11f
+                gravity = Gravity.CENTER
+                setTextColor(t.text)
+            }, lp(0, MATCH, 1f))
+        })
+        return col
     }
 
     private fun backKey(w: Float): TextView {
@@ -794,6 +907,7 @@ class CrazeKeyboardService : InputMethodService() {
             "symbols2" -> buildSymbols(2)
             "emoji" -> buildEmoji()
             "clip" -> buildClip()
+            "edit" -> buildEdit()
             else -> buildLetters()
         }, FrameLayout.LayoutParams(MATCH, totalH()))
         if (m == "letters") {
