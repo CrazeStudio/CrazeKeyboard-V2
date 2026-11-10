@@ -328,7 +328,7 @@ class CrazeKeyboardService : InputMethodService() {
         val now = SystemClock.uptimeMillis()
         val previousChar = ic.getTextBeforeCursor(1, 0)?.toString()
         if (!selected && Prefs.b(this, "doubleSpacePeriod", true) &&
-            previousChar == " " && now - lastSpaceTap in 1..350) {
+            previousChar == " " && now - lastSpaceTap in 1L..350L) {
             ic.deleteSurroundingText(1, 0)
             ic.commitText(". ", 1)
             lastSpaceTap = 0L
@@ -358,6 +358,7 @@ class CrazeKeyboardService : InputMethodService() {
         } else {
             ic.commitText(" ", 1)
         }
+        lastSpaceTap = now
         afterEdit()
     }
 
