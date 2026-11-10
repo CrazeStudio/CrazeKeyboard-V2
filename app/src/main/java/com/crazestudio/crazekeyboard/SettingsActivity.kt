@@ -27,6 +27,7 @@ class SettingsActivity : Activity() {
     private var enabledBadge: TextView? = null
     private var selectedBadge: TextView? = null
     private var setupAction: TextView? = null
+    private var voicePermissionButton: TextView? = null
 
     private fun shape(color: Int, radius: Int = 18) = GradientDrawable().apply {
         shape = GradientDrawable.RECTANGLE
@@ -221,7 +222,7 @@ class SettingsActivity : Activity() {
             "Uses Android's selected speech recognizer. Google voice recognition is used when Google is selected as the device provider."
         )
         val voiceGranted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-        voice.addView(action(
+        val voiceButton = action(
             if (voiceGranted) "✓  Microphone permission enabled" else "Enable microphone permission",
             true
         ) {
@@ -230,7 +231,9 @@ class SettingsActivity : Activity() {
             } else {
                 requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), voicePermissionRequest)
             }
-        })
+        }
+        voicePermissionButton = voiceButton
+        voice.addView(voiceButton)
         content.addView(voice, margin())
 
         val prefs = section("Typing preferences", "Choose how CrazeKeyboard assists while you type.")
@@ -339,7 +342,11 @@ class SettingsActivity : Activity() {
                 },
                 Toast.LENGTH_SHORT
             ).show()
-            recreate()
+            voicePermissionButton?.text = if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+                "✓  Microphone permission enabled"
+            } else {
+                "Enable microphone permission"
+            }
         }
     }
 
