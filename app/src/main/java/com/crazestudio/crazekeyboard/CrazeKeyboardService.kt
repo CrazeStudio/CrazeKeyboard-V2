@@ -1228,12 +1228,18 @@ class CrazeKeyboardService : InputMethodService() {
     private fun emojiSearchMatches(query: String): List<String> {
         val q = query.trim().lowercase()
         if (q.isEmpty()) return emptyList()
-        val all = LinkedHashSet<String>()
-        emojiLists.values.forEach { all.addAll(it) }
-        Prefs.recents(ctx).forEach { all.add(it) }
-        return all.filter { emoji ->
-            emoji.contains(q) || emojiAliases[emoji].orEmpty().contains(q)
-        }.take(24)
+        val matches = LinkedHashSet<String>()
+        emojiCats.keys.filter { it != "🕘" }.forEach { key ->
+            val terms = emojiCategoryTerms(key)
+            emojiLists[key].orEmpty().forEach { emoji ->
+                val searchable = "${emojiAliases[emoji].orEmpty()} $terms $emoji".lowercase()
+                if (searchable.contains(q)) matches.add(emoji)
+            }
+        }
+        Prefs.recents(ctx).forEach { emoji ->
+            if (emojiAliases[emoji].orEmpty().contains(q) || emoji.contains(q)) matches.add(emoji)
+        }
+        return matches.take(48)
     }
 
     private fun emojiCategoryName(key: String): String = when (key) {
