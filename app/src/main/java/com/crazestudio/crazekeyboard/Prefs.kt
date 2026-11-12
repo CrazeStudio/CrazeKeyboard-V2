@@ -6,11 +6,14 @@ import android.content.SharedPreferences
 class Theme(val bg: Int, val key: Int, val special: Int, val text: Int, val accent: Int, val accentText: Int)
 
 object Prefs {
-    val themeNames = listOf("Light", "Dark", "Craze")
+    val themeNames = listOf("Light", "Dark", "Craze", "🌿 Sage Garden", "🏜 Sandstone", "〰 Mist Blue")
     val themes = listOf(
         Theme(0xFFF1F3F8.toInt(), 0xFFFFFFFF.toInt(), 0xFFE2E7F0.toInt(), 0xFF202633.toInt(), 0xFF6656D9.toInt(), 0xFFFFFFFF.toInt()),
         Theme(0xFF17191F.toInt(), 0xFF292D36.toInt(), 0xFF222630.toInt(), 0xFFF0F2F7.toInt(), 0xFFB9A9FF.toInt(), 0xFF17191F.toInt()),
-        Theme(0xFF100F1B.toInt(), 0xFF262238.toInt(), 0xFF1C192B.toInt(), 0xFFF5F0FF.toInt(), 0xFFFF75C8.toInt(), 0xFF231426.toInt())
+        Theme(0xFF100F1B.toInt(), 0xFF262238.toInt(), 0xFF1C192B.toInt(), 0xFFF5F0FF.toInt(), 0xFFFF75C8.toInt(), 0xFF231426.toInt()),
+        Theme(0xFFE8F0E6.toInt(), 0xFFFFFFFF.toInt(), 0xFFD5E5D2.toInt(), 0xFF263328.toInt(), 0xFF4F8B58.toInt(), 0xFFFFFFFF.toInt()),
+        Theme(0xFFF8EAE0.toInt(), 0xFFFFFCF8.toInt(), 0xFFF1D8C8.toInt(), 0xFF3A2B24.toInt(), 0xFFB9784F.toInt(), 0xFFFFFFFF.toInt()),
+        Theme(0xFFE5F1FA.toInt(), 0xFFFFFFFF.toInt(), 0xFFC9E1F2.toInt(), 0xFF203344.toInt(), 0xFF438FC1.toInt(), 0xFFFFFFFF.toInt())
     )
     private const val SEP = "\u0001"
     val availableToolbarTools = listOf(
