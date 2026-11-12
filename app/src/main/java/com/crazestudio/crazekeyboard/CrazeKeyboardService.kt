@@ -111,6 +111,7 @@ class CrazeKeyboardService : InputMethodService() {
     private var hapticsOn = true
     private var keySoundOn = false
     private var numRow = true
+    private var emojiSearchQuery = ""
     private var clipListener: ClipboardManager.OnPrimaryClipChangedListener? = null
     private val noPersonalizedLearning = 0x1000000   // EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING (API 26) without the API-level gate
 
