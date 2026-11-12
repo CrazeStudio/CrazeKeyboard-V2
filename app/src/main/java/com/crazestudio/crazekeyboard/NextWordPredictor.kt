@@ -33,12 +33,13 @@ internal object NextWordPredictor {
             // The .cwp asset is marked no-compress in Gradle, allowing direct read-only mmap
             // from the APK without copying a 20–30 MiB pack into the Java heap.
             context.assets.openFd(FILE_NAME).use { afd ->
-                val channel = java.io.FileInputStream(afd.fileDescriptor).channel
-                val buffer = channel.map(
-                    FileChannel.MapMode.READ_ONLY,
-                    afd.startOffset,
-                    afd.length
-                ).order(ByteOrder.LITTLE_ENDIAN)
+                val buffer = java.io.FileInputStream(afd.fileDescriptor).channel.use { channel ->
+                    channel.map(
+                        FileChannel.MapMode.READ_ONLY,
+                        afd.startOffset,
+                        afd.length
+                    ).order(ByteOrder.LITTLE_ENDIAN)
+                }
                 if (buffer.int != MAGIC) return null
                 val version = buffer.int
                 if (version != 1) return null
