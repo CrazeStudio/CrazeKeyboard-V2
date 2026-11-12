@@ -279,6 +279,44 @@ class SettingsActivity : Activity() {
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         content.addView(hero(), margin())
 
+        val packsSection = section(
+            "Language packs",
+            "Download compressed vocabulary packs once. They are verified and stored on this device for offline suggestions."
+        )
+        fun addPackRow(code: String, label: String) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(7), 0, dp(7))
+            }
+            val details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            details.addView(text(label, 14f, ink, true))
+            val info = text(
+                if (LanguagePackManager.isInstalled(this, code)) "Installed · offline ready" else "Not downloaded",
+                11f, muted
+            )
+            details.addView(info)
+            row.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
+            row.addView(action(
+                if (LanguagePackManager.isInstalled(this, code)) "Update" else "Download",
+                true
+            ) {
+                info.text = "Downloading and verifying…"
+                LanguagePackManager.download(this, code) { success, message ->
+                    runOnUiThread {
+                        info.text = if (success) "$message · offline ready" else "Failed: $message"
+                    }
+                }
+            })
+            packsSection.addView(row)
+        }
+        addPackRow("en", "English")
+        packsSection.addView(divider())
+        addPackRow("bn", "Bengali")
+        packsSection.addView(divider())
+        addPackRow("hi", "Hindi")
+        content.addView(packsSection, margin())
+
         val status = section("Keyboard status", "Complete both steps to use CrazeKeyboard in other apps.")
         status.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
