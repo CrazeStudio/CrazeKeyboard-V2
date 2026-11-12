@@ -1075,6 +1075,15 @@ class CrazeKeyboardService : InputMethodService() {
                     cursorStartX = event.rawX
                     cursorLastStep = 0
                     sp.tv.alpha = 0.72f
+                    // This custom touch listener replaces attach()'s listener,
+                    // so reproduce the same haptic and key-click feedback here.
+                    if (hapticsOn) sp.cell.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    if (keySoundOn) {
+                        try {
+                            (getSystemService(Context.AUDIO_SERVICE) as AudioManager)
+                                .playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD, 0.45f)
+                        } catch (_: Exception) { }
+                    }
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
