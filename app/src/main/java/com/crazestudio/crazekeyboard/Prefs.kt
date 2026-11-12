@@ -15,7 +15,7 @@ object Prefs {
     private const val SEP = "\u0001"
     val availableToolbarTools = listOf(
         "editor", "clipboard", "emoji", "voice", "theme", "onehand",
-        "floating", "resize", "settings", "switch", "keyboard", "hide"
+        "floating", "resize", "settings", "keyboard", "hide"
     )
     private val defaultToolbarTools = availableToolbarTools
     @Volatile private var learnedCache: List<String>? = null
