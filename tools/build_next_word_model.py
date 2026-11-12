@@ -48,7 +48,7 @@ def main() -> None:
     records = []
     for context, candidates in counts.items():
         ranked = [(word, count) for word, count in candidates.most_common(args.max_candidates)
-                  if count >= args.min_count and word != context.split()[-1]]
+                  if count >= args.min_count and len(word.encode("utf-8")) <= 255]
         if not ranked:
             continue
         key = context.encode("utf-8")
