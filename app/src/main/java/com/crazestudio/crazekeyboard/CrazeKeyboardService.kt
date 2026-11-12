@@ -442,7 +442,7 @@ class CrazeKeyboardService : InputMethodService() {
     }
 
     private fun tokensBeforeCursor(value: String): List<String> =
-        value.lowercase().split(Regex("[^\\\\p{L}']+")).filter { it.isNotBlank() }.takeLast(3)
+        value.lowercase().split(Regex("[^\\p{L}']+")).filter { it.isNotBlank() }.takeLast(3)
 
     private fun wordAtCursor(value: String): String =
         value.takeLastWhile { it.isLetter() || it == '\'' }
@@ -660,8 +660,11 @@ class CrazeKeyboardService : InputMethodService() {
     // ---------- typing actions ----------
     private fun autoCap() {
         if (shift == 2 || mode != "letters") return
-        val trimmed = cachedBeforeCursor.trimEnd()
-        val want = trimmed.isEmpty() || trimmed.last() in ".!?\\n"
+        // Ignore ordinary trailing spaces, but preserve newlines so a new paragraph
+        // is capitalized. Never treat the letter "n" as a sentence boundary.
+        val before = cachedBeforeCursor.trimEnd(' ', '\t', '\r')
+        val last = before.lastOrNull()
+        val want = last == null || last == '.' || last == '!' || last == '?' || last == '\n'
         if (want && shift == 0) { shift = 1; autoShift = true; updateCase() }
         else if (!want && shift == 1 && autoShift) { shift = 0; autoShift = false; updateCase() }
     }
