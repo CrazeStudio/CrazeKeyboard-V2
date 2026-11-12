@@ -112,56 +112,53 @@ class TextEditorActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = page
-        window.navigationBarColor = page
+        window.statusBarColor = Color.WHITE
+        window.navigationBarColor = Color.WHITE
         window.decorView.systemUiVisibility =
             View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
         window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(page)
-            setPadding(dp(18), dp(12), dp(18), dp(12))
+            setBackgroundColor(Color.WHITE)
+            setPadding(dp(14), dp(4), dp(14), dp(8))
         }
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+        val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        header.addView(TextView(this).apply {
+            text = "‹"
+            textSize = 34f
+            gravity = Gravity.CENTER
+            setTextColor(Color.BLACK)
+            setOnClickListener { applyAndClose() }
+        }, LinearLayout.LayoutParams(dp(48), dp(54)))
+        header.addView(label("Text Editor", 20f, Color.BLACK, true),
+            LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(8) })
+        val more = TextView(this).apply {
+            text = "⋮"
+            textSize = 25f
+            gravity = Gravity.CENTER
+            setTextColor(Color.BLACK)
+            setOnClickListener { showEditorMenu(this) }
         }
-        header.addView(action("Close") { finish() })
-        val titleBlock = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(13), 0, 0, 0)
-        }
-        titleBlock.addView(label("Text editor", 20f, ink, true))
-        titleBlock.addView(label("Compose, refine and insert", 11f, muted))
-        header.addView(titleBlock, LinearLayout.LayoutParams(0, -2, 1f))
-        header.addView(label("CRAZE", 11f, accent, true))
-        root.addView(header)
-
-        counter = label("0 words  ·  0 characters", 11f, muted).apply {
-            setPadding(dp(2), dp(14), 0, dp(8))
-        }
-        root.addView(counter)
+        header.addView(more, LinearLayout.LayoutParams(dp(44), dp(54)))
+        root.addView(header, LinearLayout.LayoutParams(-1, dp(54)))
 
         editor = EditText(this).apply {
-            hint = "Write here, or select text in the previous app before opening the editor…"
-            textSize = 16f
-            setTextColor(ink)
-            setHintTextColor(Color.rgb(154, 160, 174))
+            hint = "Start typing"
+            textSize = 18f
+            setTextColor(Color.rgb(24, 27, 32))
+            setHintTextColor(Color.rgb(145, 149, 156))
             gravity = Gravity.TOP or Gravity.START
             inputType = android.text.InputType.TYPE_CLASS_TEXT or
                 android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
                 android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             imeOptions = EditorInfo.IME_ACTION_NONE
-            setPadding(dp(15), dp(15), dp(15), dp(15))
-            background = shape(Color.WHITE, 18, Color.rgb(229, 232, 240))
-            minLines = 3
+            setPadding(dp(22), dp(22), dp(18), dp(18))
+            background = null
+            minLines = 4
             setText(intent.getStringExtra(EXTRA_INITIAL_TEXT).orEmpty())
         }
-        root.addView(editor, LinearLayout.LayoutParams(-1, 0, 1f).apply {
-            topMargin = dp(4)
-            bottomMargin = dp(12)
-        })
+        root.addView(editor, LinearLayout.LayoutParams(-1, 0, 1f))
         lastSnapshot = editor.text.toString()
         updateCounter()
         editor.addTextChangedListener(object : TextWatcher {
@@ -179,38 +176,33 @@ class TextEditorActivity : Activity() {
             }
         })
 
-        // Editing actions share two compact horizontal strips instead of four tall rows.
-        // This leaves substantially more room for text while the keyboard is visible.
-        root.addView(toolStrip(listOf(
-            "Undo" to { undo() },
-            "Redo" to { redo() },
-            "←" to { moveCursor(-1) },
-            "→" to { moveCursor(1) },
-            "Word" to { selectWord() },
-            "Line" to { selectLine() },
-            "Start" to { moveToLineBoundary(false) },
-            "End" to { moveToLineBoundary(true) }
-        )), LinearLayout.LayoutParams(-1, dp(40)).apply {
-            topMargin = dp(4)
+        val toolbar = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            background = shape(Color.rgb(245, 246, 248), 28)
+            setPadding(dp(5), dp(3), dp(5), dp(3))
+        }
+        fun tool(glyph: String, description: String, onClick: () -> Unit) {
+            toolbar.addView(TextView(this).apply {
+                text = glyph
+                contentDescription = description
+                textSize = if (glyph == "B") 20f else 23f
+                gravity = Gravity.CENTER
+                setTextColor(Color.rgb(34, 38, 45))
+                setOnClickListener { onClick() }
+            }, LinearLayout.LayoutParams(0, dp(48), 1f))
+        }
+        tool("↶", "Undo") { undo() }
+        tool("↷", "Redo") { redo() }
+        tool("A", "Text formatting") { toggleBold() }
+        tool("☷", "List") { insertBullet() }
+        tool("⌨", "Show or hide keyboard") { toggleKeyboard() }
+        root.addView(toolbar, LinearLayout.LayoutParams(-1, dp(54)).apply {
+            topMargin = dp(8)
         })
-        root.addView(toolStrip(listOf(
-            "Select all" to { editor.selectAll() },
-            "Copy" to { copyText() },
-            "Cut" to { cutText() },
-            "Paste" to { pasteText() },
-            "Find / replace" to { findReplace() },
-            "Clear" to { editor.text?.clear() }
-        )), LinearLayout.LayoutParams(-1, dp(40)).apply {
-            topMargin = dp(2)
-        })
-
-        root.addView(action(
-            if (intent.getBooleanExtra(EXTRA_REPLACE_SELECTION, false)) "Replace selected text" else "Insert into current field",
-            true
-        ) { applyAndClose() }, LinearLayout.LayoutParams(-1, -2).apply {
-            topMargin = dp(12)
-            bottomMargin = dp(4)
-        })
+        counter = label("0 words  ·  0 characters", 11f, Color.rgb(75, 80, 89)).apply {
+            setPadding(dp(10), dp(7), dp(10), dp(2))
+        }
+        root.addView(counter, LinearLayout.LayoutParams(-1, -2))
 
         setContentView(root)
         editor.requestFocus()
@@ -219,6 +211,48 @@ class TextEditorActivity : Activity() {
             (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
                 .showSoftInput(editor, InputMethodManager.SHOW_IMPLICIT)
         }
+    }
+
+    private fun showEditorMenu(anchor: View) {
+        val menu = android.widget.PopupMenu(this, anchor)
+        menu.menu.add("Select all").setOnMenuItemClickListener { editor.selectAll(); true }
+        menu.menu.add("Copy").setOnMenuItemClickListener { copyText(); true }
+        menu.menu.add("Cut").setOnMenuItemClickListener { cutText(); true }
+        menu.menu.add("Paste").setOnMenuItemClickListener { pasteText(); true }
+        menu.menu.add("Find and replace").setOnMenuItemClickListener { findReplace(); true }
+        menu.menu.add("Clear").setOnMenuItemClickListener { editor.text?.clear(); true }
+        menu.menu.add("Insert into current field").setOnMenuItemClickListener { applyAndClose(); true }
+        menu.show()
+    }
+
+    private fun toggleKeyboard() {
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        if (window.decorView.rootWindowInsets?.isVisible(android.view.WindowInsets.Type.ime()) == true) {
+            imm.hideSoftInputFromWindow(editor.windowToken, 0)
+        } else {
+            editor.requestFocus()
+            imm.showSoftInput(editor, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    private fun toggleBold() {
+        val start = minOf(editor.selectionStart, editor.selectionEnd).coerceAtLeast(0)
+        val end = maxOf(editor.selectionStart, editor.selectionEnd).coerceAtLeast(0)
+        if (start == end) {
+            editor.typeface = if (editor.typeface?.isBold == true) Typeface.DEFAULT else Typeface.DEFAULT_BOLD
+            return
+        }
+        val value = editor.text?.subSequence(start, end).toString()
+        val styled = android.text.SpannableString(value)
+        styled.setSpan(android.text.style.StyleSpan(Typeface.BOLD), 0, styled.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        editor.text?.replace(start, end, styled)
+    }
+
+    private fun insertBullet() {
+        val start = editor.selectionStart.coerceAtLeast(0)
+        editor.text?.insert(start, "• ")
+        editor.setSelection(start + 2)
+        editor.requestFocus()
     }
 
     private fun moveCursor(delta: Int) {
