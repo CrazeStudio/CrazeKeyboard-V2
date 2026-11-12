@@ -66,12 +66,14 @@ internal object NextWordPredictor {
             .takeLast(3)
         if (tokens.isEmpty()) return emptyList()
         val buffer = open(context) ?: return emptyList()
+        val ranked = LinkedHashSet<String>(limit)
+        // Prefer the most specific context, then back off to shorter contexts to fill the strip.
         for (size in minOf(3, tokens.size) downTo 1) {
             val phrase = tokens.takeLast(size).joinToString(" ")
-            val found = lookup(buffer, phrase, limit)
-            if (found.isNotEmpty()) return found
+            lookup(buffer, phrase, limit).forEach { if (ranked.size < limit) ranked.add(it) }
+            if (ranked.size >= limit) break
         }
-        return emptyList()
+        return ranked.toList()
     }
 
     private fun lookup(source: ByteBuffer, phrase: String, limit: Int): List<String> {
