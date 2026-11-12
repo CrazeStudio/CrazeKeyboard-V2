@@ -1099,7 +1099,7 @@ class CrazeKeyboardService : InputMethodService() {
             col.addView(charRow("£¢€¥^°={}\\", 0f, false))
             col.addView(hrow().apply {
                 val p = mk("?123", 1.4f, t.special, t.text, 14f); attach(p) { showPanel("symbols") }; addView(p.cell)
-                "©®™[]<>_–—".forEach { symKey(this, it) }
+                "©®™_–—[]".forEach { symKey(this, it) }
                 addView(backKey(1.4f))
             })
         }
