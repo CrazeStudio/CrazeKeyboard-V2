@@ -92,7 +92,7 @@ internal object VocabularyIndex {
             }
             words.addAll(supplementalWords)
             temporary.bufferedWriter(Charsets.UTF_8).use { writer ->
-                words.sorted().forEach { writer.append(it).append('\\n') }
+                words.sorted().forEach { writer.append(it).append('\n') }
             }
             if (!temporary.isFile || temporary.length() == 0L) {
                 temporary.delete()
