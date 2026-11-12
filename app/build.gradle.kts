@@ -19,6 +19,10 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
         }
     }
+    androidResources {
+        // CWP is a read-only memory-mapped language pack; keep it uncompressed in the APK.
+        noCompress += "cwp"
+    }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions {
         jvmTarget = "17"
