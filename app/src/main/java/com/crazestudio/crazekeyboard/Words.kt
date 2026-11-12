@@ -32,6 +32,12 @@ object Words {
         "believe maybe probably actually definitely absolutely exactly totally literally basically honestly seriously").split(" ").filter { it.isNotEmpty() }.distinct()
 
     private val dictSet = dict.toHashSet()
+    private val byFirst: Map<Char, List<String>> by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        dict.groupBy { it.first() }
+    }
+    private val byPrefix: Map<String, List<String>> by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        dict.groupBy { it.take(2) }
+    }
     private val starters = listOf("I", "The", "Thanks")
 
     fun known(w: String) = dictSet.contains(w.lowercase())
@@ -79,8 +85,8 @@ object Words {
         val lower = w.lowercase()
         if (lower in dictSet || Prefs.isLearned(c, lower)) return null
         var found: String? = null
-        for (x in dict) {
-            if (x[0] != lower[0] || !near(lower, x)) continue
+        for (x in byFirst[lower[0]].orEmpty()) {
+            if (!near(lower, x)) continue
             if (found != null) return null
             found = x
         }
@@ -97,13 +103,15 @@ object Words {
             if (out.size >= 3) break
             if (x.startsWith(lower) && x != lower) { val cx = cased(x, w); if (cx !in out) out.add(cx) }
         }
-        for (x in dict) {
+        val prefixCandidates = if (lower.length >= 2) byPrefix[lower.take(2)].orEmpty()
+            else byFirst[lower.first()].orEmpty()
+        for (x in prefixCandidates) {
             if (out.size >= 3) break
             if (x.startsWith(lower) && x != lower) { val cx = cased(x, w); if (cx !in out) out.add(cx) }
         }
         // Typo fallback: nothing starts with what was typed, so offer close matches ("teh" -> "the").
         if (out.size < 3 && lower.length >= 2) {
-            for (x in dict) {
+            for (x in byFirst[lower.first()].orEmpty()) {
                 if (out.size >= 3) break
                 if (near(lower, x)) { val cx = cased(x, w); if (cx !in out) out.add(cx) }
             }

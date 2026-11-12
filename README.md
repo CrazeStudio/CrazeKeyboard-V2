@@ -1,4 +1,4 @@
-# CrazeKeyboard V1
+# CrazeKeyboard V2 — Phase One
 
 CrazeKeyboard is an offline-first Android IME by CrazeStudio.
 
@@ -7,7 +7,8 @@ CrazeKeyboard is an offline-first Android IME by CrazeStudio.
 ## V1 typing features
 
 - English QWERTY keyboard with optional number row, symbols pages, shift/caps lock, and editor-aware Enter/Search/Send/Next/Done actions.
-- Adaptive key sizing, left/right one-handed layouts, Light/Dark/Craze themes, haptic feedback, and a separate candidate strip.
+- Adaptive key sizing with a live graphical width/height resizer, left/right one-handed layouts, Light/Dark/Craze themes, configurable key-click sounds and haptic feedback, and a separate candidate strip.
+- A draggable floating keyboard layer with an independent touch region, a move grip, and a live horizontal resize grip.
 - Local English dictionary loaded from `app/src/main/assets/main_en-US.dict`, with a small built-in fallback list.
 - Frequency-ordered prefix completions, typo alternatives using bounded edit distance, and conservative automatic correction on space.
 - Lightweight context-based next-word candidates for common preceding words.
@@ -26,7 +27,7 @@ Open the project in Android Studio and build the `app` debug variant, or use the
 
 ## V1 boundaries
 
-V1 is a practical offline foundation, not a Gboard clone. It does **not** include swipe/gesture typing, neural language models, voice dictation, cloud sync, translation, GIF/sticker search, or broad multilingual/Indic input layouts. The included English word list is a lightweight starter lexicon, not a full commercial dictionary. Accuracy and latency must still be validated on physical devices and across different editor apps.
+Phase one is a practical offline foundation, not a Gboard clone. It does **not** include swipe/gesture typing, neural language models, voice dictation, cloud sync, translation, GIF/sticker search, or broad multilingual/Indic input layouts. The included English word list is a lightweight starter lexicon, not a full commercial dictionary. Accuracy and latency must still be validated on physical devices and across different editor apps.
 
 ## Dictionary and data licensing
 
