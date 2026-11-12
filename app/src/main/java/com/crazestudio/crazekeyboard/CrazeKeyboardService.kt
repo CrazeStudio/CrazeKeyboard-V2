@@ -1226,8 +1226,7 @@ class CrazeKeyboardService : InputMethodService() {
         emojiLists.values.forEach { all.addAll(it) }
         Prefs.recents(ctx).forEach { all.add(it) }
         return all.filter { emoji ->
-            emoji.contains(q) || emojiAliases[emoji].orEmpty().contains(q) ||
-                emojiCats.entries.any { (key, values) -> values.contains(emoji) && emojiCategoryTerms(key).contains(q) }
+            emoji.contains(q) || emojiAliases[emoji].orEmpty().contains(q)
         }.take(24)
     }
 
