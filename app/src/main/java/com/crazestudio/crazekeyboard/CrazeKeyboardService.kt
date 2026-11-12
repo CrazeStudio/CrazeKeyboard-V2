@@ -1260,20 +1260,16 @@ class CrazeKeyboardService : InputMethodService() {
     private fun buildEmoji(): View {
         val col = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(3), dp(2), dp(3), 0)
+            setPadding(dp(5), dp(3), dp(5), 0)
         }
-        val search = EditText(ctx).apply {
-            hint = "Search emoji"
-            textSize = 14f
-            setSingleLine(true)
-            setTextColor(t.text)
-            setHintTextColor(darken(t.text, 0.60f))
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-            background = rounded(t.key, 12)
-            isFocusable = false
-            isFocusableInTouchMode = false
-            isCursorVisible = false
-            setText(emojiSearchQuery)
+
+        val search = LinearLayout(ctx).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            background = rounded(t.key, 14)
+            setPadding(dp(12), 0, dp(12), 0)
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Search emoji"
             setOnClickListener {
                 emojiSearchActive = true
                 emojiSearchQuery = ""
@@ -1281,100 +1277,120 @@ class CrazeKeyboardService : InputMethodService() {
                 buildTop()
             }
         }
-        col.addView(search, lp(MATCH, dp(42)))
+        search.addView(TextView(ctx).apply {
+            text = "⌕"
+            textSize = 23f
+            setTextColor(t.text)
+            gravity = Gravity.CENTER
+        }, lp(dp(30), MATCH))
+        search.addView(TextView(ctx).apply {
+            text = if (emojiSearchQuery.isBlank()) "Search emoji" else emojiSearchQuery
+            textSize = 14f
+            setTextColor(if (emojiSearchQuery.isBlank()) darken(t.text, 0.58f) else t.text)
+            gravity = Gravity.CENTER_VERTICAL
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+        }, lp(0, MATCH, 1f))
+        col.addView(search, lp(MATCH, dp(40)))
 
+        val categoryKeys = ArrayList<String>().apply {
+            if (Prefs.recents(ctx).isNotEmpty()) add("🕘")
+            addAll(emojiCats.keys.filter { it != "🕘" })
+        }
+        val tabsScroll = HorizontalScrollView(ctx).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            clipToPadding = false
+        }
         val tabs = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
-        val tabViews = LinkedHashMap<String, TextView>()
-        val body = ScrollView(ctx).apply { isFillViewport = false }
-        val content = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        tabsScroll.addView(tabs, android.widget.FrameLayout.LayoutParams(WRAP, MATCH))
+        col.addView(tabsScroll, lp(MATCH, dp(44)))
+
+        val body = ScrollView(ctx).apply {
+            isFillViewport = true
+            clipToPadding = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+        }
+        val content = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(2), 0, dp(4))
+        }
         body.addView(content)
-        col.addView(tabs, lp(MATCH, dp(40)))
         col.addView(body, lp(MATCH, bodyHeight()))
         col.addView(backBar())
 
-        val sectionViews = LinkedHashMap<String, View>()
-        var renderingSearch = false
-        var selectedKey = ""
+        val tabViews = LinkedHashMap<String, TextView>()
+        var selectedKey = categoryKeys.firstOrNull() ?: "😀"
 
         fun selectTab(key: String) {
             selectedKey = key
-            tabViews.forEach { (name, view) -> view.alpha = if (name == key) 1f else 0.48f }
+            tabViews.forEach { (name, view) ->
+                val active = name == key
+                view.alpha = if (active) 1f else 0.58f
+                view.background = if (active) rounded(t.special, 12) else rounded(t.bg, 12)
+            }
+            render()
         }
 
-        fun categoryValues(key: String): List<String> =
-            if (key == "🕘") Prefs.recents(ctx) else emojiLists[key].orEmpty()
-
-        fun render(query: String) {
+        fun render() {
             content.removeAllViews()
-            sectionViews.clear()
-            val normalized = query.trim().lowercase()
-            renderingSearch = normalized.isNotEmpty()
-            if (!renderingSearch) {
-                val keys = ArrayList<String>()
-                if (Prefs.recents(ctx).isNotEmpty()) keys.add("🕘")
-                keys.addAll(emojiCats.keys.filter { it != "🕘" })
-                keys.forEach { key ->
-                    val section = LinearLayout(ctx).apply {
-                        orientation = LinearLayout.VERTICAL
-                        setPadding(dp(4), dp(4), dp(4), dp(4))
-                    }
-                    section.addView(TextView(ctx).apply {
-                        text = emojiCategoryName(key)
-                        textSize = 13f
-                        typeface = Typeface.DEFAULT_BOLD
-                        setTextColor(t.text)
-                        setPadding(dp(5), dp(7), dp(5), dp(4))
-                    })
-                    section.addView(emojiGrid(categoryValues(key)))
-                    content.addView(section)
-                    sectionViews[key] = section
-                }
-                selectTab(sectionViews.keys.firstOrNull() ?: "😀")
+            val query = emojiSearchQuery.trim()
+            val values = if (query.isNotEmpty()) {
+                emojiSearchMatches(query)
+            } else if (selectedKey == "🕘") {
+                Prefs.recents(ctx)
             } else {
-                val matches = LinkedHashSet<String>()
-                emojiCats.keys.filter { it != "🕘" }.forEach { key ->
-                    val categoryTerms = emojiCategoryTerms(key)
-                    categoryValues(key).forEach { emoji ->
-                        val terms = "${emojiAliases[emoji].orEmpty()} $categoryTerms $emoji".lowercase()
-                        if (terms.contains(normalized) || emoji.contains(normalized)) matches.add(emoji)
-                    }
-                }
-                Prefs.recents(ctx).forEach { emoji ->
-                    val terms = "${emojiAliases[emoji].orEmpty()} $emoji".lowercase()
-                    if (terms.contains(normalized) && emoji !in matches) matches.add(emoji)
-                }
+                emojiLists[selectedKey].orEmpty()
+            }
+            if (query.isNotEmpty()) {
                 content.addView(TextView(ctx).apply {
-                    text = "Search results"
-                    textSize = 13f
+                    text = "Results for \"$query\""
+                    textSize = 12f
                     typeface = Typeface.DEFAULT_BOLD
                     setTextColor(t.text)
-                    setPadding(dp(8), dp(9), dp(8), dp(5))
+                    setPadding(dp(8), dp(8), dp(8), dp(6))
                 })
-                content.addView(emojiGrid(matches.toList()))
+            } else {
+                content.addView(TextView(ctx).apply {
+                    text = emojiCategoryName(selectedKey)
+                    textSize = 12f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(t.text)
+                    setPadding(dp(8), dp(8), dp(8), dp(6))
+                })
             }
+            content.addView(emojiGrid(values))
             body.scrollTo(0, 0)
         }
 
-        emojiCats.keys.forEach { key ->
-            val tab = iconBtn(key, 18f) { }
-            tab.alpha = if (key == "😀") 1f else 0.48f
-            tab.setOnClickListener {
-                selectTab(key)
-                body.post {
-                    sectionViews[key]?.let { body.smoothScrollTo(0, it.top) }
+        categoryKeys.forEach { key ->
+            val tab = TextView(ctx).apply {
+                text = key
+                textSize = 19f
+                gravity = Gravity.CENTER
+                setTextColor(t.text)
+                setPadding(dp(11), 0, dp(11), 0)
+                isClickable = true
+                isFocusable = true
+                contentDescription = emojiCategoryName(key)
+                setOnClickListener {
+                    emojiSearchQuery = ""
+                    selectTab(key)
                 }
             }
             tabViews[key] = tab
-            tabs.addView(tab, lp(0, dp(40), 1f))
+            tabs.addView(tab, lp(WRAP, dp(38)).apply {
+                leftMargin = dp(2)
+                rightMargin = dp(2)
+            })
         }
-
-        body.setOnScrollChangeListener { _, _, scrollY, _, _ ->
-            if (!renderingSearch) {
-                val active = sectionViews.entries.lastOrNull { (_, view) -> view.top <= scrollY + dp(52) }?.key
-                if (active != null && active != selectedKey) selectTab(active)
-            }
+        if (selectedKey !in categoryKeys) selectedKey = "😀"
+        tabViews.forEach { (name, view) ->
+            val active = name == selectedKey
+            view.alpha = if (active) 1f else 0.58f
+            view.background = if (active) rounded(t.special, 12) else rounded(t.bg, 12)
         }
-        render(emojiSearchQuery)
+        render()
         return col
     }
 
