@@ -667,6 +667,7 @@ class CrazeKeyboardService : InputMethodService() {
                     val packLanguage = when {
                         word.any { it in '\u0980'..'\u09FF' } -> "bn"
                         word.any { it in '\u0900'..'\u097F' } -> "hi"
+                        word.any { it in 'a'..'z' || it in 'A'..'Z' } -> "en"
                         else -> java.util.Locale.getDefault().language
                     }
                     DownloadedVocabularyIndex.suggest(packLanguage, word, 3)
@@ -678,6 +679,7 @@ class CrazeKeyboardService : InputMethodService() {
                 val remoteLanguage = when {
                     word.any { it in '\u0980'..'\u09FF' } -> "bn"
                     word.any { it in '\u0900'..'\u097F' } -> "hi"
+                    word.any { it in 'a'..'z' || it in 'A'..'Z' } -> "en"
                     else -> java.util.Locale.getDefault().language
                 }
                 CrazeRemotePredictor.request(word, remoteLanguage) { remote ->
