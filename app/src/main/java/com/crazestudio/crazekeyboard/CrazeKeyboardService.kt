@@ -674,6 +674,23 @@ class CrazeKeyboardService : InputMethodService() {
                 }
             }.ifEmpty { Words.suggest(this, if (word.isEmpty()) "" else word) }
 
+            if (word.isNotEmpty() && Prefs.b(this, "onlinepred", true)) {
+                val remoteLanguage = when {
+                    word.any { it in '\\u0980'..'\\u09FF' } -> "bn"
+                    word.any { it in '\\u0900'..'\\u097F' } -> "hi"
+                    else -> java.util.Locale.getDefault().language
+                }
+                CrazeRemotePredictor.request(word, remoteLanguage) { remote ->
+                    if (remote.isNotEmpty() && epoch == predictionEpoch &&
+                        ::top.isInitialized && desiredTopState() == "suggestions") {
+                        val merged = (suggestions + remote).distinct().take(3)
+                        for (i in 0..2) {
+                            if (i < sugViews.size) sugViews[i].text = merged.getOrNull(i) ?: ""
+                        }
+                    }
+                }
+            }
+
             hd.post {
                 if (epoch != predictionEpoch || !::top.isInitialized || desiredTopState() != "suggestions") return@post
                 for (i in 0..2) {
