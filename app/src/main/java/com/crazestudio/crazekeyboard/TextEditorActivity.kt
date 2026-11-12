@@ -18,6 +18,7 @@ import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.HorizontalScrollView
 import android.widget.TextView
@@ -105,7 +106,7 @@ class TextEditorActivity : Activity() {
             isHorizontalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
             clipToPadding = false
-            addView(row, HorizontalScrollView.LayoutParams(-2, dp(40)))
+            addView(row, FrameLayout.LayoutParams(-2, dp(40)))
         }
     }
 
