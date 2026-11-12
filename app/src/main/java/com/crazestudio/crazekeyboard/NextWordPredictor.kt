@@ -7,16 +7,19 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
 import java.util.Locale
+import java.util.zip.GZIPInputStream
 
 /**
  * Memory-mapped word-level n-gram predictor.
  *
- * The language pack is an optional binary file at filesDir/language_models/en-US.cwp.
- * The mapped model is not copied into a Kotlin heap collection. Only a small number
- * of candidate strings are allocated for each lookup.
+ * The compressed language pack is an optional APK asset:
+ * assets/en-US.cwp.gz. It is expanded once into private app storage and then
+ * memory-mapped read-only. The expanded model is never loaded into a Kotlin
+ * heap collection.
  */
 internal object NextWordPredictor {
-    private const val FILE_NAME = "en-US.cwp"
+    private const val ASSET_NAME = "en-US.cwp.gz"
+    private const val MODEL_NAME = "en-US.cwp"
     private const val MAGIC = 0x31505743 // "CWP1" in little endian
     private const val HEADER_SIZE = 12
     private const val INDEX_ENTRY_SIZE = 8
@@ -24,40 +27,78 @@ internal object NextWordPredictor {
     @Volatile private var mapped: ByteBuffer? = null
     @Volatile private var indexedCount = 0
     @Volatile private var dataStart = 0
-    @Volatile private var modelFile: File? = null
+
+    private fun validModel(file: File): Boolean {
+        if (!file.isFile || file.length() < HEADER_SIZE) return false
+        return try {
+            RandomAccessFile(file, "r").use { raf ->
+                raf.readInt().let { java.lang.Integer.reverseBytes(it) == MAGIC } &&
+                    raf.readInt().let { java.lang.Integer.reverseBytes(it) == 1 }
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun modelFile(context: Context): File? {
+        val directory = File(context.filesDir, "language_models")
+        if (!directory.exists() && !directory.mkdirs()) return null
+        val destination = File(directory, MODEL_NAME)
+        if (validModel(destination)) return destination
+
+        val temporary = File(directory, "$MODEL_NAME.tmp")
+        return try {
+            context.assets.open(ASSET_NAME).use { input ->
+                GZIPInputStream(input.buffered()).use { gzip ->
+                    temporary.outputStream().buffered().use { output ->
+                        gzip.copyTo(output, 64 * 1024)
+                    }
+                }
+            }
+            if (!validModel(temporary)) {
+                temporary.delete()
+                return null
+            }
+            if (destination.exists() && !destination.delete()) {
+                temporary.delete()
+                return null
+            }
+            if (!temporary.renameTo(destination)) {
+                temporary.copyTo(destination, overwrite = true)
+                temporary.delete()
+            }
+            destination.takeIf { validModel(it) }
+        } catch (_: Exception) {
+            temporary.delete()
+            null
+        }
+    }
 
     @Synchronized
     private fun open(context: Context): ByteBuffer? {
         mapped?.let { return it }
         return try {
-            // The .cwp asset is marked no-compress in Gradle, allowing direct read-only mmap
-            // from the APK without copying a 20–30 MiB pack into the Java heap.
-            context.assets.openFd(FILE_NAME).use { afd ->
-                val buffer = java.io.FileInputStream(afd.fileDescriptor).channel.use { channel ->
-                    channel.map(
-                        FileChannel.MapMode.READ_ONLY,
-                        afd.startOffset,
-                        afd.length
-                    ).order(ByteOrder.LITTLE_ENDIAN)
-                }
-                if (buffer.int != MAGIC) return null
-                val version = buffer.int
-                if (version != 1) return null
-                val count = buffer.int
-                if (count < 1 || count > (buffer.capacity() - HEADER_SIZE) / INDEX_ENTRY_SIZE) return null
-                val start = HEADER_SIZE + count * INDEX_ENTRY_SIZE
-                if (start > buffer.capacity()) return null
-                indexedCount = count
-                dataStart = start
-                mapped = buffer.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN)
-                mapped
+            val file = modelFile(context.applicationContext) ?: return null
+            val buffer = RandomAccessFile(file, "r").use { raf ->
+                raf.channel.map(FileChannel.MapMode.READ_ONLY, 0, raf.length())
+                    .order(ByteOrder.LITTLE_ENDIAN)
             }
+            if (buffer.getInt(0) != MAGIC || buffer.getInt(4) != 1) return null
+            val count = buffer.getInt(8)
+            if (count < 1 || count > (buffer.capacity() - HEADER_SIZE) / INDEX_ENTRY_SIZE) return null
+            val start = HEADER_SIZE + count * INDEX_ENTRY_SIZE
+            if (start > buffer.capacity()) return null
+            indexedCount = count
+            dataStart = start
+            mapped = buffer.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN)
+            mapped
         } catch (_: Exception) {
-            // Missing pack is normal during development; the keyboard uses its fallback suggestions.
+            // A missing or invalid language pack is normal during development.
             null
         }
     }
-    /** Pre-open the optional index off the UI thread during service startup. */
+
+    /** Pre-decompress and open the index off the UI thread during service startup. */
     fun warm(context: Context) {
         open(context.applicationContext)
     }
@@ -72,7 +113,7 @@ internal object NextWordPredictor {
         if (tokens.isEmpty()) return emptyList()
         val buffer = open(context) ?: return emptyList()
         val ranked = LinkedHashSet<String>(limit)
-        // Prefer the most specific context, then back off to shorter contexts to fill the strip.
+        // Prefer the most specific context, then back off to shorter contexts.
         for (size in minOf(3, tokens.size) downTo 1) {
             val phrase = tokens.takeLast(size).joinToString(" ")
             lookup(buffer, phrase, limit).forEach { if (ranked.size < limit) ranked.add(it) }
@@ -122,8 +163,7 @@ internal object NextWordPredictor {
                     val view = source.duplicate()
                     view.position(p)
                     view.get(bytes)
-                    p += len
-                    p += 2 // frequency is retained in the file for future reranking
+                    p += len + 2 // skip the stored frequency after each candidate
                     if (results.size < limit) results.add(String(bytes, Charsets.UTF_8))
                 }
                 return results
@@ -147,6 +187,5 @@ internal object NextWordPredictor {
         mapped = null
         indexedCount = 0
         dataStart = 0
-        modelFile = null
     }
 }
