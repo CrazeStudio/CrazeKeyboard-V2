@@ -177,6 +177,7 @@ class CrazeKeyboardService : InputMethodService() {
 
     override fun onCreate() {
         super.onCreate()
+        DownloadedVocabularyIndex.loadInstalledAsync(applicationContext)
         val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         clipListener = ClipboardManager.OnPrimaryClipChangedListener {
             try {
@@ -663,7 +664,13 @@ class CrazeKeyboardService : InputMethodService() {
                         }
                     }
                     cachedCorrection = Words.correction(this, word)?.let { word to it }
-                    Words.suggest(this, word)
+                    val packLanguage = when {
+                        word.any { it in '\u0980'..'\u09FF' } -> "bn"
+                        word.any { it in '\u0900'..'\u097F' } -> "hi"
+                        else -> java.util.Locale.getDefault().language
+                    }
+                    DownloadedVocabularyIndex.suggest(packLanguage, word, 3)
+                        .ifEmpty { Words.suggest(this, word) }
                 }
             }.ifEmpty { Words.suggest(this, if (word.isEmpty()) "" else word) }
 
