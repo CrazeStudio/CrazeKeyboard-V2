@@ -8,7 +8,6 @@ import java.nio.ByteOrder
 import java.nio.channels.FileChannel
 import java.util.Locale
 import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.atomic.AtomicBoolean
 import android.os.Handler
 import android.os.Looper
 import java.util.zip.GZIPInputStream
@@ -112,18 +111,14 @@ internal object NextWordPredictor {
      * file is demand-paged by the OS, so only index/data pages touched by lookups enter RAM.
      */
     fun loadAsync(context: Context, onReady: (() -> Unit)? = null) {
-        mapped?.let {
-            onReady?.let { callback -> mainHandler.post(callback) }
-            return
-        }
-        if (loadFailed) return
-        onReady?.let { callbacks.add(it) }
         synchronized(this) {
+            if (loadFailed) return
             if (mapped != null) {
-                drainCallbacks()
+                onReady?.let { mainHandler.post(it) }
                 return
             }
-            if (loading || loadFailed) return
+            onReady?.let { callbacks.add(it) }
+            if (loading) return
             loading = true
         }
         Thread({
