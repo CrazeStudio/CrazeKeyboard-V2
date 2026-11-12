@@ -1,0 +1,283 @@
+package com.crazestudio.crazekeyboard
+
+import android.app.Activity
+import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.text.Editable
+import android.text.TextWatcher
+import android.view.Gravity
+import android.view.View
+import android.view.inputmethod.InputMethodManager
+import android.view.inputmethod.EditorInfo
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.TextView
+
+/** Full-screen editor companion. Results return through a mailbox after the original editor regains focus. */
+class TextEditorActivity : Activity() {
+    companion object {
+        const val EXTRA_INITIAL_TEXT = "initial_text"
+        const val EXTRA_REPLACE_SELECTION = "replace_selection"
+
+        @Volatile var callback: (() -> Unit)? = null
+        @Volatile private var pendingText: String? = null
+
+        @Synchronized fun post(text: String) { pendingText = text }
+        @Synchronized fun take(): String? {
+            val value = pendingText
+            pendingText = null
+            return value
+        }
+    }
+
+    private val ink = Color.rgb(31, 37, 51)
+    private val muted = Color.rgb(110, 118, 137)
+    private val accent = Color.rgb(102, 83, 215)
+    private val page = Color.rgb(244, 246, 251)
+    private lateinit var editor: EditText
+    private lateinit var counter: TextView
+    private val undoStack = ArrayDeque<String>()
+    private val redoStack = ArrayDeque<String>()
+    private var lastSnapshot = ""
+    private var restoring = false
+
+    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+
+    private fun shape(color: Int, radius: Int = 16, stroke: Int = 0) =
+        GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(radius).toFloat()
+            setColor(color)
+            if (stroke != 0) setStroke(dp(1), stroke)
+        }
+
+    private fun label(value: String, size: Float, color: Int, bold: Boolean = false) =
+        TextView(this).apply {
+            text = value
+            textSize = size
+            setTextColor(color)
+            if (bold) typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        }
+
+    private fun action(text: String, primary: Boolean = false, click: () -> Unit) =
+        TextView(this).apply {
+            this.text = text
+            textSize = 13f
+            gravity = Gravity.CENTER
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setTextColor(if (primary) Color.WHITE else ink)
+            background = shape(if (primary) accent else Color.WHITE, 12,
+                if (primary) 0 else Color.rgb(229, 232, 240))
+            setPadding(dp(13), dp(10), dp(13), dp(10))
+            minHeight = dp(42)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { click() }
+        }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        window.statusBarColor = page
+        window.navigationBarColor = page
+        window.decorView.systemUiVisibility =
+            View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(page)
+            setPadding(dp(18), dp(12), dp(18), dp(12))
+        }
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        header.addView(action("Close") { finish() })
+        val titleBlock = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(13), 0, 0, 0)
+        }
+        titleBlock.addView(label("Text editor", 20f, ink, true))
+        titleBlock.addView(label("Compose, refine and insert", 11f, muted))
+        header.addView(titleBlock, LinearLayout.LayoutParams(0, -2, 1f))
+        header.addView(label("CRAZE", 11f, accent, true))
+        root.addView(header)
+
+        counter = label("0 words  ·  0 characters", 11f, muted).apply {
+            setPadding(dp(2), dp(14), 0, dp(8))
+        }
+        root.addView(counter)
+
+        editor = EditText(this).apply {
+            hint = "Write here, or select text in the previous app before opening the editor…"
+            textSize = 16f
+            setTextColor(ink)
+            setHintTextColor(Color.rgb(154, 160, 174))
+            gravity = Gravity.TOP or Gravity.START
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            imeOptions = EditorInfo.IME_ACTION_NONE
+            setPadding(dp(15), dp(15), dp(15), dp(15))
+            background = shape(Color.WHITE, 18, Color.rgb(229, 232, 240))
+            minLines = 7
+            setText(intent.getStringExtra(EXTRA_INITIAL_TEXT).orEmpty())
+        }
+        root.addView(editor, LinearLayout.LayoutParams(-1, 0, 1f).apply {
+            topMargin = dp(4)
+            bottomMargin = dp(12)
+        })
+        lastSnapshot = editor.text.toString()
+        updateCounter()
+        editor.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: Editable?) {
+                val value = s?.toString().orEmpty()
+                if (!restoring && value != lastSnapshot) {
+                    undoStack.addLast(lastSnapshot)
+                    while (undoStack.size > 60) undoStack.removeFirst()
+                    redoStack.clear()
+                    lastSnapshot = value
+                }
+                updateCounter()
+            }
+        })
+
+        val history = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        history.addView(action("Undo") { undo() },
+            LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(5) })
+        history.addView(action("Redo") { redo() },
+            LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(5) })
+        root.addView(history)
+
+        val tools = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(9), 0, dp(8))
+        }
+        val operations = listOf<Pair<String, () -> Unit>>(
+            "Select all" to { editor.selectAll() },
+            "Copy" to { copyText() },
+            "Cut" to { cutText() },
+            "Paste" to { pasteText() }
+        )
+        operations.forEachIndexed { index, item ->
+            tools.addView(action(item.first, click = item.second), LinearLayout.LayoutParams(0, -2, 1f).apply {
+                if (index > 0) leftMargin = dp(4)
+                if (index < operations.lastIndex) rightMargin = dp(4)
+            })
+        }
+        root.addView(tools)
+
+        val lowerTools = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        lowerTools.addView(action("Find / replace") { findReplace() },
+            LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(5) })
+        lowerTools.addView(action("Clear") { editor.text?.clear() },
+            LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(5) })
+        root.addView(lowerTools)
+
+        root.addView(action(
+            if (intent.getBooleanExtra(EXTRA_REPLACE_SELECTION, false)) "Replace selected text" else "Insert into current field",
+            true
+        ) { applyAndClose() }, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = dp(12)
+            bottomMargin = dp(4)
+        })
+
+        setContentView(root)
+        editor.requestFocus()
+        editor.post {
+            editor.setSelection(editor.text.length)
+            (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
+                .showSoftInput(editor, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    private fun updateCounter() {
+        if (!::counter.isInitialized || !::editor.isInitialized) return
+        val value = editor.text?.toString().orEmpty()
+        val words = value.trim().split(Regex("\\s+")).count { it.isNotBlank() }
+        counter.text = "$words words  ·  ${value.length} characters"
+    }
+
+    private fun restoreSnapshot(value: String) {
+        restoring = true
+        editor.setText(value)
+        editor.setSelection(editor.text.length)
+        lastSnapshot = value
+        restoring = false
+        updateCounter()
+    }
+
+    private fun undo() {
+        if (undoStack.isEmpty()) return
+        redoStack.addLast(editor.text.toString())
+        restoreSnapshot(undoStack.removeLast())
+    }
+
+    private fun redo() {
+        if (redoStack.isEmpty()) return
+        undoStack.addLast(editor.text.toString())
+        restoreSnapshot(redoStack.removeLast())
+    }
+
+    private fun copyText() {
+        val value = editor.text.toString()
+        if (value.isEmpty()) return
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("CrazeKeyboard text", value))
+    }
+
+    private fun cutText() {
+        copyText()
+        editor.text?.clear()
+    }
+
+    private fun pasteText() {
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = clipboard.primaryClip ?: return
+        if (clip.itemCount == 0) return
+        val value = clip.getItemAt(0).coerceToText(this)?.toString() ?: return
+        val start = editor.selectionStart.coerceAtLeast(0)
+        val end = editor.selectionEnd.coerceAtLeast(0)
+        editor.text?.replace(minOf(start, end), maxOf(start, end), value)
+    }
+
+    private fun findReplace() {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+        }
+        val find = EditText(this).apply { hint = "Find text"; isSingleLine = true }
+        val replace = EditText(this).apply { hint = "Replace with"; isSingleLine = true }
+        box.addView(find)
+        box.addView(replace)
+        AlertDialog.Builder(this)
+            .setTitle("Find and replace")
+            .setView(box)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Replace all") { _, _ ->
+                val needle = find.text.toString()
+                if (needle.isNotEmpty()) {
+                    val updated = editor.text.toString().replace(needle, replace.text.toString())
+                    editor.setText(updated)
+                    editor.setSelection(editor.text.length)
+                }
+            }
+            .show()
+    }
+
+    private fun applyAndClose() {
+        post(editor.text.toString())
+        finish()
+        Handler(Looper.getMainLooper()).postDelayed({ callback?.invoke() }, 350)
+    }
+}

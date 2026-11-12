@@ -1,8 +1,16 @@
-# CrazeKeyboard V2 — Phase One
+# CrazeKeyboard V2 — Phase Two
 
 CrazeKeyboard is an offline-first Android IME by CrazeStudio.
 
 **Application ID:** `com.crazestudio.crazekeyboard`
+
+## Phase-two capabilities
+
+- Adaptive toolbar: quick tools before typing, live word suggestions after typing, and an expanded tool menu.
+- Customisable toolbar shortcuts with enable/disable controls and user-defined ordering.
+- Built-in full-screen text editor with selection editing, insert-at-cursor, undo/redo, select-all, copy, cut, paste, clear, and find/replace.
+- Simplified CrazeKeyboard launcher icon and a consistent keyboard identity.
+- Predictor index warmed off the main thread and a shorter debounced suggestion refresh to reduce first-use and typing pauses.
 
 ## Phase-one capabilities
 
@@ -27,7 +35,7 @@ Open the project in Android Studio and build the `app` debug variant, or use the
 
 ## Current scope
 
-Phase one is a practical offline foundation, not a Gboard clone. It does **not** include swipe/gesture typing, neural language models, voice dictation, cloud sync, translation, GIF/sticker search, or broad multilingual/Indic input layouts. The included English word list is a lightweight starter lexicon, not a full commercial dictionary. Accuracy and latency must still be validated on physical devices and across different editor apps.
+Phase two adds an adaptive, customisable toolbar and a companion text editor while keeping the offline-first keyboard foundation. It is not a Gboard clone. It does **not** include swipe/gesture typing, neural language models, voice dictation, cloud sync, translation, GIF/sticker search, or broad multilingual/Indic input layouts. The included English word list is a lightweight starter lexicon, not a full commercial dictionary. Accuracy, editor hand-off, and latency must still be validated on physical devices and across different editor apps.
 
 ## Dictionary and data licensing
 

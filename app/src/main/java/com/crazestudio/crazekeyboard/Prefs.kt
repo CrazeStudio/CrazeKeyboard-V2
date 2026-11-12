@@ -13,6 +13,11 @@ object Prefs {
         Theme(0xFF100F1B.toInt(), 0xFF262238.toInt(), 0xFF1C192B.toInt(), 0xFFF5F0FF.toInt(), 0xFFFF75C8.toInt(), 0xFF231426.toInt())
     )
     private const val SEP = "\u0001"
+    val availableToolbarTools = listOf(
+        "editor", "clipboard", "emoji", "voice", "theme", "onehand",
+        "floating", "resize", "settings", "switch", "keyboard", "hide"
+    )
+    private val defaultToolbarTools = availableToolbarTools
     @Volatile private var learnedCache: List<String>? = null
     @Volatile private var shared: SharedPreferences? = null
 
@@ -37,6 +42,14 @@ object Prefs {
         if (safeText.isNotBlank()) put(c, "clips", (listOf(safeText) + clips(c).filter { it != safeText }).take(20))
     }
     fun clearClips(c: Context) = put(c, "clips", emptyList())
+    fun toolbarTools(c: Context): List<String> {
+        val saved = sp(c).getString("toolbarTools", null) ?: return defaultToolbarTools
+        return saved.split(SEP).filter { it in availableToolbarTools }.distinct()
+    }
+    fun setToolbarTools(c: Context, tools: List<String>) {
+        put(c, "toolbarTools", tools.filter { it in availableToolbarTools }.distinct())
+    }
+
     fun recents(c: Context) = list(c, "recent")
     fun addRecent(c: Context, e: String) = put(c, "recent", (listOf(e) + recents(c).filter { it != e }).take(32))
 
