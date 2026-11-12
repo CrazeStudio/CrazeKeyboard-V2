@@ -1162,7 +1162,7 @@ class CrazeKeyboardService : InputMethodService() {
         val search = EditText(ctx).apply {
             hint = "Search emoji"
             textSize = 14f
-            singleLine = true
+            setSingleLine(true)
             setTextColor(t.text)
             setHintTextColor(darken(t.text, 0.60f))
             setPadding(dp(12), dp(8), dp(12), dp(8))
