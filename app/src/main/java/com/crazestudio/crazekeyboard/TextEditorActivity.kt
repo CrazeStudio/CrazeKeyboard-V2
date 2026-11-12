@@ -228,14 +228,9 @@ class TextEditorActivity : Activity() {
 
     private fun toggleKeyboard() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-        if (window.decorView.rootWindowInsets?.isVisible(android.view.WindowInsets.Type.ime()) == true) {
-            imm.hideSoftInputFromWindow(editor.windowToken, 0)
-        } else {
-            editor.requestFocus()
-            imm.showSoftInput(editor, InputMethodManager.SHOW_IMPLICIT)
-        }
+        editor.requestFocus()
+        imm.toggleSoftInput(InputMethodManager.SHOW_IMPLICIT, InputMethodManager.HIDE_NOT_ALWAYS)
     }
-
     private fun toggleBold() {
         val start = minOf(editor.selectionStart, editor.selectionEnd).coerceAtLeast(0)
         val end = maxOf(editor.selectionStart, editor.selectionEnd).coerceAtLeast(0)
