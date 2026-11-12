@@ -609,6 +609,59 @@ class SettingsActivity : Activity() {
             override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
         })
 
+        // Gboard-inspired visual resize frame: drag the top/bottom edges for height,
+        // or the side handles for width. The preview and numeric controls stay in sync.
+        fun resizeHandle(label: String, horizontal: Boolean, direction: Int): TextView =
+            text(label, 17f, accent, true).apply {
+                gravity = Gravity.CENTER
+                background = shape(card, 10)
+                elevation = dp(4).toFloat()
+                contentDescription = if (horizontal) "Drag to resize keyboard width" else "Drag to resize keyboard height"
+                setOnTouchListener { view, event ->
+                    when (event.actionMasked) {
+                        android.view.MotionEvent.ACTION_DOWN -> {
+                            view.tag = if (horizontal) event.rawX else event.rawY
+                            true
+                        }
+                        android.view.MotionEvent.ACTION_MOVE -> {
+                            val start = (view.tag as? Float) ?: (if (horizontal) event.rawX else event.rawY)
+                            val now = if (horizontal) event.rawX else event.rawY
+                            val delta = ((now - start) / resources.displayMetrics.density * direction).toInt()
+                            if (horizontal) widthSeek.progress = (widthSeek.progress + delta).coerceIn(0, 45)
+                            else heightSeek.progress = (heightSeek.progress + delta).coerceIn(0, 30)
+                            view.tag = now
+                            true
+                        }
+                        android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> true
+                        else -> true
+                    }
+                }
+            }
+        previewFrame.addView(resizeHandle("↕", false, -1), FrameLayout.LayoutParams(dp(44), dp(28), Gravity.TOP or Gravity.CENTER_HORIZONTAL))
+        previewFrame.addView(resizeHandle("↕", false, 1), FrameLayout.LayoutParams(dp(44), dp(28), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL))
+        previewFrame.addView(resizeHandle("↔", true, -1), FrameLayout.LayoutParams(dp(32), dp(44), Gravity.START or Gravity.CENTER_VERTICAL))
+        previewFrame.addView(resizeHandle("↔", true, 1), FrameLayout.LayoutParams(dp(32), dp(44), Gravity.END or Gravity.CENTER_VERTICAL))
+
+        val resizeActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        resizeActions.addView(action("Reset", false) {
+            widthSeek.progress = 45
+            heightSeek.progress = 12
+            Prefs.setI(this@SettingsActivity, "onehand", 0)
+            Prefs.setB(this@SettingsActivity, "float", false)
+            Prefs.setI(this@SettingsActivity, "fx", 0)
+            Prefs.setI(this@SettingsActivity, "fy", 0)
+            updateKeyboardPreview()
+        }, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(5) })
+        resizeActions.addView(action("Move", false) {
+            Prefs.setB(this@SettingsActivity, "float", true)
+            Toast.makeText(this@SettingsActivity, "Floating mode enabled. Drag the keyboard's top grip to move it.", Toast.LENGTH_LONG).show()
+        }, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(5); rightMargin = dp(5) })
+        resizeActions.addView(action("Done", true) {
+            Toast.makeText(this@SettingsActivity, "Keyboard size saved", Toast.LENGTH_SHORT).show()
+            finish()
+        }, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(5) })
+        resizeSection.addView(resizeActions, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
+
         resizeSection.addView(text("Quick height presets", 13f, ink, true).apply {
             setPadding(0, dp(6), 0, dp(8))
         })
