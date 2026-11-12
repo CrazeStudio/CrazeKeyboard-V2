@@ -529,10 +529,12 @@ class CrazeKeyboardService : InputMethodService() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(4), dp(2), dp(4), dp(2))
         }
-        row.addView(iconImg(if (state == "menu") R.drawable.ic_close else R.drawable.ic_menu) {
-            showPanel(if (mode == "menu") "letters" else "menu")
-        }.apply { contentDescription = if (state == "menu") "Close tools" else "Open tools" },
-            lp(dp(44), MATCH))
+        if (state != "emojiSearch") {
+            row.addView(iconImg(if (state == "menu") R.drawable.ic_close else R.drawable.ic_menu) {
+                showPanel(if (mode == "menu") "letters" else "menu")
+            }.apply { contentDescription = if (state == "menu") "Close tools" else "Open tools" },
+                lp(dp(44), MATCH))
+        }
 
         when (state) {
             "emojiSearch" -> {
