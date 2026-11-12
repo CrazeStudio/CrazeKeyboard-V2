@@ -73,8 +73,16 @@ internal object LanguagePackManager {
                 BufferedInputStream(connection.inputStream).use { input ->
                     BufferedOutputStream(archiveTemp.outputStream()).use { output -> input.copyTo(output, 64 * 1024) }
                 }
-                val actualHash = MessageDigest.getInstance("SHA-256")
-                    .digest(archiveTemp.readBytes()).joinToString("") { "%02x".format(it) }
+                val digest = MessageDigest.getInstance("SHA-256")
+                archiveTemp.inputStream().buffered().use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        digest.update(buffer, 0, count)
+                    }
+                }
+                val actualHash = digest.digest().joinToString("") { "%02x".format(it) }
                 if (!actualHash.equals(expectedHash, ignoreCase = true)) {
                     throw IllegalStateException("Pack checksum verification failed")
                 }
