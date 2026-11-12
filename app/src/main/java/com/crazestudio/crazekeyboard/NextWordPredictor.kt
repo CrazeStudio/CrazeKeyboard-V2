@@ -29,13 +29,16 @@ internal object NextWordPredictor {
     @Synchronized
     private fun open(context: Context): ByteBuffer? {
         mapped?.let { return it }
-        val file = File(File(context.applicationContext.filesDir, "language_models"), FILE_NAME)
-        if (!file.isFile || file.length() < HEADER_SIZE) return null
         return try {
-            RandomAccessFile(file, "r").use { raf ->
-                val channel = raf.channel
-                val buffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size())
-                    .order(ByteOrder.LITTLE_ENDIAN)
+            // The .cwp asset is marked no-compress in Gradle, allowing direct read-only mmap
+            // from the APK without copying a 20–30 MiB pack into the Java heap.
+            context.assets.openFd(FILE_NAME).use { afd ->
+                val channel = java.io.FileInputStream(afd.fileDescriptor).channel
+                val buffer = channel.map(
+                    FileChannel.MapMode.READ_ONLY,
+                    afd.startOffset,
+                    afd.length
+                ).order(ByteOrder.LITTLE_ENDIAN)
                 if (buffer.int != MAGIC) return null
                 val version = buffer.int
                 if (version != 1) return null
@@ -45,15 +48,14 @@ internal object NextWordPredictor {
                 if (start > buffer.capacity()) return null
                 indexedCount = count
                 dataStart = start
-                modelFile = file
                 mapped = buffer.asReadOnlyBuffer().order(ByteOrder.LITTLE_ENDIAN)
                 mapped
             }
         } catch (_: Exception) {
+            // Missing pack is normal during development; the keyboard uses its fallback suggestions.
             null
         }
     }
-
     /** Return up to three likely next words for the text immediately before the cursor. */
     fun predict(context: Context, textBeforeCursor: String, limit: Int = 3): List<String> {
         if (textBeforeCursor.isBlank() || limit <= 0) return emptyList()
