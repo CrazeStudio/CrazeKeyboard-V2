@@ -10,6 +10,7 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
 import android.inputmethodservice.InputMethodService
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -133,7 +134,8 @@ class CrazeKeyboardService : InputMethodService() {
                 if (incognito || !Prefs.b(ctx, "clipboardHistory", true)) return@OnPrimaryClipChangedListener
                 val clip = cm.primaryClip ?: return@OnPrimaryClipChangedListener
                 // Android 13+ marks copied passwords / OTPs as sensitive: never store those.
-                if (clip.description?.extras?.getBoolean("android.content.extra.IS_SENSITIVE", false) == true) return@OnPrimaryClipChangedListener
+                if (Build.VERSION.SDK_INT >= 33 &&
+                    clip.description?.extras?.getBoolean("android.content.extra.IS_SENSITIVE", false) == true) return@OnPrimaryClipChangedListener
                 if (clip.itemCount > 0) clip.getItemAt(0)?.text?.toString()?.let { Prefs.addClip(ctx, it) }
             } catch (e: Exception) { }
         }
@@ -576,6 +578,7 @@ class CrazeKeyboardService : InputMethodService() {
 
     private fun showAlts(anchor: View, alts: String) {
         dismissAlts()
+        if (alts.isEmpty()) return
         val row = LinearLayout(ctx).apply { background = keyBg(t.special, 12); setPadding(dp(4), dp(4), dp(4), dp(6)) }
         alts.forEach { ch ->
             val s = if (shift > 0 && mode == "letters") ch.toString().uppercase() else ch.toString()
@@ -615,7 +618,7 @@ class CrazeKeyboardService : InputMethodService() {
         val g = mk("", 0.9f, t.special, t.text, 17f, R.drawable.ic_globe); attach(g) { switchKeyboard() }; addView(g.cell)
         val sp = mk("CrazeKeyboard", 4f, t.key, t.text, 11f)
         attach(sp, onLong = { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker() }) { type(" ") }; addView(sp.cell)
-        val d = mk(".", 0.9f, t.special, t.text); attach(d, onLong = { showAlts(d.cell, Alts.map["."] ?: return@attach) }) { type(".") }; addView(d.cell)
+        val d = mk(".", 0.9f, t.special, t.text); attach(d, onLong = { showAlts(d.cell, Alts.map["."].orEmpty()) }) { type(".") }; addView(d.cell)
         val e = mk("", 1.4f, t.accent, t.accentText, 18f, enterIcon()); attach(e) { enter() }; addView(e.cell)
         enterKeys.add(e)
     }
