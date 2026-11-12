@@ -484,10 +484,19 @@ class CrazeKeyboardService : InputMethodService() {
         else -> R.drawable.ic_menu
     }
 
+    private fun openClipboard() {
+        val connection = currentInputConnection ?: targetInputConnection
+        ClipboardActivity.onPaste = { value ->
+            connection?.commitText(value, 1)
+            cachedBeforeCursor += value
+            scheduleRefresh()
+        }
+        startActivity(Intent(ctx, ClipboardActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
     private fun runTool(id: String) {
         when (id) {
             "editor" -> launchTextEditor()
-            "clipboard" -> showPanel("clip")
+            "clipboard" -> openClipboard()
             "emoji" -> showPanel("emoji")
             "voice" -> { showPanel("letters"); startVoice() }
             "theme" -> { Prefs.nextTheme(ctx); rebuild() }
