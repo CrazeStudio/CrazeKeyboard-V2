@@ -81,6 +81,10 @@ internal object NextWordPredictor {
         }
     }
 
+    /** Ensure the uncompressed model file exists for the separately-built vocabulary index. */
+    @Synchronized
+    fun ensureModelFile(context: Context): File? = modelFile(context.applicationContext)
+
     @Synchronized
     private fun open(context: Context): ByteBuffer? {
         mapped?.let { return it }
