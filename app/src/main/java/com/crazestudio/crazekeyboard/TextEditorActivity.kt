@@ -203,6 +203,7 @@ class TextEditorActivity : Activity() {
             setPadding(dp(10), dp(7), dp(10), dp(2))
         }
         root.addView(counter, LinearLayout.LayoutParams(-1, -2))
+        updateCounter()
 
         setContentView(root)
         editor.requestFocus()
