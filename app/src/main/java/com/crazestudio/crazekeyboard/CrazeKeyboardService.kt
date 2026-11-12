@@ -46,7 +46,11 @@ class CrazeKeyboardService : InputMethodService() {
     private lateinit var panel: FrameLayout
     private val sugViews = ArrayList<TextView>()
     private val letterKeys = ArrayList<Pair<TextView, String>>()
+    private val enterKeys = ArrayList<K>()
     private val seen = HashMap<String, Int>()
+    // Pages are built once per input view and reused: switching ?123 / ABC / menu no longer rebuilds ~40 views each time.
+    private val pageCache = HashMap<String, View>()
+    private val emojiGrids = HashMap<String, View>()
     private var shiftKey: K? = null
     private var t = Prefs.themes[0]
     private var shift = 0
@@ -54,16 +58,23 @@ class CrazeKeyboardService : InputMethodService() {
     private var mode = "letters"
     private var floating = false
     private var suggestOn = true
+    private var incognito = false
+    private var autoCorrectOn = true
+    private var doubleSpaceOn = true
+    private var nextWordOn = true
+    private var lastCorrection: Pair<String, String>? = null
     private var lastShiftTap = 0L
     private var popup: PopupWindow? = null
     private var preview: PopupWindow? = null
     private var prevTv: TextView? = null
     private var lastSig = ""
+    private var builtOrientation = -1
     private var kh = 46
     private var cellH = 0
     private var hapticsOn = true
     private var numRow = true
     private var clipListener: ClipboardManager.OnPrimaryClipChangedListener? = null
+    private val noPersonalizedLearning = 0x1000000   // EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING (API 26) without the API-level gate
 
     private val emojiCats = linkedMapOf(
         "🕘" to "",
@@ -74,6 +85,9 @@ class CrazeKeyboardService : InputMethodService() {
         "⚽" to "⚽ 🏀 🏈 ⚾ 🎾 🏐 🏉 🎱 🏓 🏸 🥊 🎯 🎮 🎲 🎧 🎤 🎸 🎹 🎺 🎻 🥁 🎬 🎨 🏆 🥇 🥈 🥉 🚗 🚕 🚌 🚓 🚑 🚒 🚲 🚀 🚁 🚢 🏠 🌍 🌙 ⭐ 🌈 🔥 💧 ⚡",
         "💡" to "📱 💻 📷 📺 ⌚ 🔋 💡 🔦 📚 📖 📝 📎 🔑 🔒 🔔 💰 💳 🎁 🎈 🎉 ❤ 🧡 💛 💚 💙 💜 🖤 💔 💕 💞 💯 ✅ ❌ ⭕ ❗ ❓ ⚠ 💤 💬 💭"
     )
+    private val emojiLists: Map<String, List<String>> by lazy {
+        emojiCats.mapValues { (_, v) -> v.split(" ").filter { it.isNotEmpty() } }
+    }
 
     // ---------- sizing helpers ----------
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -85,6 +99,9 @@ class CrazeKeyboardService : InputMethodService() {
         cellH = dp(kh) + dp(6)
         hapticsOn = Prefs.b(this, "haptics", true)
         numRow = Prefs.b(this, "numrow", true)
+        autoCorrectOn = Prefs.b(this, "autocorrect", true)
+        doubleSpaceOn = Prefs.b(this, "doubleSpacePeriod", true)
+        nextWordOn = Prefs.b(this, "nextWord", true)
     }
     private fun rowCount() = if (numRow) 5 else 4
     private fun panelH() = rowCount() * cellH + dp(4)   // every page uses this, so switching pages never makes the keyboard jump
@@ -112,13 +129,23 @@ class CrazeKeyboardService : InputMethodService() {
         super.onCreate()
         val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         clipListener = ClipboardManager.OnPrimaryClipChangedListener {
-            try { cm.primaryClip?.getItemAt(0)?.text?.toString()?.let { Prefs.addClip(ctx, it) } } catch (e: Exception) { }
+            try {
+                if (incognito || !Prefs.b(ctx, "clipboardHistory", true)) return@OnPrimaryClipChangedListener
+                val clip = cm.primaryClip ?: return@OnPrimaryClipChangedListener
+                // Android 13+ marks copied passwords / OTPs as sensitive: never store those.
+                if (clip.description?.extras?.getBoolean("android.content.extra.IS_SENSITIVE", false) == true) return@OnPrimaryClipChangedListener
+                if (clip.itemCount > 0) clip.getItemAt(0)?.text?.toString()?.let { Prefs.addClip(ctx, it) }
+            } catch (e: Exception) { }
         }
         cm.addPrimaryClipChangedListener(clipListener)
     }
 
     override fun onDestroy() {
-        (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).removePrimaryClipChangedListener(clipListener)
+        try { (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).removePrimaryClipChangedListener(clipListener) } catch (e: Exception) { }
+        hd.removeCallbacksAndMessages(null)
+        dismissPopups()
+        VoiceActivity.callback = null   // the callback captures this service; don't leak it
+        pageCache.clear(); emojiGrids.clear()
         super.onDestroy()
     }
 
@@ -140,12 +167,20 @@ class CrazeKeyboardService : InputMethodService() {
         }
     }
 
+    private fun resetPages() {
+        pageCache.clear(); emojiGrids.clear()
+        letterKeys.clear(); enterKeys.clear()
+        shiftKey = null
+    }
+
     override fun onCreateInputView(): View {
         t = Prefs.theme(this)
         lastSig = Prefs.sig(this)
         floating = Prefs.b(this, "float", false)
+        builtOrientation = resources.configuration.orientation
         loadPrefs()
         dismissPopups()
+        resetPages()
         val sw = resources.displayMetrics.widthPixels
         val sh = resources.displayMetrics.heightPixels
         outer = FrameLayout(this)
@@ -218,10 +253,17 @@ class CrazeKeyboardService : InputMethodService() {
         return row
     }
 
+    private fun isPasswordField(cls: Int, v: Int): Boolean =
+        (cls == InputType.TYPE_CLASS_TEXT && (v == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
+            v == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD || v == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD)) ||
+            (cls == InputType.TYPE_CLASS_NUMBER && v == InputType.TYPE_NUMBER_VARIATION_PASSWORD)
+
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        if (Prefs.sig(this) != lastSig || Prefs.b(this, "float", false) != floating) setInputView(onCreateInputView())
-        else loadPrefs()
+        val orient = resources.configuration.orientation
+        if (!::outer.isInitialized || Prefs.sig(this) != lastSig || Prefs.b(this, "float", false) != floating || orient != builtOrientation) {
+            setInputView(onCreateInputView())
+        } else loadPrefs()
         val cls = info.inputType and InputType.TYPE_MASK_CLASS
         val v = info.inputType and InputType.TYPE_MASK_VARIATION
         val noSug = listOf(InputType.TYPE_TEXT_VARIATION_PASSWORD, InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
@@ -229,12 +271,16 @@ class CrazeKeyboardService : InputMethodService() {
             InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS, InputType.TYPE_TEXT_VARIATION_URI)
         suggestOn = Prefs.b(this, "suggest", true) && cls == InputType.TYPE_CLASS_TEXT && v !in noSug &&
             (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0
+        // Private fields: don't learn words from them and don't record the clipboard while they are focused.
+        incognito = isPasswordField(cls, v) || (info.imeOptions and noPersonalizedLearning) != 0
         shift = 0
         autoShift = false
+        lastCorrection = null
         mode = if (cls == InputType.TYPE_CLASS_NUMBER || cls == InputType.TYPE_CLASS_PHONE) "symbols" else "letters"
         buildTop()
         showPanel(mode)
         updateSuggestions()
+        deliverVoice()
     }
 
     // Cursor moved / text changed outside the keyboard. Debounced so rapid edits cost one refresh.
@@ -244,13 +290,14 @@ class CrazeKeyboardService : InputMethodService() {
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
-        hd.removeCallbacks(refreshR)
+        hd.removeCallbacksAndMessages(null)   // pending refresh, key-repeat and long-press timers must not outlive the input view
         dismissPopups()
+        lastCorrection = null
         super.onFinishInputView(finishingInput)
     }
 
     // ---------- debounced refresh (suggestions + auto-capitalize) ----------
-    private val refreshR = Runnable { autoCap(); updateSuggestions() }
+    private val refreshR = Runnable { if (::top.isInitialized) { autoCap(); updateSuggestions() } }
     private fun scheduleRefresh() { hd.removeCallbacks(refreshR); hd.postDelayed(refreshR, 40) }
 
     // ---------- top bar: menu button + suggestions ----------
@@ -295,7 +342,12 @@ class CrazeKeyboardService : InputMethodService() {
 
     private fun updateSuggestions() {
         if (mode == "menu" || sugViews.isEmpty()) return
-        val list = if (suggestOn) Words.suggest(this, currentWord()) else emptyList()
+        val w = if (suggestOn) currentWord() else ""
+        val list = when {
+            !suggestOn -> emptyList()
+            w.isEmpty() && !nextWordOn -> emptyList()
+            else -> Words.suggest(this, w)
+        }
         for (i in 0..2) sugViews[i].text = list.getOrNull(i) ?: ""
     }
 
@@ -303,6 +355,7 @@ class CrazeKeyboardService : InputMethodService() {
         val ic = currentInputConnection ?: return
         if (s.isEmpty()) return
         val w = currentWord()
+        lastCorrection = null
         ic.beginBatchEdit()
         ic.deleteSurroundingText(w.length, 0)
         ic.commitText("$s ", 1)
@@ -312,8 +365,9 @@ class CrazeKeyboardService : InputMethodService() {
 
     // Only learn a new word once it has been typed twice, so one-off typos don't pollute suggestions.
     private fun noteWord(w: String) {
-        if (w.length < 3 || Words.known(w)) return
+        if (incognito || w.length < 3 || Words.known(w)) return
         val k = w.lowercase()
+        if (seen.size > 300) seen.clear()
         val n = (seen[k] ?: 0) + 1
         seen[k] = n
         if (n >= 2) Words.learn(this, w)
@@ -342,6 +396,7 @@ class CrazeKeyboardService : InputMethodService() {
     private fun type(s: String) {
         dismissAlts()
         val ic = currentInputConnection ?: return
+        lastCorrection = null
         if (s == " ") { space(ic); return }
         ic.commitText(if (shift > 0 && mode == "letters") s.uppercase() else s, 1)
         if (shift == 1) { shift = 0; autoShift = false; updateCase() }
@@ -350,16 +405,42 @@ class CrazeKeyboardService : InputMethodService() {
 
     private fun space(ic: InputConnection) {
         val before = ic.getTextBeforeCursor(30, 0)?.toString() ?: ""
-        noteWord(before.takeLastWhile { it.isLetter() || it == '\'' })
+        val word = before.takeLastWhile { it.isLetter() || it == '\'' }
+        noteWord(word)
         // Second space right after a word turns into ". "
-        if (before.length >= 2 && before[before.length - 1] == ' ' && before[before.length - 2].isLetterOrDigit()) {
+        if (doubleSpaceOn && before.length >= 2 && before[before.length - 1] == ' ' && before[before.length - 2].isLetterOrDigit()) {
             ic.deleteSurroundingText(1, 0); ic.commitText(". ", 1)
-        } else ic.commitText(" ", 1)
+        } else {
+            val fix = if (autoCorrectOn && suggestOn && !incognito && word.isNotEmpty()) Words.correction(this, word) else null
+            if (fix != null) {
+                ic.beginBatchEdit()
+                ic.deleteSurroundingText(word.length, 0)
+                ic.commitText("$fix ", 1)
+                ic.endBatchEdit()
+                lastCorrection = word to fix
+            } else ic.commitText(" ", 1)
+        }
         scheduleRefresh()
     }
 
     // Key event instead of reading the selection first: no blocking round-trip, handles selections and emoji itself.
+    // Backspace right after an auto-correction restores what was actually typed (and stops correcting that word).
     private fun del() {
+        val lc = lastCorrection
+        lastCorrection = null
+        if (lc != null) {
+            val ic = currentInputConnection
+            val before = ic?.getTextBeforeCursor(lc.second.length + 1, 0)?.toString()
+            if (ic != null && before == lc.second + " ") {
+                ic.beginBatchEdit()
+                ic.deleteSurroundingText(lc.second.length + 1, 0)
+                ic.commitText(lc.first, 1)
+                ic.endBatchEdit()
+                if (!incognito) Words.learn(this, lc.first)
+                scheduleRefresh()
+                return
+            }
+        }
         sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
         scheduleRefresh()
     }
@@ -367,6 +448,7 @@ class CrazeKeyboardService : InputMethodService() {
     private fun actionId(): Int = (currentInputEditorInfo?.imeOptions ?: 0) and EditorInfo.IME_MASK_ACTION
 
     private fun enter() {
+        lastCorrection = null
         val ei = currentInputEditorInfo
         val a = actionId()
         if (ei == null || (ei.imeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0 ||
@@ -383,9 +465,27 @@ class CrazeKeyboardService : InputMethodService() {
         else -> R.drawable.ic_enter
     }
 
+    // Pages are cached, so the enter key's icon has to follow the focused field instead of being fixed at build time.
+    private fun refreshEnter() {
+        if (enterKeys.isEmpty()) return
+        val icon = enterIcon()
+        enterKeys.forEach { it.iv?.setImageResource(icon) }
+    }
+
     private fun startVoice() {
-        VoiceActivity.callback = { txt -> currentInputConnection?.commitText("$txt ", 1); scheduleRefresh() }
-        startActivity(Intent(this, VoiceActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        VoiceActivity.callback = { deliverVoice() }
+        try {
+            startActivity(Intent(this, VoiceActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: Exception) { }
+    }
+
+    // Voice text waits in a mailbox until the editor has focus again; whichever of the two triggers comes first commits it.
+    private fun deliverVoice() {
+        val txt = VoiceActivity.take() ?: return
+        val ic = currentInputConnection
+        if (ic == null) { VoiceActivity.post(txt); return }
+        ic.commitText("$txt ", 1)
+        scheduleRefresh()
     }
 
     private fun switchKeyboard() {
@@ -413,30 +513,35 @@ class CrazeKeyboardService : InputMethodService() {
         return K(cell, tv, iv)
     }
 
-    private fun dismissAlts() { popup?.dismiss(); popup = null }
-    private fun dismissPopups() { dismissAlts(); preview?.dismiss(); preview = null; prevTv = null }
+    private fun dismissAlts() { try { popup?.dismiss() } catch (e: Exception) { }; popup = null }
+    private fun dismissPopups() { dismissAlts(); try { preview?.dismiss() } catch (e: Exception) { }; preview = null; prevTv = null }
 
     // One preview window is created once and then only moved/re-texted: creating a window per keypress is what made typing laggy.
+    // Window calls can throw (BadTokenException) if the keyboard is hidden mid-touch, so a failed preview is simply skipped.
     private fun showPreview(k: K) {
-        val pw = dp(52)
-        val ph = dp(56)
-        val xo = (k.cell.width - pw) / 2
-        val yo = -(k.cell.height + ph - dp(4))
-        val p = preview
-        if (p == null || !p.isShowing) {
-            val tv = TextView(ctx).apply {
-                textSize = 26f; gravity = Gravity.CENTER; setTextColor(t.text); background = keyBg(t.key, 12)
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        try {
+            val pw = dp(52)
+            val ph = dp(56)
+            val xo = (k.cell.width - pw) / 2
+            val yo = -(k.cell.height + ph - dp(4))
+            val p = preview
+            if (p == null || !p.isShowing) {
+                val tv = TextView(ctx).apply {
+                    textSize = 26f; gravity = Gravity.CENTER; setTextColor(t.text); background = keyBg(t.key, 12)
+                    typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                }
+                tv.text = k.tv.text
+                prevTv = tv
+                preview = PopupWindow(tv, pw, ph).apply {
+                    isClippingEnabled = false; isTouchable = false
+                    showAsDropDown(k.cell, xo, yo)
+                }
+            } else {
+                prevTv?.apply { text = k.tv.text; visibility = View.VISIBLE }
+                p.update(k.cell, xo, yo, pw, ph)
             }
-            tv.text = k.tv.text
-            prevTv = tv
-            preview = PopupWindow(tv, pw, ph).apply {
-                isClippingEnabled = false; isTouchable = false
-                showAsDropDown(k.cell, xo, yo)
-            }
-        } else {
-            prevTv?.apply { text = k.tv.text; visibility = View.VISIBLE }
-            p.update(k.cell, xo, yo, pw, ph)
+        } catch (e: Exception) {
+            preview = null; prevTv = null
         }
     }
 
@@ -479,10 +584,12 @@ class CrazeKeyboardService : InputMethodService() {
                 setPadding(dp(10), dp(8), dp(10), dp(8)); setOnClickListener { type(ch.toString()) }
             })
         }
-        popup = PopupWindow(row, WRAP, WRAP).apply {
-            setBackgroundDrawable(ColorDrawable(0)); isOutsideTouchable = true
-            showAsDropDown(anchor, 0, -(anchor.height + dp(52)))
-        }
+        try {
+            popup = PopupWindow(row, WRAP, WRAP).apply {
+                setBackgroundDrawable(ColorDrawable(0)); isOutsideTouchable = true
+                showAsDropDown(anchor, 0, -(anchor.height + dp(52)))
+            }
+        } catch (e: Exception) { popup = null }
     }
 
     private fun hrow() = LinearLayout(ctx).apply { gravity = Gravity.CENTER }
@@ -508,8 +615,9 @@ class CrazeKeyboardService : InputMethodService() {
         val g = mk("", 0.9f, t.special, t.text, 17f, R.drawable.ic_globe); attach(g) { switchKeyboard() }; addView(g.cell)
         val sp = mk("CrazeKeyboard", 4f, t.key, t.text, 11f)
         attach(sp, onLong = { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker() }) { type(" ") }; addView(sp.cell)
-        val d = mk(".", 0.9f, t.special, t.text); attach(d, onLong = { showAlts(d.cell, Alts.map["."]!!) }) { type(".") }; addView(d.cell)
+        val d = mk(".", 0.9f, t.special, t.text); attach(d, onLong = { showAlts(d.cell, Alts.map["."] ?: return@attach) }) { type(".") }; addView(d.cell)
         val e = mk("", 1.4f, t.accent, t.accentText, 18f, enterIcon()); attach(e) { enter() }; addView(e.cell)
+        enterKeys.add(e)
     }
 
     private fun backKey(w: Float): View { val b = mk("", w, t.special, t.text, 18f, R.drawable.ic_backspace); attach(b, repeat = true) { del() }; return b.cell }
@@ -539,7 +647,6 @@ class CrazeKeyboardService : InputMethodService() {
             addView(backKey(1.4f))
         })
         col.addView(bottomRow("?123", "symbols"))
-        updateCase()
         return col
     }
 
@@ -618,34 +725,43 @@ class CrazeKeyboardService : InputMethodService() {
 
     private fun bodyHeight() = panelH() - dp(40) - cellH - dp(2)
 
+    // Each emoji category grid (~100 views) is built once and reused; only the "recent" grid is rebuilt because it changes.
+    private fun emojiGrid(key: String, list: List<String>): View {
+        if (key != "🕘") emojiGrids[key]?.let { return it }
+        val g = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        if (list.isEmpty()) g.addView(TextView(ctx).apply { text = "No recent emoji yet"; setTextColor(t.text); setPadding(dp(12), dp(12), dp(12), dp(12)) })
+        list.chunked(8).forEach { r ->
+            val row = LinearLayout(ctx)
+            r.forEach { e ->
+                row.addView(TextView(ctx).apply {
+                    text = e; textSize = 24f; gravity = Gravity.CENTER; setPadding(0, dp(6), 0, dp(6))
+                    setOnClickListener { currentInputConnection?.commitText(e, 1); Prefs.addRecent(ctx, e) }
+                }, lp(0, WRAP, 1f))
+            }
+            repeat(8 - r.size) { row.addView(View(ctx), lp(0, 1, 1f)) }
+            g.addView(row)
+        }
+        if (key != "🕘") emojiGrids[key] = g
+        return g
+    }
+
     private fun buildEmoji(): View {
         val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(3), dp(2), dp(3), 0) }
         val tabs = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
         val body = ScrollView(ctx)
-        fun fill(list: List<String>) {
-            val g = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-            if (list.isEmpty()) g.addView(TextView(ctx).apply { text = "No recent emoji yet"; setTextColor(t.text); setPadding(dp(12), dp(12), dp(12), dp(12)) })
-            list.chunked(8).forEach { r ->
-                val row = LinearLayout(ctx)
-                r.forEach { e ->
-                    row.addView(TextView(ctx).apply {
-                        text = e; textSize = 24f; gravity = Gravity.CENTER; setPadding(0, dp(6), 0, dp(6))
-                        setOnClickListener { currentInputConnection?.commitText(e, 1); Prefs.addRecent(ctx, e) }
-                    }, lp(0, WRAP, 1f))
-                }
-                repeat(8 - r.size) { row.addView(View(ctx), lp(0, 1, 1f)) }
-                g.addView(row)
-            }
-            body.removeAllViews(); body.addView(g)
+        fun fill(key: String, list: List<String>) {
+            val g = emojiGrid(key, list)
+            (g.parent as? ViewGroup)?.removeView(g)
+            body.removeAllViews(); body.addView(g); body.scrollTo(0, 0)
         }
         val startIcon = if (Prefs.recents(this).isEmpty()) "😀" else "🕘"
         var selected: TextView? = null
-        emojiCats.forEach { (icon, data) ->
+        emojiCats.keys.forEach { icon ->
             val tb = iconBtn(icon, 18f) { }
             tb.alpha = 0.45f
             tb.setOnClickListener {
                 selected?.alpha = 0.45f; tb.alpha = 1f; selected = tb
-                fill(if (icon == "🕘") Prefs.recents(ctx) else data.split(" "))
+                fill(icon, if (icon == "🕘") Prefs.recents(ctx) else emojiLists[icon] ?: emptyList())
             }
             if (icon == startIcon) { tb.alpha = 1f; selected = tb }
             tabs.addView(tb, lp(0, dp(40), 1f))
@@ -653,7 +769,7 @@ class CrazeKeyboardService : InputMethodService() {
         col.addView(tabs, lp(MATCH, dp(40)))
         col.addView(body, lp(MATCH, bodyHeight()))
         col.addView(backBar())
-        fill(if (startIcon == "🕘") Prefs.recents(this) else emojiCats["😀"]!!.split(" "))
+        fill(startIcon, if (startIcon == "🕘") Prefs.recents(this) else emojiLists["😀"] ?: emptyList())
         return col
     }
 
@@ -679,14 +795,11 @@ class CrazeKeyboardService : InputMethodService() {
         return col
     }
 
-    private fun showPanel(m: String) {
-        dismissPopups()
-        val prev = mode
-        mode = m
-        panel.removeAllViews()
-        letterKeys.clear()   // stale keys from other pages must not be touched by updateCase()
-        shiftKey = null
-        val page: View = when (m) {
+    // Letters, symbols and menu pages are cached; emoji (recents) and clipboard (history) must be fresh every time.
+    private fun pageFor(m: String): View {
+        val cacheable = m != "emoji" && m != "clip"
+        if (cacheable) pageCache[m]?.let { return it }
+        val v = when (m) {
             "symbols" -> buildSymbols(1)
             "symbols2" -> buildSymbols(2)
             "emoji" -> buildEmoji()
@@ -694,7 +807,20 @@ class CrazeKeyboardService : InputMethodService() {
             "menu" -> buildMenu()
             else -> buildLetters()
         }
+        if (cacheable) pageCache[m] = v
+        return v
+    }
+
+    private fun showPanel(m: String) {
+        dismissPopups()
+        val prev = mode
+        mode = m
+        val page = pageFor(m)
+        (page.parent as? ViewGroup)?.removeView(page)
+        panel.removeAllViews()
         panel.addView(page, FrameLayout.LayoutParams(MATCH, panelH()))
+        if (m == "letters") updateCase()
+        refreshEnter()
         if (m == "menu" || prev == "menu") buildTop()
         if (m == "letters") scheduleRefresh()
     }
