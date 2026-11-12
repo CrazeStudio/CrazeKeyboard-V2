@@ -348,6 +348,12 @@ class CrazeKeyboardService : InputMethodService() {
         val list = when {
             !suggestOn -> emptyList()
             w.isEmpty() && !nextWordOn -> emptyList()
+            // After a space, predict from the sentence context (trigram -> bigram -> unigram).
+            // The model is memory-mapped; if no language pack is installed, retain local fallback suggestions.
+            w.isEmpty() && !incognito -> {
+                val context = currentInputConnection?.getTextBeforeCursor(160, 0)?.toString().orEmpty()
+                NextWordPredictor.predict(this, context).ifEmpty { Words.suggest(this, "") }
+            }
             else -> Words.suggest(this, w)
         }
         for (i in 0..2) sugViews[i].text = list.getOrNull(i) ?: ""
