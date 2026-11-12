@@ -1075,8 +1075,12 @@ class CrazeKeyboardService : InputMethodService() {
     }
 
     private fun symKey(row: LinearLayout, ch: Char) {
-        val k = mk(ch.toString(), 1f, t.key, t.text, 18f)
-        attach(k, fast = true) { type(ch.toString()) }
+        val value = ch.toString()
+        val k = mk(value, 1f, t.key, t.text, 18f)
+        val alts = Alts.map[value]
+        attach(k, fast = alts == null, onLong = alts?.let { options -> { showAlts(k.cell, options) } }) {
+            type(value)
+        }
         row.addView(k.cell)
     }
 
@@ -1091,11 +1095,11 @@ class CrazeKeyboardService : InputMethodService() {
                 addView(backKey(1.4f))
             })
         } else {
-            col.addView(charRow("~`|•√π÷×¶∆", 0f, false))
+            col.addView(charRow("~`|•√π÷×^∆", 0f, false))
             col.addView(charRow("£¢€¥^°={}\\", 0f, false))
             col.addView(hrow().apply {
                 val p = mk("?123", 1.4f, t.special, t.text, 14f); attach(p) { showPanel("symbols") }; addView(p.cell)
-                "©®™[]<>".forEach { symKey(this, it) }
+                "©®™[]<>_–—".forEach { symKey(this, it) }
                 addView(backKey(1.4f))
             })
         }
