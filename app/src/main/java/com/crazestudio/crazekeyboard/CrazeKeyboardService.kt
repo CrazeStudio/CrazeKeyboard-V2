@@ -144,11 +144,6 @@ class CrazeKeyboardService : InputMethodService() {
             } catch (e: Exception) { }
         }
         cm.addPrimaryClipChangedListener(clipListener)
-        // Warm the prediction index away from the UI thread so first-use suggestion refresh is cheaper.
-        Thread({ NextWordPredictor.warm(applicationContext) }, "craze-predictor-warm").apply {
-            isDaemon = true
-            start()
-        }
     }
 
     override fun onDestroy() {
@@ -526,7 +521,13 @@ class CrazeKeyboardService : InputMethodService() {
             w.isEmpty() && !nextWordOn -> emptyList()
             w.isEmpty() -> {
                 val context = currentInputConnection?.getTextBeforeCursor(160, 0)?.toString().orEmpty()
-                NextWordPredictor.predict(this, context).ifEmpty { Words.suggest(this, "") }
+                val predicted = NextWordPredictor.predict(this, context)
+                if (context.isNotBlank() && predicted.isEmpty()) {
+                    // Do not inflate the model at keyboard startup. Load it only when the
+                    // user actually asks for next-word suggestions after typing a word.
+                    NextWordPredictor.loadAsync(applicationContext) { scheduleRefresh() }
+                }
+                predicted.ifEmpty { Words.suggest(this, "") }
             }
             else -> Words.suggest(this, w)
         }
