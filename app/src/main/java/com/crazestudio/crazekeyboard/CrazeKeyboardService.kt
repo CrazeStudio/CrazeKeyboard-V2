@@ -112,6 +112,7 @@ class CrazeKeyboardService : InputMethodService() {
     private var keySoundOn = false
     private var numRow = true
     private var emojiSearchQuery = ""
+    private var emojiSearchActive = false
     private var clipListener: ClipboardManager.OnPrimaryClipChangedListener? = null
     private val noPersonalizedLearning = 0x1000000   // EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING (API 26) without the API-level gate
 
@@ -449,6 +450,7 @@ class CrazeKeyboardService : InputMethodService() {
         value.takeLastWhile { it.isLetter() || it == '\'' }
 
     private fun desiredTopState(): String = when {
+        emojiSearchActive -> "emojiSearch"
         mode == "menu" -> "menu"
         !suggestOn || incognito || !hasEditorText() -> "tools"
         else -> "suggestions"
@@ -525,6 +527,41 @@ class CrazeKeyboardService : InputMethodService() {
             lp(dp(44), MATCH))
 
         when (state) {
+            "emojiSearch" -> {
+                row.addView(TextView(ctx).apply {
+                    text = "×"
+                    textSize = 25f
+                    gravity = Gravity.CENTER
+                    setTextColor(t.text)
+                    setOnClickListener {
+                        emojiSearchActive = false
+                        emojiSearchQuery = ""
+                        buildTop()
+                        showPanel("letters")
+                    }
+                }, lp(dp(38), MATCH))
+                row.addView(TextView(ctx).apply {
+                    text = if (emojiSearchQuery.isBlank()) "Search emoji…" else emojiSearchQuery
+                    textSize = 14f
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
+                    gravity = Gravity.CENTER_VERTICAL
+                    setTextColor(t.text)
+                }, lp(0, MATCH, 1f))
+                emojiSearchMatches(emojiSearchQuery).take(3).forEach { emoji ->
+                    row.addView(TextView(ctx).apply {
+                        text = emoji
+                        textSize = 21f
+                        gravity = Gravity.CENTER
+                        setOnClickListener {
+                            emojiSearchActive = false
+                            emojiSearchQuery = ""
+                            insertEmoji(emoji)
+                            showPanel("letters")
+                        }
+                    }, lp(dp(38), MATCH))
+                }
+            }
             "menu" -> {
                 row.addView(TextView(ctx).apply {
                     text = "Tools"
@@ -691,6 +728,11 @@ class CrazeKeyboardService : InputMethodService() {
 
     private fun type(s: String) {
         dismissAlts()
+        if (emojiSearchActive) {
+            emojiSearchQuery = (emojiSearchQuery + s).take(40)
+            buildTop()
+            return
+        }
         val ic = currentInputConnection ?: return
         if (s == " ") { space(ic); return }
         acceptPendingCorrection()
@@ -703,6 +745,11 @@ class CrazeKeyboardService : InputMethodService() {
     }
 
     private fun space(ic: InputConnection) {
+        if (emojiSearchActive) {
+            emojiSearchQuery = (emojiSearchQuery + " ").take(40)
+            buildTop()
+            return
+        }
         val before = cachedBeforeCursor
         val word = wordAtCursor(before)
         val previousTokens = tokensBeforeCursor(before).let {
@@ -738,6 +785,11 @@ class CrazeKeyboardService : InputMethodService() {
     // Key event instead of reading the selection first: no blocking round-trip, handles selections and emoji itself.
     // Backspace right after an auto-correction restores what was actually typed (and stops correcting that word).
     private fun del() {
+        if (emojiSearchActive) {
+            if (emojiSearchQuery.isNotEmpty()) emojiSearchQuery = emojiSearchQuery.dropLast(1)
+            buildTop()
+            return
+        }
         val lc = lastCorrection
         lastCorrection = null
         if (lc != null) {
@@ -764,6 +816,13 @@ class CrazeKeyboardService : InputMethodService() {
     private fun actionId(): Int = (currentInputEditorInfo?.imeOptions ?: 0) and EditorInfo.IME_MASK_ACTION
 
     private fun enter() {
+        if (emojiSearchActive) {
+            emojiSearchActive = false
+            emojiSearchQuery = ""
+            buildTop()
+            showPanel("letters")
+            return
+        }
         acceptPendingCorrection()
         lastCorrection = null
         val ei = currentInputEditorInfo
@@ -961,8 +1020,12 @@ class CrazeKeyboardService : InputMethodService() {
 
     private fun bottomRow(left: String, leftTarget: String): LinearLayout = hrow().apply {
         val l = mk(left, 1.4f, t.special, t.text, 14f); attach(l) { showPanel(leftTarget) }; addView(l.cell)
-        val c = mk(",", 0.9f, t.special, t.text); attach(c, onLong = { showPanel("emoji") }) { type(",") }; addView(c.cell)
-        val sp = mk("CrazeKeyboard", 4.9f, t.key, t.text, 11f)
+        val emoji = mk("", 0.9f, t.special, t.text, 18f, R.drawable.ic_emoji)
+        attach(emoji) { emojiSearchActive = false; emojiSearchQuery = ""; showPanel("emoji") }
+        emoji.cell.contentDescription = "Open emoji keyboard"
+        addView(emoji.cell)
+        val c = mk(",", 0.8f, t.special, t.text); attach(c, onLong = { emojiSearchActive = false; showPanel("emoji") }) { type(",") }; addView(c.cell)
+        val sp = mk("CrazeKeyboard", 4.0f, t.key, t.text, 11f)
         attach(sp) { type(" ") }; addView(sp.cell)
         val d = mk(".", 0.9f, t.special, t.text); attach(d, onLong = { showAlts(d.cell, Alts.map["."].orEmpty()) }) { type(".") }; addView(d.cell)
         val e = mk("", 1.4f, t.accent, t.accentText, 18f, enterIcon()); attach(e) { enter() }; addView(e.cell)
@@ -1146,6 +1209,18 @@ class CrazeKeyboardService : InputMethodService() {
         return grid
     }
 
+    private fun emojiSearchMatches(query: String): List<String> {
+        val q = query.trim().lowercase()
+        if (q.isEmpty()) return emptyList()
+        val all = LinkedHashSet<String>()
+        emojiLists.values.forEach { all.addAll(it) }
+        Prefs.recents(ctx).forEach { all.add(it) }
+        return all.filter { emoji ->
+            emoji.contains(q) || emojiAliases[emoji].orEmpty().contains(q) ||
+                emojiCats.entries.any { (key, values) -> values.contains(emoji) && emojiCategoryTerms(key).contains(q) }
+        }.take(24)
+    }
+
     private fun emojiCategoryName(key: String): String = when (key) {
         "🕘" -> "Recent"
         "😀" -> "Smileys and emotions"
@@ -1185,13 +1260,10 @@ class CrazeKeyboardService : InputMethodService() {
             isCursorVisible = false
             setText(emojiSearchQuery)
             setOnClickListener {
-                EmojiSearchActivity.callback = { query ->
-                    emojiSearchQuery = query
-                    showPanel("emoji")
-                }
-                startActivity(Intent(ctx, EmojiSearchActivity::class.java)
-                    .putExtra(EmojiSearchActivity.EXTRA_QUERY, emojiSearchQuery)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                emojiSearchActive = true
+                emojiSearchQuery = ""
+                showPanel("letters")
+                buildTop()
             }
         }
         col.addView(search, lp(MATCH, dp(42)))
@@ -1272,11 +1344,6 @@ class CrazeKeyboardService : InputMethodService() {
             val tab = iconBtn(key, 18f) { }
             tab.alpha = if (key == "😀") 1f else 0.48f
             tab.setOnClickListener {
-                if (emojiSearchQuery.isNotEmpty()) {
-                    emojiSearchQuery = ""
-                    showPanel("emoji")
-                    return@setOnClickListener
-                }
                 selectTab(key)
                 body.post {
                     sectionViews[key]?.let { body.smoothScrollTo(0, it.top) }
