@@ -17,8 +17,10 @@ import android.os.HandlerThread
 import android.os.Looper
 import android.os.Process
 import android.os.SystemClock
+import android.text.Editable
 import android.text.InputType
 import android.text.TextUtils
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
@@ -28,6 +30,7 @@ import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -75,6 +78,7 @@ class CrazeKeyboardService : InputMethodService() {
     private lateinit var kbd: LinearLayout
     private lateinit var top: FrameLayout
     private lateinit var panel: FrameLayout
+    private var targetInputConnection: InputConnection? = null
     private val sugViews = ArrayList<TextView>()
     private var lastTopState = ""
     private val letterKeys = ArrayList<Pair<TextView, String>>()
@@ -358,6 +362,7 @@ class CrazeKeyboardService : InputMethodService() {
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        if (info.packageName != packageName) targetInputConnection = currentInputConnection
         TextEditorActivity.callback = { deliverEditor() }
         val orient = resources.configuration.orientation
         if (!::outer.isInitialized || Prefs.sig(this) != lastSig || Prefs.b(this, "float", false) != floating || orient != builtOrientation) {
@@ -1070,50 +1075,204 @@ class CrazeKeyboardService : InputMethodService() {
     private fun bodyHeight() = panelH() - dp(40) - cellH - dp(2)
 
     // Each emoji category grid (~100 views) is built once and reused; only the "recent" grid is rebuilt because it changes.
-    private fun emojiGrid(key: String, list: List<String>): View {
-        if (key != "🕘") emojiGrids[key]?.let { return it }
-        val g = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        if (list.isEmpty()) g.addView(TextView(ctx).apply { text = "No recent emoji yet"; setTextColor(t.text); setPadding(dp(12), dp(12), dp(12), dp(12)) })
-        list.chunked(8).forEach { r ->
-            val row = LinearLayout(ctx)
-            r.forEach { e ->
+    private val emojiAliases = mapOf(
+        "😀" to "grinning smile happy face", "😃" to "smile happy face", "😄" to "smile laugh happy",
+        "😁" to "beaming grin happy", "😆" to "laugh laugh-tears", "😅" to "sweat smile laugh",
+        "😂" to "joy laugh tears funny", "🤣" to "rofl rolling laugh", "😊" to "blush smile happy",
+        "😉" to "wink", "😍" to "heart eyes love", "🥰" to "smiling hearts love", "😘" to "kiss love",
+        "😎" to "cool sunglasses", "🥳" to "party celebrate", "🤔" to "thinking wonder",
+        "😭" to "cry sad tears", "😢" to "cry sad", "😡" to "angry mad", "🤯" to "mind blown shock",
+        "👍" to "thumbs up yes approve good", "👎" to "thumbs down no bad", "🙏" to "pray please thanks",
+        "👏" to "clap applause", "💪" to "strong muscle flex", "👋" to "wave hello goodbye",
+        "❤️" to "red heart love", "❤" to "heart love", "💔" to "broken heart sad",
+        "💕" to "two hearts love", "💯" to "hundred perfect score", "🔥" to "fire hot lit",
+        "⭐" to "star favorite", "✅" to "check done yes", "❌" to "cross no wrong",
+        "🐶" to "dog puppy pet animal", "🐱" to "cat kitten pet animal", "🐼" to "panda animal",
+        "🦊" to "fox animal", "🐸" to "frog animal", "🦄" to "unicorn fantasy animal",
+        "🍎" to "apple fruit food", "🍕" to "pizza food", "🍔" to "burger hamburger food",
+        "🍟" to "fries food", "🍰" to "cake dessert sweet", "☕" to "coffee drink",
+        "⚽" to "soccer football sport", "🏀" to "basketball sport", "🎮" to "game controller gaming",
+        "🎧" to "headphones music", "🚗" to "car vehicle", "✈" to "airplane plane travel",
+        "🌍" to "earth globe world", "🌈" to "rainbow", "🌙" to "moon night",
+        "💡" to "light bulb idea", "📱" to "phone mobile", "💻" to "laptop computer",
+        "📷" to "camera photo", "🎉" to "party celebration", "🎂" to "birthday cake"
+    )
+
+    private fun insertEmoji(value: String) {
+        val connection = targetInputConnection ?: currentInputConnection ?: return
+        acceptPendingCorrection()
+        connection.commitText(value, 1)
+        Prefs.addRecent(ctx, value)
+        setLocalContext(cachedBeforeCursor + value)
+        scheduleRefresh()
+    }
+
+    private fun emojiGrid(list: List<String>): View {
+        val grid = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        list.chunked(8).forEach { rowValues ->
+            val row = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
+            rowValues.forEach { emoji ->
                 row.addView(TextView(ctx).apply {
-                    text = e; textSize = 24f; gravity = Gravity.CENTER; setPadding(0, dp(6), 0, dp(6))
-                    setOnClickListener { currentInputConnection?.commitText(e, 1); Prefs.addRecent(ctx, e) }
+                    text = emoji
+                    textSize = 24f
+                    gravity = Gravity.CENTER
+                    setPadding(0, dp(6), 0, dp(6))
+                    contentDescription = emojiAliases[emoji] ?: "Emoji $emoji"
+                    setOnClickListener { insertEmoji(emoji) }
                 }, lp(0, WRAP, 1f))
             }
-            repeat(8 - r.size) { row.addView(View(ctx), lp(0, 1, 1f)) }
-            g.addView(row)
+            repeat(8 - rowValues.size) { row.addView(View(ctx), lp(0, 1, 1f)) }
+            grid.addView(row)
         }
-        if (key != "🕘") emojiGrids[key] = g
-        return g
+        if (list.isEmpty()) {
+            grid.addView(TextView(ctx).apply {
+                text = "No matching emoji"
+                setTextColor(t.text)
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+            })
+        }
+        return grid
+    }
+
+    private fun emojiCategoryName(key: String): String = when (key) {
+        "🕘" -> "Recent"
+        "😀" -> "Smileys and emotions"
+        "👍" -> "People and gestures"
+        "🐶" -> "Animals and nature"
+        "🍔" -> "Food and drink"
+        "⚽" -> "Travel, activity and games"
+        "💡" -> "Objects and symbols"
+        else -> "Emoji"
+    }
+
+    private fun emojiCategoryTerms(key: String): String = when (key) {
+        "😀" -> "face smile happy sad laugh cry emotion"
+        "👍" -> "people person hand gesture body"
+        "🐶" -> "animal nature pet dog cat plant"
+        "🍔" -> "food drink fruit vegetable meal"
+        "⚽" -> "sport game travel transport music"
+        "💡" -> "object technology heart symbol idea"
+        else -> ""
     }
 
     private fun buildEmoji(): View {
-        val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(3), dp(2), dp(3), 0) }
+        val col = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(3), dp(2), dp(3), 0)
+        }
+        val search = EditText(ctx).apply {
+            hint = "Search emoji"
+            textSize = 14f
+            singleLine = true
+            setTextColor(t.text)
+            setHintTextColor(darken(t.text, 0.60f))
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = rounded(t.key, 12)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            imeOptions = EditorInfo.IME_ACTION_SEARCH
+        }
+        col.addView(search, lp(MATCH, dp(42)))
+
         val tabs = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
-        val body = ScrollView(ctx)
-        fun fill(key: String, list: List<String>) {
-            val g = emojiGrid(key, list)
-            (g.parent as? ViewGroup)?.removeView(g)
-            body.removeAllViews(); body.addView(g); body.scrollTo(0, 0)
-        }
-        val startIcon = if (Prefs.recents(this).isEmpty()) "😀" else "🕘"
-        var selected: TextView? = null
-        emojiCats.keys.forEach { icon ->
-            val tb = iconBtn(icon, 18f) { }
-            tb.alpha = 0.45f
-            tb.setOnClickListener {
-                selected?.alpha = 0.45f; tb.alpha = 1f; selected = tb
-                fill(icon, if (icon == "🕘") Prefs.recents(ctx) else emojiLists[icon] ?: emptyList())
-            }
-            if (icon == startIcon) { tb.alpha = 1f; selected = tb }
-            tabs.addView(tb, lp(0, dp(40), 1f))
-        }
+        val tabViews = LinkedHashMap<String, TextView>()
+        val body = ScrollView(ctx).apply { isFillViewport = false }
+        val content = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        body.addView(content)
         col.addView(tabs, lp(MATCH, dp(40)))
         col.addView(body, lp(MATCH, bodyHeight()))
         col.addView(backBar())
-        fill(startIcon, if (startIcon == "🕘") Prefs.recents(this) else emojiLists["😀"] ?: emptyList())
+
+        val sectionViews = LinkedHashMap<String, View>()
+        var renderingSearch = false
+        var selectedKey = ""
+
+        fun selectTab(key: String) {
+            selectedKey = key
+            tabViews.forEach { (name, view) -> view.alpha = if (name == key) 1f else 0.48f }
+        }
+
+        fun categoryValues(key: String): List<String> =
+            if (key == "🕘") Prefs.recents(ctx) else emojiLists[key].orEmpty()
+
+        fun render(query: String) {
+            content.removeAllViews()
+            sectionViews.clear()
+            val normalized = query.trim().lowercase()
+            renderingSearch = normalized.isNotEmpty()
+            if (!renderingSearch) {
+                val keys = ArrayList<String>()
+                if (Prefs.recents(ctx).isNotEmpty()) keys.add("🕘")
+                keys.addAll(emojiCats.keys.filter { it != "🕘" })
+                keys.forEach { key ->
+                    val section = LinearLayout(ctx).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setPadding(dp(4), dp(4), dp(4), dp(4))
+                    }
+                    section.addView(TextView(ctx).apply {
+                        text = emojiCategoryName(key)
+                        textSize = 13f
+                        typeface = Typeface.DEFAULT_BOLD
+                        setTextColor(t.text)
+                        setPadding(dp(5), dp(7), dp(5), dp(4))
+                    })
+                    section.addView(emojiGrid(categoryValues(key)))
+                    content.addView(section)
+                    sectionViews[key] = section
+                }
+                selectTab(sectionViews.keys.firstOrNull() ?: "😀")
+            } else {
+                val matches = LinkedHashSet<String>()
+                emojiCats.keys.filter { it != "🕘" }.forEach { key ->
+                    val categoryTerms = emojiCategoryTerms(key)
+                    categoryValues(key).forEach { emoji ->
+                        val terms = "${emojiAliases[emoji].orEmpty()} $categoryTerms $emoji".lowercase()
+                        if (terms.contains(normalized) || emoji.contains(normalized)) matches.add(emoji)
+                    }
+                }
+                Prefs.recents(ctx).forEach { emoji ->
+                    val terms = "${emojiAliases[emoji].orEmpty()} $emoji".lowercase()
+                    if (terms.contains(normalized) && emoji !in matches) matches.add(emoji)
+                }
+                content.addView(TextView(ctx).apply {
+                    text = "Search results"
+                    textSize = 13f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(t.text)
+                    setPadding(dp(8), dp(9), dp(8), dp(5))
+                })
+                content.addView(emojiGrid(matches.toList()))
+            }
+            body.scrollTo(0, 0)
+        }
+
+        emojiCats.keys.forEach { key ->
+            val tab = iconBtn(key, 18f) { }
+            tab.alpha = if (key == "😀") 1f else 0.48f
+            tab.setOnClickListener {
+                if (search.text.isNotEmpty()) search.setText("")
+                selectTab(key)
+                body.post {
+                    sectionViews[key]?.let { body.smoothScrollTo(0, it.top) }
+                }
+            }
+            tabViews[key] = tab
+            tabs.addView(tab, lp(0, dp(40), 1f))
+        }
+
+        body.setOnScrollChangeListener { _, _, scrollY, _, _ ->
+            if (!renderingSearch) {
+                val active = sectionViews.entries.lastOrNull { (_, view) -> view.top <= scrollY + dp(52) }?.key
+                if (active != null && active != selectedKey) selectTab(active)
+            }
+        }
+        search.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: Editable?) {
+                render(s?.toString().orEmpty())
+            }
+        })
+        render("")
         return col
     }
 
