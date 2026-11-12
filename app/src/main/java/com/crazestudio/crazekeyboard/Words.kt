@@ -33,19 +33,12 @@ object Words {
 
     private val dictSet = dict.toHashSet()
     private val starters = listOf("I", "The", "Thanks")
-    private var learnedCache: MutableList<String>? = null
-
-    private fun learnedList(c: Context): MutableList<String> =
-        learnedCache ?: Prefs.learned(c).toMutableList().also { learnedCache = it }
 
     fun known(w: String) = dictSet.contains(w.lowercase())
 
     fun learn(c: Context, w: String) {
         val lw = w.lowercase()
-        val l = learnedList(c)
-        if (lw in l || lw in dictSet) return
-        l.add(0, lw)
-        if (l.size > 500) l.removeAt(l.size - 1)
+        if (lw in dictSet) return
         Prefs.learn(c, lw)
     }
 
@@ -78,11 +71,29 @@ object Words {
         return edits <= 1
     }
 
+    // Conservative auto-correction: only an unknown, plain-letter word with exactly one close dictionary match that
+    // shares its first letter. Three-letter words are only fixed when they are a simple swap ("teh" -> "the").
+    fun correction(c: Context, w: String): String? {
+        if (w.length < 3 || w.length > 20 || w.any { !it.isLetter() }) return null
+        if (w.drop(1).any { it.isUpperCase() }) return null
+        val lower = w.lowercase()
+        if (lower in dictSet || Prefs.isLearned(c, lower)) return null
+        var found: String? = null
+        for (x in dict) {
+            if (x[0] != lower[0] || !near(lower, x)) continue
+            if (found != null) return null
+            found = x
+        }
+        val f = found ?: return null
+        if (lower.length == 3 && lower.toCharArray().sorted() != f.toCharArray().sorted()) return null
+        return cased(f, w)
+    }
+
     fun suggest(c: Context, w: String): List<String> {
         if (w.isEmpty()) return starters
         val lower = w.lowercase()
         val out = ArrayList<String>(3)
-        for (x in learnedList(c)) {
+        for (x in Prefs.learned(c)) {
             if (out.size >= 3) break
             if (x.startsWith(lower) && x != lower) { val cx = cased(x, w); if (cx !in out) out.add(cx) }
         }

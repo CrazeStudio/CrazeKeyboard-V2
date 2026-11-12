@@ -2,11 +2,14 @@ package com.crazestudio.crazekeyboard
 
 import android.Manifest
 import android.app.Activity
-import android.content.pm.PackageManager
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
 import android.os.Bundle
 import android.provider.Settings
 import android.text.InputType
@@ -19,15 +22,43 @@ import android.widget.*
 class SettingsActivity : Activity() {
     private val voicePermissionRequest = 701
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
-    private val ink = Color.rgb(31, 37, 51)
-    private val muted = Color.rgb(111, 119, 137)
+
+    // Palette follows the system light/dark setting (set in initPalette before any view is built).
+    private var night = false
+    private var ink = 0
+    private var muted = 0
     private val accent = Color.rgb(102, 83, 215)
-    private val page = Color.rgb(243, 245, 250)
-    private val dividerColor = Color.rgb(238, 240, 245)
+    private var page = 0
+    private var card = 0
+    private var dividerColor = 0
+    private var fieldBg = 0
+    private var actionBg = 0
+    private var pillPosBg = 0
+    private var pillPosFg = 0
+    private var pillNegBg = 0
+    private var pillNegFg = 0
+
     private var enabledBadge: TextView? = null
     private var selectedBadge: TextView? = null
     private var setupAction: TextView? = null
     private var voicePermissionButton: TextView? = null
+
+    private fun initPalette() {
+        night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        if (night) {
+            ink = Color.rgb(238, 240, 247); muted = Color.rgb(154, 161, 178)
+            page = Color.rgb(18, 19, 26); card = Color.rgb(30, 32, 42)
+            dividerColor = Color.rgb(46, 49, 62); fieldBg = Color.rgb(24, 26, 35); actionBg = Color.rgb(44, 47, 61)
+            pillPosBg = Color.rgb(28, 62, 46); pillPosFg = Color.rgb(142, 224, 180)
+            pillNegBg = Color.rgb(44, 47, 61); pillNegFg = Color.rgb(154, 161, 178)
+        } else {
+            ink = Color.rgb(31, 37, 51); muted = Color.rgb(111, 119, 137)
+            page = Color.rgb(243, 245, 250); card = Color.WHITE
+            dividerColor = Color.rgb(238, 240, 245); fieldBg = Color.rgb(246, 247, 251); actionBg = Color.rgb(237, 239, 246)
+            pillPosBg = Color.rgb(229, 246, 237); pillPosFg = Color.rgb(37, 112, 78)
+            pillNegBg = Color.rgb(240, 242, 247); pillNegFg = Color.rgb(105, 111, 126)
+        }
+    }
 
     private fun shape(color: Int, radius: Int = 18) = GradientDrawable().apply {
         shape = GradientDrawable.RECTANGLE
@@ -43,6 +74,11 @@ class SettingsActivity : Activity() {
             if (bold) typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         }
 
+    // Tap feedback: a rounded ripple on top of the button so presses are visible.
+    private fun ripple(view: View, radius: Int) {
+        view.foreground = RippleDrawable(ColorStateList.valueOf(Color.argb(48, 128, 128, 128)), null, shape(Color.WHITE, radius))
+    }
+
     private fun action(label: String, primary: Boolean = false, click: () -> Unit) =
         TextView(this).apply {
             text = label
@@ -50,17 +86,19 @@ class SettingsActivity : Activity() {
             gravity = Gravity.CENTER
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setTextColor(if (primary) Color.WHITE else ink)
-            background = shape(if (primary) accent else Color.rgb(237, 239, 246), 13)
+            background = shape(if (primary) accent else actionBg, 13)
             setPadding(dp(16), dp(12), dp(16), dp(12))
+            minHeight = dp(44)
             isClickable = true
             isFocusable = true
+            ripple(this, 13)
             setOnClickListener { click() }
         }
 
     private fun section(title: String, hint: String? = null): LinearLayout =
         LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = shape(Color.WHITE, 20)
+            background = shape(card, 20)
             setPadding(dp(16), dp(15), dp(16), dp(15))
             addView(text(title, 16f, ink, true))
             if (hint != null) addView(text(hint, 12f, muted).apply {
@@ -73,16 +111,16 @@ class SettingsActivity : Activity() {
         textSize = 11f
         gravity = Gravity.CENTER
         typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        setTextColor(if (positive) Color.rgb(37, 112, 78) else Color.rgb(105, 111, 126))
-        background = shape(if (positive) Color.rgb(229, 246, 237) else Color.rgb(240, 242, 247), 30)
+        setTextColor(if (positive) pillPosFg else pillNegFg)
+        background = shape(if (positive) pillPosBg else pillNegBg, 30)
         setPadding(dp(11), dp(7), dp(11), dp(7))
     }
 
     private fun updatePill(view: TextView?, label: String, positive: Boolean) {
         view ?: return
         view.text = label
-        view.setTextColor(if (positive) Color.rgb(37, 112, 78) else Color.rgb(105, 111, 126))
-        view.background = shape(if (positive) Color.rgb(229, 246, 237) else Color.rgb(240, 242, 247), 30)
+        view.setTextColor(if (positive) pillPosFg else pillNegFg)
+        view.background = shape(if (positive) pillPosBg else pillNegBg, 30)
     }
 
     private fun settingSwitch(title: String, detail: String, key: String, default: Boolean) =
@@ -93,10 +131,19 @@ class SettingsActivity : Activity() {
             val labels = LinearLayout(this@SettingsActivity).apply { orientation = LinearLayout.VERTICAL }
             labels.addView(text(title, 14f, ink, true))
             labels.addView(text(detail, 11f, muted))
-            addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(labels, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(12) })
             addView(Switch(this@SettingsActivity).apply {
                 isChecked = Prefs.b(this@SettingsActivity, key, default)
                 contentDescription = title
+                // Accent-coloured switch that is readable in both light and dark mode.
+                thumbTintList = ColorStateList(
+                    arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+                    intArrayOf(accent, if (night) Color.rgb(150, 156, 172) else Color.rgb(250, 250, 252))
+                )
+                trackTintList = ColorStateList(
+                    arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+                    intArrayOf(Color.argb(110, 102, 83, 215), if (night) Color.rgb(64, 68, 84) else Color.rgb(205, 209, 220))
+                )
                 setOnCheckedChangeListener { _, checked ->
                     Prefs.setB(this@SettingsActivity, key, checked)
                 }
@@ -140,17 +187,51 @@ class SettingsActivity : Activity() {
             setPadding(0, dp(7), 0, dp(2))
         })
         addView(text("Your typing space. Tuned by you.", 13f, Color.rgb(238, 235, 255)))
-        addView(text("OFFLINE SUGGESTIONS   ·   VOICE TYPING   ·   QUICK EDITING", 10f, Color.WHITE, true).apply {
+        addView(text("OFFLINE SUGGESTIONS  ·  VOICE TYPING  ·  QUICK EDITING", 10f, Color.WHITE, true).apply {
             setPadding(0, dp(17), 0, 0)
         })
     }
 
+    // Mini keyboard swatch for a theme: shows its real background, key and accent colours.
+    private fun themeCard(index: Int, name: String, selected: Boolean): View {
+        val th = Prefs.themes[index]
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(8), dp(12), dp(8), dp(10))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(14).toFloat()
+                setColor(th.bg)
+                setStroke(dp(if (selected) 3 else 1), if (selected) accent else dividerColor)
+            }
+            isClickable = true
+            isFocusable = true
+            contentDescription = "$name theme" + if (selected) ", selected" else ""
+            setOnClickListener {
+                Prefs.setI(this@SettingsActivity, "theme", index)
+                recreate()
+            }
+        }
+        val keys = LinearLayout(this).apply { gravity = Gravity.CENTER }
+        for (i in 0..3) {
+            keys.addView(View(this).apply { background = shape(if (i == 3) th.accent else th.key, 4) },
+                LinearLayout.LayoutParams(dp(14), dp(18)).apply { setMargins(dp(2), 0, dp(2), 0) })
+        }
+        box.addView(keys)
+        box.addView(text((if (selected) "✓ " else "") + name, 12f, th.text, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(0, dp(8), 0, 0)
+        })
+        return box
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        initPalette()
         window.statusBarColor = page
         window.navigationBarColor = page
         window.decorView.systemUiVisibility =
-            View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            if (night) 0 else View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -179,14 +260,14 @@ class SettingsActivity : Activity() {
             addView(enabledStatus, LinearLayout.LayoutParams(-2, -2))
             addView(Space(this@SettingsActivity), LinearLayout.LayoutParams(dp(8), 1))
             addView(selectedStatus, LinearLayout.LayoutParams(-2, -2))
-        })
+        }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) })
         val setupButton = action("Check keyboard status", true) {
             if (!keyboardEnabled()) {
                 startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
             } else {
                 (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker()
             }
-        }.apply { setPadding(dp(12), dp(11), dp(12), dp(11)) }
+        }
         setupAction = setupButton
         status.addView(setupButton)
         content.addView(status, margin())
@@ -198,7 +279,7 @@ class SettingsActivity : Activity() {
             setTextColor(ink)
             setHintTextColor(muted)
             setPadding(dp(14), dp(13), dp(14), dp(13))
-            background = shape(Color.rgb(246, 247, 251), 14)
+            background = shape(fieldBg, 14)
             minLines = 2
             maxLines = 4
             gravity = Gravity.TOP or Gravity.START
@@ -259,7 +340,7 @@ class SettingsActivity : Activity() {
         privacy.addView(action("Clear clipboard history") {
             Prefs.clearClips(this)
             Toast.makeText(this, "Clipboard history cleared", Toast.LENGTH_SHORT).show()
-        })
+        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
         privacy.addView(Space(this), LinearLayout.LayoutParams(1, dp(8)))
         privacy.addView(action("Clear learned words") {
             Prefs.clearLearned(this)
@@ -268,35 +349,37 @@ class SettingsActivity : Activity() {
         content.addView(privacy, margin())
 
         val appearance = section("Appearance", "Select the colour style used by your keyboard.")
+        val themeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val currentTheme = Prefs.i(this, "theme", 0)
         Prefs.themeNames.forEachIndexed { index, name ->
-            val selectedTheme = Prefs.i(this, "theme", 0) == index
-            appearance.addView(action(
-                (if (selectedTheme) "✓  " else "") + name,
-                selectedTheme
-            ) {
-                Prefs.setI(this, "theme", index)
-                Toast.makeText(this, "$name theme selected", Toast.LENGTH_SHORT).show()
-                recreate()
-            }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(7) })
+            themeRow.addView(themeCard(index, name, currentTheme == index),
+                LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(4), 0, dp(4), 0) })
         }
+        appearance.addView(themeRow)
         content.addView(appearance, margin())
 
         val size = section("Keyboard size", "Adjust key height. The keyboard automatically limits it on short screens.")
+        val keyPreview = View(this).apply { background = shape(actionBg, 9) }
+        val previewBox = FrameLayout(this).apply {
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            background = shape(fieldBg, 14)
+            addView(keyPreview, FrameLayout.LayoutParams(-1, dp(Prefs.keyH(this@SettingsActivity))))
+        }
+        size.addView(previewBox, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) })
         val sizeRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         val sizeValue = text("${Prefs.keyH(this)} dp", 15f, ink, true)
+        fun applySize(v: Int) {
+            Prefs.setI(this, "keyh", v.coerceIn(34, 64))
+            sizeValue.text = "${Prefs.keyH(this)} dp"
+            keyPreview.layoutParams = (keyPreview.layoutParams as FrameLayout.LayoutParams).apply { height = dp(Prefs.keyH(this@SettingsActivity)) }
+        }
         sizeRow.addView(sizeValue, LinearLayout.LayoutParams(0, -2, 1f))
-        sizeRow.addView(action("−") {
-            Prefs.setI(this, "keyh", (Prefs.keyH(this) - 2).coerceAtLeast(34))
-            sizeValue.text = "${Prefs.keyH(this)} dp"
-        })
+        sizeRow.addView(action("−") { applySize(Prefs.keyH(this) - 2) }, LinearLayout.LayoutParams(dp(56), -2))
         sizeRow.addView(Space(this), LinearLayout.LayoutParams(dp(8), 1))
-        sizeRow.addView(action("+", true) {
-            Prefs.setI(this, "keyh", (Prefs.keyH(this) + 2).coerceAtMost(64))
-            sizeValue.text = "${Prefs.keyH(this)} dp"
-        })
+        sizeRow.addView(action("+", true) { applySize(Prefs.keyH(this) + 2) }, LinearLayout.LayoutParams(dp(56), -2))
         size.addView(sizeRow)
         content.addView(size, margin())
 
@@ -333,20 +416,13 @@ class SettingsActivity : Activity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == voicePermissionRequest) {
+            val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
             Toast.makeText(
                 this,
-                if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-                    "Microphone enabled. Tap the keyboard microphone to speak."
-                } else {
-                    "Microphone permission was not granted."
-                },
+                if (granted) "Microphone enabled. Tap the keyboard microphone to speak." else "Microphone permission was not granted.",
                 Toast.LENGTH_SHORT
             ).show()
-            voicePermissionButton?.text = if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-                "✓  Microphone permission enabled"
-            } else {
-                "Enable microphone permission"
-            }
+            voicePermissionButton?.text = if (granted) "✓  Microphone permission enabled" else "Enable microphone permission"
         }
     }
 
