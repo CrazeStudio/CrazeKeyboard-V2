@@ -1171,8 +1171,19 @@ class CrazeKeyboardService : InputMethodService() {
             setHintTextColor(darken(t.text, 0.60f))
             setPadding(dp(12), dp(8), dp(12), dp(8))
             background = rounded(t.key, 12)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-            imeOptions = EditorInfo.IME_ACTION_SEARCH
+            isFocusable = false
+            isFocusableInTouchMode = false
+            isCursorVisible = false
+            setText(emojiSearchQuery)
+            setOnClickListener {
+                EmojiSearchActivity.callback = { query ->
+                    emojiSearchQuery = query
+                    showPanel("emoji")
+                }
+                startActivity(Intent(ctx, EmojiSearchActivity::class.java)
+                    .putExtra(EmojiSearchActivity.EXTRA_QUERY, emojiSearchQuery)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
         }
         col.addView(search, lp(MATCH, dp(42)))
 
