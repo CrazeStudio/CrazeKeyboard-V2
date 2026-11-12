@@ -114,7 +114,7 @@ internal object NextWordPredictor {
         synchronized(this) {
             if (loadFailed) return
             if (mapped != null) {
-                onReady?.let { mainHandler.post(it) }
+                onReady?.let { callback -> mainHandler.post { callback() } }
                 return
             }
             onReady?.let { callbacks.add(it) }
