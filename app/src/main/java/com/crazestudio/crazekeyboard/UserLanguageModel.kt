@@ -64,6 +64,7 @@ internal object UserLanguageModel {
      * Blend user history into base-model suggestions. Personal bigram/trigram candidates
      * can enter the list even when the generic model did not rank them.
      */
+    @Synchronized
     fun rank(
         context: Context,
         precedingWords: List<String>,
