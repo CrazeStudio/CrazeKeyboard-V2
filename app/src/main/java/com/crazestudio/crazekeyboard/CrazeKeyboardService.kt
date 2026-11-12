@@ -366,6 +366,7 @@ class CrazeKeyboardService : InputMethodService() {
 
     private var resizeStartX = 0f
     private var resizeStartWidth = 0
+    private var editorField: EditText? = null
 
     private fun isPasswordField(cls: Int, v: Int): Boolean =
         (cls == InputType.TYPE_CLASS_TEXT && (v == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
@@ -508,15 +509,14 @@ class CrazeKeyboardService : InputMethodService() {
     }
     private fun runTool(id: String) {
         when (id) {
-            "editor" -> launchTextEditor()
-            "clipboard" -> openClipboard()
+            "editor" -> { showPanel("editor") }
+            "clipboard" -> showPanel("clip")
             "emoji" -> showPanel("emoji")
             "voice" -> { showPanel("letters"); startVoice() }
             "theme" -> { Prefs.nextTheme(ctx); rebuild() }
             "onehand" -> { Prefs.nextOneHand(ctx); rebuild() }
             "floating" -> { Prefs.setB(ctx, "float", !floating); rebuild() }
-            "resize" -> startActivity(Intent(ctx, SettingsActivity::class.java)
-                .putExtra("open_resizer", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            "resize" -> showPanel("resize")
             "settings" -> startActivity(Intent(ctx, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             "keyboard" -> showPanel("letters")
             "hide" -> { showPanel("letters"); requestHideSelf(0) }
@@ -746,6 +746,15 @@ class CrazeKeyboardService : InputMethodService() {
             buildTop()
             return
         }
+        if (mode == "editor") {
+            val field = editorField ?: return
+            val start = minOf(field.selectionStart, field.selectionEnd).coerceAtLeast(0)
+            val end = maxOf(field.selectionStart, field.selectionEnd).coerceAtLeast(0)
+            val value = if (shift > 0) s.uppercase() else s
+            field.text?.replace(start, end, value)
+            field.setSelection((start + value.length).coerceAtMost(field.text?.length ?: 0))
+            return
+        }
         val ic = currentInputConnection ?: return
         if (s == " ") { space(ic); return }
         acceptPendingCorrection()
@@ -798,6 +807,15 @@ class CrazeKeyboardService : InputMethodService() {
     // Key event instead of reading the selection first: no blocking round-trip, handles selections and emoji itself.
     // Backspace right after an auto-correction restores what was actually typed (and stops correcting that word).
     private fun del() {
+        if (mode == "editor") {
+            val field = editorField ?: return
+            val start = minOf(field.selectionStart, field.selectionEnd).coerceAtLeast(0)
+            val end = maxOf(field.selectionStart, field.selectionEnd).coerceAtLeast(0)
+            if (start != end) field.text?.delete(start, end)
+            else if (start > 0) field.text?.delete(start - 1, start)
+            field.setSelection(minOf(start, field.text?.length ?: 0))
+            return
+        }
         if (emojiSearchActive) {
             if (emojiSearchQuery.isNotEmpty()) emojiSearchQuery = emojiSearchQuery.dropLast(1)
             buildTop()
@@ -829,6 +847,10 @@ class CrazeKeyboardService : InputMethodService() {
     private fun actionId(): Int = (currentInputEditorInfo?.imeOptions ?: 0) and EditorInfo.IME_MASK_ACTION
 
     private fun enter() {
+        if (mode == "editor") {
+            type("\n")
+            return
+        }
         if (emojiSearchActive) {
             emojiSearchActive = false
             emojiSearchQuery = ""
@@ -1446,6 +1468,109 @@ class CrazeKeyboardService : InputMethodService() {
         return col
     }
 
+    private fun buildEditor(): View {
+        val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(7), dp(3), dp(7), 0) }
+        val header = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
+        header.addView(TextView(ctx).apply { text = "Text editor"; textSize = 15f; typeface = Typeface.DEFAULT_BOLD; setTextColor(t.text) }, lp(0, dp(34), 1f))
+        header.addView(iconBtn("×", 22f) { showPanel("letters") }, lp(dp(38), dp(34)))
+        col.addView(header)
+        val field = EditText(ctx).apply {
+            textSize = 15f
+            setTextColor(t.text)
+            hint = "Write text here…"
+            gravity = Gravity.TOP or Gravity.START
+            minLines = 2
+            maxLines = 4
+            showSoftInputOnFocus = false
+            background = rounded(t.key, 12)
+            setPadding(dp(10), dp(7), dp(10), dp(7))
+        }
+        editorField = field
+        col.addView(field, lp(MATCH, 0, 1f))
+        val actions = hrow()
+        val clear = mk("Clear", 1f, t.special, t.text, 12f); attach(clear) { field.text?.clear() }; actions.addView(clear.cell)
+        val paste = mk("Paste", 1f, t.special, t.text, 12f); attach(paste) {
+            val clip = (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).primaryClip
+            if (clip != null && clip.itemCount > 0) {
+                val value = clip.getItemAt(0).coerceToText(ctx)?.toString().orEmpty()
+                val a = minOf(field.selectionStart, field.selectionEnd).coerceAtLeast(0)
+                val b = maxOf(field.selectionStart, field.selectionEnd).coerceAtLeast(0)
+                field.text?.replace(a, b, value)
+            }
+        }; actions.addView(paste.cell)
+        val insert = mk("Insert", 1.3f, t.accent, t.accentText, 12f); attach(insert) {
+            currentInputConnection?.commitText(field.text?.toString().orEmpty(), 1)
+            editorField = null
+            showPanel("letters")
+            syncContextAsync()
+        }; actions.addView(insert.cell)
+        col.addView(actions, lp(MATCH, dp(42)))
+        return col
+    }
+
+    private fun buildResize(): View {
+        val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(10), dp(5), dp(10), dp(2)) }
+        val value = TextView(ctx).apply {
+            text = "Keyboard height  ·  ${Prefs.keyH(ctx)} dp"
+            textSize = 13f
+            setTextColor(t.text)
+            gravity = Gravity.CENTER
+        }
+        col.addView(value, lp(MATCH, dp(34)))
+        val handle = TextView(ctx).apply {
+            text = "↕   Drag up or down to resize   ↕"
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setTextColor(t.text)
+            background = rounded(t.special, 14)
+            contentDescription = "Drag to resize keyboard height"
+        }
+        var lastY = 0f
+        handle.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { lastY = event.rawY; true }
+                MotionEvent.ACTION_MOVE -> {
+                    val delta = ((lastY - event.rawY) / resources.displayMetrics.density).toInt()
+                    if (delta != 0) {
+                        val next = (Prefs.keyH(ctx) + delta).coerceIn(34, 64)
+                        Prefs.setI(ctx, "keyh", next)
+                        kh = next
+                        cellH = baseCellH()
+                        value.text = "Keyboard height  ·  $next dp"
+                        panel.layoutParams = panel.layoutParams.apply { height = panelH() }
+                        panel.getChildAt(0)?.let { child ->
+                            child.layoutParams = child.layoutParams.apply { height = panelH() }
+                        }
+                        panel.requestLayout()
+                        kbd.requestLayout()
+                        lastY = event.rawY
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> true
+                else -> true
+            }
+        }
+        col.addView(handle, LinearLayout.LayoutParams(MATCH, 0, 1f).apply { topMargin = dp(8); bottomMargin = dp(8) })
+        val row = hrow()
+        val reset = mk("Standard", 1f, t.special, t.text, 12f); attach(reset) {
+            Prefs.setI(ctx, "keyh", 46)
+            Prefs.setI(ctx, "kbdwidth", 100)
+            Prefs.setI(ctx, "onehand", 0)
+            Prefs.setB(ctx, "float", false)
+            kh = 46
+            cellH = baseCellH()
+            value.text = "Keyboard height  ·  46 dp"
+            panel.layoutParams = panel.layoutParams.apply { height = panelH() }
+            panel.getChildAt(0)?.let { child -> child.layoutParams = child.layoutParams.apply { height = panelH() } }
+            panel.requestLayout()
+            kbd.requestLayout()
+        }; row.addView(reset.cell)
+        val done = mk("Done", 1f, t.accent, t.accentText, 12f); attach(done) { showPanel("letters") }; row.addView(done.cell)
+        col.addView(row, lp(MATCH, dp(42)))
+        return col
+    }
+
     private fun buildClip(): View {
         val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(3), dp(2), dp(3), 0) }
         val head = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
@@ -1477,6 +1602,8 @@ class CrazeKeyboardService : InputMethodService() {
             "symbols2" -> buildSymbols(2)
             "emoji" -> buildEmoji()
             "clip" -> buildClip()
+            "editor" -> buildEditor()
+            "resize" -> buildResize()
             "menu" -> buildMenu()
             else -> buildLetters()
         }
@@ -1498,6 +1625,7 @@ class CrazeKeyboardService : InputMethodService() {
         panel.removeAllViews()
         panel.addView(page, FrameLayout.LayoutParams(MATCH, panelH()))
         if (m == "letters") updateCase()
+        if (m != "editor") editorField = null
         refreshEnter()
         if (m == "menu" || prev == "menu") buildTop()
         if (m == "letters") scheduleRefresh()
