@@ -256,8 +256,8 @@ class TextEditorActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(8), dp(20), 0)
         }
-        val find = EditText(this).apply { hint = "Find text"; singleLine = true }
-        val replace = EditText(this).apply { hint = "Replace with"; singleLine = true }
+        val find = EditText(this).apply { hint = "Find text"; isSingleLine = true }
+        val replace = EditText(this).apply { hint = "Replace with"; isSingleLine = true }
         box.addView(find)
         box.addView(replace)
         AlertDialog.Builder(this)
