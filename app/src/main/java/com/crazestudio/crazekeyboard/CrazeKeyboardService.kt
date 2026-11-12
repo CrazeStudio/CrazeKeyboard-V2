@@ -1038,7 +1038,52 @@ class CrazeKeyboardService : InputMethodService() {
         addView(emoji.cell)
         val c = mk(",", 0.8f, t.special, t.text); attach(c, onLong = { emojiSearchActive = false; showPanel("emoji") }) { type(",") }; addView(c.cell)
         val sp = mk("CrazeKeyboard", 4.0f, t.key, t.text, 11f)
-        attach(sp) { type(" ") }; addView(sp.cell)
+        // Gboard-style spacebar cursor control: drag horizontally to move the
+        // target editor cursor without inserting spaces.
+        var cursorDrag = false
+        var cursorStartX = 0f
+        var cursorLastStep = 0
+        attach(sp, fast = true) { type(" ") }
+        sp.cell.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    cursorDrag = false
+                    cursorStartX = event.rawX
+                    cursorLastStep = 0
+                    sp.tv.alpha = 0.72f
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - cursorStartX
+                    if (!cursorDrag && kotlin.math.abs(dx) >= dp(8)) cursorDrag = true
+                    if (cursorDrag) {
+                        val step = (dx / dp(12).toFloat()).toInt()
+                        val delta = step - cursorLastStep
+                        if (delta != 0) {
+                            val keyCode = if (delta > 0) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT
+                            repeat(kotlin.math.abs(delta).coerceAtMost(12)) {
+                                sendDownUpKeyEvents(keyCode)
+                            }
+                            cursorLastStep = step
+                            syncContextAsync()
+                        }
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    sp.tv.alpha = 1f
+                    if (!cursorDrag) type(" ")
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    sp.tv.alpha = 1f
+                    true
+                }
+                else -> true
+            }
+        }
+        sp.cell.contentDescription = "Space. Hold and slide left or right to move cursor"
+        addView(sp.cell)
         val d = mk(".", 0.9f, t.special, t.text); attach(d, onLong = { showAlts(d.cell, Alts.map["."].orEmpty()) }) { type(".") }; addView(d.cell)
         val e = mk("", 1.4f, t.accent, t.accentText, 18f, enterIcon()); attach(e) { enter() }; addView(e.cell)
         enterKeys.add(e)
