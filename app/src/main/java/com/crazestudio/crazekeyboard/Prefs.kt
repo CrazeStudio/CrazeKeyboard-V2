@@ -44,7 +44,15 @@ object Prefs {
         val safeText = s.take(4_000)
         if (safeText.isNotBlank()) put(c, "clips", (listOf(safeText) + clips(c).filter { it != safeText }).take(20))
     }
-    fun clearClips(c: Context) = put(c, "clips", emptyList())
+    fun clearClips(c: Context) {
+        put(c, "clips", emptyList())
+        put(c, "pinnedClips", emptyList())
+    }
+    fun pinnedClips(c: Context): List<String> = list(c, "pinnedClips").filter { it in clips(c) }
+    fun togglePinnedClip(c: Context, value: String) {
+        val current = pinnedClips(c)
+        put(c, "pinnedClips", if (value in current) current - value else (listOf(value) + current).take(20))
+    }
     fun toolbarTools(c: Context): List<String> {
         val saved = sp(c).getString("toolbarTools", null) ?: return defaultToolbarTools
         return saved.split(SEP).filter { it in availableToolbarTools }.distinct()
