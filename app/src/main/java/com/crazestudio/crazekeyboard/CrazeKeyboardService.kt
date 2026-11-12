@@ -56,6 +56,7 @@ class CrazeKeyboardService : InputMethodService() {
     private var predictionTask: Runnable? = null
     private var waitingForPhraseModel = false
     private var waitingForVocabulary = false
+    @Volatile private var cachedCorrection: Pair<String, String>? = null
     private var pendingCorrectedWord: Pair<List<String>, String>? = null
 
     private val contextSyncR = Runnable {
@@ -600,6 +601,7 @@ class CrazeKeyboardService : InputMethodService() {
                             scheduleRefresh()
                         }
                     }
+                    cachedCorrection = Words.correction(this, word)?.let { word to it }
                     Words.suggest(this, word)
                 }
             }.ifEmpty { Words.suggest(this, if (word.isEmpty()) "" else word) }
@@ -701,7 +703,8 @@ class CrazeKeyboardService : InputMethodService() {
             ic.commitText(". ", 1)
             setLocalContext(before.dropLast(1) + ". ")
         } else {
-            val fix = if (autoCorrectOn && suggestOn && !incognito && word.isNotEmpty()) Words.correction(this, word) else null
+            val fix = if (autoCorrectOn && suggestOn && !incognito && word.isNotEmpty())
+            cachedCorrection?.takeIf { it.first.equals(word, ignoreCase = true) }?.second else null
             if (fix != null) {
                 ic.beginBatchEdit()
                 ic.deleteSurroundingText(word.length, 0)
