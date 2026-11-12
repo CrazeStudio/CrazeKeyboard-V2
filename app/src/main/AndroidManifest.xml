@@ -13,6 +13,9 @@
             <intent-filter><action android:name="android.view.InputMethod"/></intent-filter>
             <meta-data android:name="android.view.im" android:resource="@xml/method"/>
         </service>
+        <activity android:name=".ClipboardActivity" android:exported="false"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar"
+            android:windowSoftInputMode="adjustResize" android:excludeFromRecents="true" />
         <activity android:name=".EmojiSearchActivity" android:exported="false"
             android:theme="@android:style/Theme.Material.Light.NoActionBar"
             android:windowSoftInputMode="stateAlwaysVisible|adjustResize" android:excludeFromRecents="true" />
