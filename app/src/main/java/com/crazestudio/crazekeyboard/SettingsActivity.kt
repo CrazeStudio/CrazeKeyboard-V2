@@ -477,13 +477,19 @@ class SettingsActivity : Activity() {
         content.addView(privacy, margin())
 
         val appearance = section("Appearance", "Select the colour style used by your keyboard.")
-        val themeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val themeGrid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val currentTheme = Prefs.i(this, "theme", 0)
-        Prefs.themeNames.forEachIndexed { index, name ->
-            themeRow.addView(themeCard(index, name, currentTheme == index),
-                LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(4), 0, dp(4), 0) })
+        Prefs.themeNames.chunked(3).forEachIndexed { rowIndex, names ->
+            val themeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            names.forEachIndexed { columnIndex, name ->
+                val index = rowIndex * 3 + columnIndex
+                themeRow.addView(themeCard(index, name, currentTheme == index),
+                    LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) })
+            }
+            repeat(3 - names.size) { themeRow.addView(Space(this), LinearLayout.LayoutParams(0, 1, 1f)) }
+            themeGrid.addView(themeRow)
         }
-        appearance.addView(themeRow)
+        appearance.addView(themeGrid)
         content.addView(appearance, margin())
 
         val resizeSection = section(
