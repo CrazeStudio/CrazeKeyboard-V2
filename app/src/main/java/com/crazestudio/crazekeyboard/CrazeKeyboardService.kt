@@ -818,10 +818,6 @@ class CrazeKeyboardService : InputMethodService() {
         scheduleRefresh()
     }
 
-    private fun switchKeyboard() {
-        if (!switchToNextInputMethod(false)) (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker()
-    }
-
     // ---------- key building ----------
     private fun mk(label: String, w: Float, bg: Int, fg: Int, size: Float = 20f, icon: Int = 0): K {
         val tv = TextView(ctx).apply {
@@ -951,7 +947,7 @@ class CrazeKeyboardService : InputMethodService() {
         val l = mk(left, 1.4f, t.special, t.text, 14f); attach(l) { showPanel(leftTarget) }; addView(l.cell)
         val c = mk(",", 0.9f, t.special, t.text); attach(c, onLong = { showPanel("emoji") }) { type(",") }; addView(c.cell)
         val sp = mk("CrazeKeyboard", 4.9f, t.key, t.text, 11f)
-        attach(sp, onLong = { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker() }) { type(" ") }; addView(sp.cell)
+        attach(sp) { type(" ") }; addView(sp.cell)
         val d = mk(".", 0.9f, t.special, t.text); attach(d, onLong = { showAlts(d.cell, Alts.map["."].orEmpty()) }) { type(".") }; addView(d.cell)
         val e = mk("", 1.4f, t.accent, t.accentText, 18f, enterIcon()); attach(e) { enter() }; addView(e.cell)
         enterKeys.add(e)
