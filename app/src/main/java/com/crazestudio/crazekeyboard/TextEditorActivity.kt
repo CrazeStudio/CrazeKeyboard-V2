@@ -159,6 +159,28 @@ class TextEditorActivity : Activity() {
             LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(5) })
         root.addView(history)
 
+        // Cursor and selection controls inspired by mobile keyboard editing toolbars.
+        val cursorTools = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(8), 0, dp(8))
+        }
+        val cursorActions = listOf<Pair<String, () -> Unit>>(
+            "←" to { moveCursor(-1) },
+            "→" to { moveCursor(1) },
+            "Word" to { selectWord() },
+            "Line" to { selectLine() },
+            "Start" to { moveToLineBoundary(false) },
+            "End" to { moveToLineBoundary(true) }
+        )
+        cursorActions.forEachIndexed { index, item ->
+            cursorTools.addView(action(item.first, click = item.second),
+                LinearLayout.LayoutParams(0, -2, 1f).apply {
+                    if (index > 0) leftMargin = dp(3)
+                    if (index < cursorActions.lastIndex) rightMargin = dp(3)
+                })
+        }
+        root.addView(cursorTools)
+
         val tools = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(9), 0, dp(8))
@@ -199,6 +221,49 @@ class TextEditorActivity : Activity() {
             (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
                 .showSoftInput(editor, InputMethodManager.SHOW_IMPLICIT)
         }
+    }
+
+    private fun moveCursor(delta: Int) {
+        val length = editor.text?.length ?: 0
+        val start = editor.selectionStart.coerceIn(0, length)
+        val end = editor.selectionEnd.coerceIn(0, length)
+        val target = (if (start != end) maxOf(start, end) else start + delta).coerceIn(0, length)
+        editor.setSelection(target)
+        editor.requestFocus()
+    }
+
+    private fun selectWord() {
+        val value = editor.text?.toString().orEmpty()
+        if (value.isEmpty()) return
+        val cursor = editor.selectionStart.coerceIn(0, value.length)
+        var start = cursor
+        var end = cursor
+        if (start == value.length && start > 0) start--
+        while (start > 0 && (value[start - 1].isLetterOrDigit() || value[start - 1] == '\'')) start--
+        while (end < value.length && (value[end].isLetterOrDigit() || value[end] == '\'')) end++
+        if (start == end) return
+        editor.setSelection(start, end)
+        editor.requestFocus()
+    }
+
+    private fun selectLine() {
+        val value = editor.text?.toString().orEmpty()
+        val cursor = editor.selectionStart.coerceIn(0, value.length)
+        val start = value.lastIndexOf('\n', (cursor - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
+        val nextBreak = value.indexOf('\n', cursor)
+        val end = if (nextBreak < 0) value.length else nextBreak
+        editor.setSelection(start, end)
+        editor.requestFocus()
+    }
+
+    private fun moveToLineBoundary(endOfLine: Boolean) {
+        val value = editor.text?.toString().orEmpty()
+        val cursor = editor.selectionStart.coerceIn(0, value.length)
+        val start = value.lastIndexOf('\n', (cursor - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
+        val nextBreak = value.indexOf('\n', cursor)
+        val end = if (nextBreak < 0) value.length else nextBreak
+        editor.setSelection(if (endOfLine) end else start)
+        editor.requestFocus()
     }
 
     private fun updateCounter() {
