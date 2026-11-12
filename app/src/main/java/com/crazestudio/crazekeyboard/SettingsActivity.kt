@@ -356,6 +356,8 @@ class SettingsActivity : Activity() {
         prefs.addView(divider())
         prefs.addView(settingSwitch("Next-word suggestions", "Suggest likely words after a space.", "nextWord", true))
         prefs.addView(divider())
+        prefs.addView(settingSwitch("Personalized predictions", "Learn confirmed word patterns locally to improve suggestions.", "personalized", true))
+        prefs.addView(divider())
         prefs.addView(settingSwitch("Double-space period", "Turn two quick spaces into a full stop.", "doubleSpacePeriod", true))
         prefs.addView(divider())
         prefs.addView(settingSwitch("Haptic feedback", "A light vibration on key press.", "haptics", true))
@@ -379,7 +381,6 @@ class SettingsActivity : Activity() {
             "floating" to ("Floating / dock" to R.drawable.ic_float),
             "resize" to ("Keyboard resizer" to R.drawable.ic_grip),
             "settings" to ("Settings" to R.drawable.ic_settings),
-            "switch" to ("Switch keyboard" to R.drawable.ic_globe),
             "keyboard" to ("Show keyboard" to R.drawable.ic_activity),
             "hide" to ("Hide keyboard" to R.drawable.ic_hide)
         )
@@ -470,7 +471,8 @@ class SettingsActivity : Activity() {
         privacy.addView(Space(this), LinearLayout.LayoutParams(1, dp(8)))
         privacy.addView(action("Clear learned words") {
             Prefs.clearLearned(this)
-            Toast.makeText(this, "Learned words cleared", Toast.LENGTH_SHORT).show()
+            UserLanguageModel.clear(this)
+            Toast.makeText(this, "Learned words and typing patterns cleared", Toast.LENGTH_SHORT).show()
         })
         content.addView(privacy, margin())
 
