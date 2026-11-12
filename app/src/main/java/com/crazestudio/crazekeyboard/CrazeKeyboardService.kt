@@ -72,6 +72,8 @@ class CrazeKeyboardService : InputMethodService() {
     private var builtOrientation = -1
     private var kh = 46
     private var cellH = 0
+    private var topDp = 42
+    private var textScale = 1f
     private var hapticsOn = true
     private var numRow = true
     private var clipListener: ClipboardManager.OnPrimaryClipChangedListener? = null
@@ -94,19 +96,32 @@ class CrazeKeyboardService : InputMethodService() {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private fun lp(w: Int, h: Int, wt: Float = 0f) = LinearLayout.LayoutParams(w, h, wt)
     private fun landscape() = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    // Keyboard height is budgeted against the screen: the user's key height is a wish, the screen decides the cap.
+    // Portrait keeps at most ~45% of the screen, landscape ~55% of the (short) screen height, and on very short
+    // landscape screens the number row is dropped so the app underneath stays usable.
     private fun loadPrefs() {
-        val base = if (landscape()) minOf(Prefs.keyH(this), 38) else Prefs.keyH(this)
-        kh = if (floating) (base * 0.84f).toInt() else base
-        cellH = dp(kh) + dp(6)
+        val m = resources.displayMetrics
+        val hdp = m.heightPixels / m.density
+        val land = landscape()
         hapticsOn = Prefs.b(this, "haptics", true)
-        numRow = Prefs.b(this, "numrow", true)
         autoCorrectOn = Prefs.b(this, "autocorrect", true)
         doubleSpaceOn = Prefs.b(this, "doubleSpacePeriod", true)
         nextWordOn = Prefs.b(this, "nextWord", true)
+        numRow = Prefs.b(this, "numrow", true) && !(land && hdp < 480f)
+        topDp = if (land) 34 else 42
+        val rows = if (numRow) 5 else 4
+        val budget = hdp * (if (land) 0.55f else 0.45f)
+        val chrome = topDp + 4 + 6 + (if (floating) 26 else 0)   // top bar + panel pad + bottom pad (+ drag handle)
+        val maxKey = ((budget - chrome) / rows - 6f).toInt()
+        val want = if (floating) (Prefs.keyH(this) * 0.84f).toInt() else Prefs.keyH(this)
+        kh = minOf(want, maxKey).coerceAtLeast(26)
+        cellH = dp(kh) + dp(6)
+        textScale = (kh / 46f).coerceIn(0.78f, 1.15f)
     }
     private fun rowCount() = if (numRow) 5 else 4
     private fun panelH() = rowCount() * cellH + dp(4)   // every page uses this, so switching pages never makes the keyboard jump
-    private fun topH() = dp(42)
+    private fun topH() = dp(topDp)
 
     // ---------- drawing helpers ----------
     private fun darken(c: Int, f: Float = 0.78f): Int {
@@ -495,9 +510,10 @@ class CrazeKeyboardService : InputMethodService() {
     }
 
     // ---------- key building ----------
+    // Label and icon sizes follow the key height, so a short landscape keyboard doesn't end up with oversized text.
     private fun mk(label: String, w: Float, bg: Int, fg: Int, size: Float = 20f, icon: Int = 0): K {
         val tv = TextView(ctx).apply {
-            text = label; gravity = Gravity.CENTER; setTextColor(fg); textSize = size
+            text = label; gravity = Gravity.CENTER; setTextColor(fg); textSize = size * textScale
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             includeFontPadding = false
             background = keyBg(bg)
@@ -509,7 +525,8 @@ class CrazeKeyboardService : InputMethodService() {
             addView(tv, FrameLayout.LayoutParams(MATCH, MATCH))
             if (icon != 0) {
                 iv = ImageView(ctx).apply { setImageResource(icon); setColorFilter(fg); scaleType = ImageView.ScaleType.FIT_CENTER }
-                addView(iv, FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
+                val s = dp((22 * textScale).toInt())
+                addView(iv, FrameLayout.LayoutParams(s, s, Gravity.CENTER))
             }
         }
         return K(cell, tv, iv)
