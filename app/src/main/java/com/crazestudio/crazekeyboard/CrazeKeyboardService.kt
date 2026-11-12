@@ -136,7 +136,7 @@ class CrazeKeyboardService : InputMethodService() {
     private fun loadPrefs() {
         val base = if (landscape()) minOf(Prefs.keyH(this), 38) else Prefs.keyH(this)
         kh = if (floating) (base * 0.84f).toInt() else base
-        cellH = dp(kh) + dp(6)
+        cellH = baseCellH()
         hapticsOn = Prefs.b(this, "haptics", true)
         keySoundOn = Prefs.b(this, "keysound", false)
         numRow = Prefs.b(this, "numrow", true)
@@ -144,8 +144,16 @@ class CrazeKeyboardService : InputMethodService() {
         doubleSpaceOn = Prefs.b(this, "doubleSpacePeriod", true)
         nextWordOn = Prefs.b(this, "nextWord", true)
     }
-    private fun rowCount() = if (numRow) 5 else 4
-    private fun panelH() = rowCount() * cellH + dp(4)   // every page uses this, so switching pages never makes the keyboard jump
+    private fun rowCountFor(page: String): Int = when (page) {
+        "letters" -> if (numRow) 5 else 4
+        "symbols" -> 4
+        "symbols2" -> if (numRow) 5 else 4
+        else -> 5
+    }
+    private fun baseCellH() = dp(kh) + dp(6)
+    // Keep the keyboard's total height fixed. When the number row is hidden, the remaining
+    // letter rows expand evenly instead of the whole keyboard collapsing upward.
+    private fun panelH() = baseCellH() * 5 + dp(4)
     private fun topH() = dp(42)
 
     // ---------- drawing helpers ----------
@@ -1147,7 +1155,7 @@ class CrazeKeyboardService : InputMethodService() {
         addView(backKey(1.4f))
     }
 
-    private fun bodyHeight() = panelH() - dp(40) - cellH - dp(2)
+    private fun bodyHeight() = panelH() - (if (mode == "emoji") dp(82) else dp(40)) - cellH - dp(2)
 
     // Each emoji category grid (~100 views) is built once and reused; only the "recent" grid is rebuilt because it changes.
     private val emojiAliases = mapOf(
@@ -1405,6 +1413,11 @@ class CrazeKeyboardService : InputMethodService() {
         dismissPopups()
         val prev = mode
         mode = m
+        cellH = if (m == "emoji" || m == "clip" || m == "menu") baseCellH()
+            else ((panelH() - dp(4)) / rowCountFor(m)).coerceAtLeast(dp(28))
+        // Page dimensions depend on the active row count; never reuse views measured for another mode.
+        pageCache.clear()
+        emojiGrids.clear()
         val page = pageFor(m)
         (page.parent as? ViewGroup)?.removeView(page)
         panel.removeAllViews()
