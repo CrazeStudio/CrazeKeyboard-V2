@@ -47,6 +47,7 @@ class CrazeKeyboardService : InputMethodService() {
     private lateinit var top: FrameLayout
     private lateinit var panel: FrameLayout
     private val sugViews = ArrayList<TextView>()
+    private var lastTopState = ""
     private val letterKeys = ArrayList<Pair<TextView, String>>()
     private val enterKeys = ArrayList<K>()
     private val seen = HashMap<String, Int>()
@@ -143,6 +144,11 @@ class CrazeKeyboardService : InputMethodService() {
             } catch (e: Exception) { }
         }
         cm.addPrimaryClipChangedListener(clipListener)
+        // Warm the prediction index away from the UI thread so first-use suggestion refresh is cheaper.
+        Thread({ NextWordPredictor.warm(applicationContext) }, "craze-predictor-warm").apply {
+            isDaemon = true
+            start()
+        }
     }
 
     override fun onDestroy() {
@@ -150,6 +156,7 @@ class CrazeKeyboardService : InputMethodService() {
         hd.removeCallbacksAndMessages(null)
         dismissPopups()
         VoiceActivity.callback = null   // the callback captures this service; don't leak it
+        TextEditorActivity.callback = null
         pageCache.clear(); emojiGrids.clear()
         super.onDestroy()
     }
@@ -325,6 +332,7 @@ class CrazeKeyboardService : InputMethodService() {
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        TextEditorActivity.callback = { deliverEditor() }
         val orient = resources.configuration.orientation
         if (!::outer.isInitialized || Prefs.sig(this) != lastSig || Prefs.b(this, "float", false) != floating || orient != builtOrientation) {
             setInputView(onCreateInputView())
@@ -346,6 +354,7 @@ class CrazeKeyboardService : InputMethodService() {
         showPanel(mode)
         updateSuggestions()
         deliverVoice()
+        deliverEditor()
     }
 
     // Cursor moved / text changed outside the keyboard. Debounced so rapid edits cost one refresh.
@@ -363,7 +372,10 @@ class CrazeKeyboardService : InputMethodService() {
 
     // ---------- debounced refresh (suggestions + auto-capitalize) ----------
     private val refreshR = Runnable { if (::top.isInitialized) { autoCap(); updateSuggestions() } }
-    private fun scheduleRefresh() { hd.removeCallbacks(refreshR); hd.postDelayed(refreshR, 40) }
+    private fun scheduleRefresh() {
+        hd.removeCallbacks(refreshR)
+        hd.postDelayed(refreshR, 24)
+    }
 
     // ---------- top bar: menu button + suggestions ----------
     private fun iconBtn(label: String, size: Float = 18f, a: () -> Unit) = TextView(ctx).apply {
@@ -371,33 +383,132 @@ class CrazeKeyboardService : InputMethodService() {
         setOnClickListener { a() }
     }
 
+    // ---------- adaptive top bar ----------
+    private fun hasEditorText(): Boolean {
+        val ic = currentInputConnection ?: return false
+        return !ic.getTextBeforeCursor(1, 0).isNullOrEmpty() ||
+            !ic.getTextAfterCursor(1, 0).isNullOrEmpty()
+    }
+
+    private fun desiredTopState(): String = when {
+        mode == "menu" -> "menu"
+        !suggestOn || incognito || !hasEditorText() -> "tools"
+        else -> "suggestions"
+    }
+
+    private fun toolLabel(id: String): String = when (id) {
+        "editor" -> "Text editor"
+        "clipboard" -> "Clipboard"
+        "emoji" -> "Emoji"
+        "voice" -> "Voice"
+        "theme" -> "Theme"
+        "onehand" -> "One-handed"
+        "floating" -> if (floating) "Dock" else "Floating"
+        "resize" -> "Resize"
+        "settings" -> "Settings"
+        "switch" -> "Switch keyboard"
+        "keyboard" -> "Keyboard"
+        "hide" -> "Hide"
+        else -> "Tool"
+    }
+
+    private fun toolIcon(id: String): Int = when (id) {
+        "editor" -> R.drawable.ic_edit
+        "clipboard" -> R.drawable.ic_clip
+        "emoji" -> R.drawable.ic_emoji
+        "voice" -> R.drawable.ic_mic
+        "theme" -> R.drawable.ic_palette
+        "onehand" -> R.drawable.ic_onehand
+        "floating" -> if (floating) R.drawable.ic_dock else R.drawable.ic_float
+        "resize" -> R.drawable.ic_grip
+        "settings" -> R.drawable.ic_settings
+        "switch" -> R.drawable.ic_globe
+        "keyboard" -> R.drawable.ic_activity
+        "hide" -> R.drawable.ic_hide
+        else -> R.drawable.ic_menu
+    }
+
+    private fun runTool(id: String) {
+        when (id) {
+            "editor" -> launchTextEditor()
+            "clipboard" -> showPanel("clip")
+            "emoji" -> showPanel("emoji")
+            "voice" -> { showPanel("letters"); startVoice() }
+            "theme" -> { Prefs.nextTheme(ctx); rebuild() }
+            "onehand" -> { Prefs.nextOneHand(ctx); rebuild() }
+            "floating" -> { Prefs.setB(ctx, "float", !floating); rebuild() }
+            "resize" -> startActivity(Intent(ctx, SettingsActivity::class.java)
+                .putExtra("open_resizer", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            "settings" -> startActivity(Intent(ctx, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            "switch" -> switchKeyboard()
+            "keyboard" -> showPanel("letters")
+            "hide" -> { showPanel("letters"); requestHideSelf(0) }
+        }
+    }
+
     private fun buildTop() {
         top.removeAllViews()
         sugViews.clear()
-        val inMenu = mode == "menu"
-        val row = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(4), dp(2), dp(4), dp(2)) }
-        row.addView(iconImg(if (inMenu) R.drawable.ic_close else R.drawable.ic_menu) { showPanel(if (mode == "menu") "letters" else "menu") }, lp(dp(44), MATCH))
-        if (inMenu) {
-            row.addView(TextView(ctx).apply {
-                text = "Menu"; textSize = 15f; typeface = Typeface.DEFAULT_BOLD; setTextColor(t.text); gravity = Gravity.CENTER
-            }, lp(0, MATCH, 1f))
-            row.addView(View(ctx), lp(dp(44), 1))
-        } else {
-            for (i in 0..2) {
-                val tv = TextView(ctx).apply {
-                    gravity = Gravity.CENTER; textSize = 15f; setTextColor(t.text); maxLines = 1
-                    ellipsize = TextUtils.TruncateAt.END; setPadding(dp(6), 0, dp(6), 0)
-                    if (i == 1) typeface = Typeface.DEFAULT_BOLD
-                    setOnClickListener { pickSuggestion(text.toString()) }
+        val state = desiredTopState()
+        lastTopState = state
+        val row = LinearLayout(ctx).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(2), dp(4), dp(2))
+        }
+        row.addView(iconImg(if (state == "menu") R.drawable.ic_close else R.drawable.ic_menu) {
+            showPanel(if (mode == "menu") "letters" else "menu")
+        }.apply { contentDescription = if (state == "menu") "Close tools" else "Open tools" },
+            lp(dp(44), MATCH))
+
+        when (state) {
+            "menu" -> {
+                row.addView(TextView(ctx).apply {
+                    text = "Tools"
+                    textSize = 15f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(t.text)
+                    gravity = Gravity.CENTER
+                }, lp(0, MATCH, 1f))
+                row.addView(View(ctx), lp(dp(44), 1))
+            }
+            "tools" -> {
+                val quickTools = Prefs.toolbarTools(ctx).take(4)
+                quickTools.forEach { id ->
+                    row.addView(iconImg(toolIcon(id)) { runTool(id) }.apply {
+                        contentDescription = toolLabel(id)
+                    }, lp(0, MATCH, 1f))
                 }
-                sugViews.add(tv)
-                row.addView(tv, lp(0, MATCH, 1f))
-                if (i < 2) row.addView(View(ctx).apply { setBackgroundColor(t.special) },
-                    lp(dp(1), dp(18)).apply { gravity = Gravity.CENTER_VERTICAL })
+                if (quickTools.isEmpty()) {
+                    row.addView(TextView(ctx).apply {
+                        text = "CrazeKeyboard"
+                        textSize = 13f
+                        typeface = Typeface.DEFAULT_BOLD
+                        setTextColor(t.text)
+                        gravity = Gravity.CENTER
+                    }, lp(0, MATCH, 1f))
+                }
+                row.addView(View(ctx), lp(dp(4), 1))
+            }
+            else -> {
+                for (i in 0..2) {
+                    val tv = TextView(ctx).apply {
+                        gravity = Gravity.CENTER
+                        textSize = 15f
+                        setTextColor(t.text)
+                        maxLines = 1
+                        ellipsize = TextUtils.TruncateAt.END
+                        setPadding(dp(6), 0, dp(6), 0)
+                        if (i == 1) typeface = Typeface.DEFAULT_BOLD
+                        setOnClickListener { pickSuggestion(text.toString()) }
+                    }
+                    sugViews.add(tv)
+                    row.addView(tv, lp(0, MATCH, 1f))
+                    if (i < 2) row.addView(View(ctx).apply { setBackgroundColor(t.special) },
+                        lp(dp(1), dp(18)).apply { gravity = Gravity.CENTER_VERTICAL })
+                }
             }
         }
         top.addView(row, FrameLayout.LayoutParams(MATCH, MATCH))
-        updateSuggestions()
     }
 
     private fun currentWord(): String {
@@ -406,14 +517,14 @@ class CrazeKeyboardService : InputMethodService() {
     }
 
     private fun updateSuggestions() {
-        if (mode == "menu" || sugViews.isEmpty()) return
-        val w = if (suggestOn) currentWord() else ""
+        val state = desiredTopState()
+        if (state != lastTopState) buildTop()
+        if (state != "suggestions" || sugViews.isEmpty()) return
+
+        val w = currentWord()
         val list = when {
-            !suggestOn -> emptyList()
             w.isEmpty() && !nextWordOn -> emptyList()
-            // After a space, predict from the sentence context (trigram -> bigram -> unigram).
-            // The model is memory-mapped; if no language pack is installed, retain local fallback suggestions.
-            w.isEmpty() && !incognito -> {
+            w.isEmpty() -> {
                 val context = currentInputConnection?.getTextBeforeCursor(160, 0)?.toString().orEmpty()
                 NextWordPredictor.predict(this, context).ifEmpty { Words.suggest(this, "") }
             }
@@ -541,6 +652,33 @@ class CrazeKeyboardService : InputMethodService() {
         if (enterKeys.isEmpty()) return
         val icon = enterIcon()
         enterKeys.forEach { it.iv?.setImageResource(icon) }
+    }
+
+    private fun launchTextEditor() {
+        if (incognito) {
+            android.widget.Toast.makeText(ctx, "Text editor is disabled in private fields", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        val selected = currentInputConnection?.getSelectedText(0)?.toString().orEmpty()
+        TextEditorActivity.callback = { deliverEditor() }
+        try {
+            startActivity(Intent(ctx, TextEditorActivity::class.java)
+                .putExtra(TextEditorActivity.EXTRA_INITIAL_TEXT, selected)
+                .putExtra(TextEditorActivity.EXTRA_REPLACE_SELECTION, selected.isNotEmpty())
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (_: Exception) {
+            android.widget.Toast.makeText(ctx, "Could not open the text editor", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Commit after Android restores the original app's InputConnection, never into the editor's own field.
+    private fun deliverEditor() {
+        if (currentInputEditorInfo?.packageName == packageName) return
+        val edited = TextEditorActivity.take() ?: return
+        val ic = currentInputConnection ?: return
+        ic.commitText(edited, 1)
+        scheduleRefresh()
+        TextEditorActivity.callback = null
     }
 
     private fun startVoice() {
@@ -758,7 +896,7 @@ class CrazeKeyboardService : InputMethodService() {
         return col
     }
 
-    // ---------- menu (SVG icon tiles) ----------
+    // ---------- customisable tool panel ----------
     private fun tile(icon: Int, label: String, a: () -> Unit): View {
         val box = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
@@ -770,9 +908,19 @@ class CrazeKeyboardService : InputMethodService() {
             contentDescription = label
             setOnClickListener { a() }
         }
-        box.addView(ImageView(ctx).apply { setImageResource(icon); setColorFilter(t.text) }, lp(dp(26), dp(26)))
+        box.addView(ImageView(ctx).apply {
+            setImageResource(icon)
+            setColorFilter(t.text)
+            contentDescription = label
+        }, lp(dp(26), dp(26)))
         box.addView(TextView(ctx).apply {
-            text = label; textSize = 11f; setTextColor(t.text); gravity = Gravity.CENTER; setPadding(0, dp(4), 0, 0)
+            text = label
+            textSize = 11f
+            setTextColor(t.text)
+            gravity = Gravity.CENTER
+            setPadding(0, dp(4), 0, 0)
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
         })
         val wrap = FrameLayout(ctx).apply { setPadding(dp(3), dp(3), dp(3), dp(3)) }
         wrap.addView(box, FrameLayout.LayoutParams(MATCH, MATCH))
@@ -781,31 +929,19 @@ class CrazeKeyboardService : InputMethodService() {
     }
 
     private fun buildMenu(): View {
-        val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(3), dp(4), dp(3), dp(2)) }
-        val r1 = LinearLayout(ctx)
-        r1.addView(tile(R.drawable.ic_emoji, "Emoji") { showPanel("emoji") })
-        r1.addView(tile(R.drawable.ic_clip, "Clipboard") { showPanel("clip") })
-        r1.addView(tile(R.drawable.ic_mic, "Voice") { startVoice(); showPanel("letters") })
-        r1.addView(tile(R.drawable.ic_palette, "Theme") { Prefs.nextTheme(ctx); rebuild() })
-        val r2 = LinearLayout(ctx)
-        r2.addView(tile(R.drawable.ic_onehand, "One-handed") { Prefs.nextOneHand(ctx); rebuild() })
-        r2.addView(tile(if (floating) R.drawable.ic_dock else R.drawable.ic_float, if (floating) "Dock" else "Floating") {
-            Prefs.setB(ctx, "float", !floating); rebuild()
-        })
-        r2.addView(tile(R.drawable.ic_grip, "Resize") {
-            startActivity(Intent(ctx, SettingsActivity::class.java)
-                .putExtra("open_resizer", true)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        })
-        r2.addView(tile(R.drawable.ic_settings, "Settings") {
-            startActivity(Intent(ctx, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        })
-        val r3 = LinearLayout(ctx)
-        r3.addView(tile(R.drawable.ic_activity, "Keyboard") { showPanel("letters") })
-        r3.addView(tile(R.drawable.ic_hide, "Hide") { showPanel("letters"); requestHideSelf(0) })
-        col.addView(r1, lp(MATCH, 0, 1f))
-        col.addView(r2, lp(MATCH, 0, 1f))
-        col.addView(r3, lp(MATCH, 0, 1f))
+        val col = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(3), dp(4), dp(3), dp(2))
+        }
+        val tools = (Prefs.toolbarTools(ctx) + "settings").distinct().take(12)
+        val rows = tools.chunked(4).toMutableList()
+        while (rows.size < 3) rows.add(emptyList())
+        rows.take(3).forEach { ids ->
+            val row = LinearLayout(ctx)
+            ids.forEach { id -> row.addView(tile(toolIcon(id), toolLabel(id)) { runTool(id) }) }
+            repeat(4 - ids.size) { row.addView(View(ctx), lp(0, 1, 1f)) }
+            col.addView(row, lp(MATCH, 0, 1f))
+        }
         return col
     }
 
@@ -890,7 +1026,7 @@ class CrazeKeyboardService : InputMethodService() {
 
     // Letters, symbols and menu pages are cached; emoji (recents) and clipboard (history) must be fresh every time.
     private fun pageFor(m: String): View {
-        val cacheable = m != "emoji" && m != "clip"
+        val cacheable = m != "emoji" && m != "clip" && m != "menu"
         if (cacheable) pageCache[m]?.let { return it }
         val v = when (m) {
             "symbols" -> buildSymbols(1)

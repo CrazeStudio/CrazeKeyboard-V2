@@ -57,6 +57,11 @@ internal object NextWordPredictor {
             null
         }
     }
+    /** Pre-open the optional index off the UI thread during service startup. */
+    fun warm(context: Context) {
+        open(context.applicationContext)
+    }
+
     /** Return up to three likely next words for the text immediately before the cursor. */
     fun predict(context: Context, textBeforeCursor: String, limit: Int = 3): List<String> {
         if (textBeforeCursor.isBlank() || limit <= 0) return emptyList()

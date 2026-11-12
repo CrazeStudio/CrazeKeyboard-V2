@@ -363,6 +363,100 @@ class SettingsActivity : Activity() {
         prefs.addView(settingSwitch("Key sounds", "Play a soft system key-click while typing.", "keysound", false))
         content.addView(prefs, margin())
 
+
+        val toolbarSection = section(
+            "Customise keyboard tools",
+            "Choose which shortcuts appear before typing, then move enabled tools to set their order. The menu keeps Settings available."
+        )
+        val toolbarRows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val toolOptions = linkedMapOf(
+            "editor" to ("Text editor" to R.drawable.ic_edit),
+            "clipboard" to ("Clipboard" to R.drawable.ic_clip),
+            "emoji" to ("Emoji" to R.drawable.ic_emoji),
+            "voice" to ("Voice typing" to R.drawable.ic_mic),
+            "theme" to ("Theme" to R.drawable.ic_palette),
+            "onehand" to ("One-handed mode" to R.drawable.ic_onehand),
+            "floating" to ("Floating / dock" to R.drawable.ic_float),
+            "resize" to ("Keyboard resizer" to R.drawable.ic_grip),
+            "settings" to ("Settings" to R.drawable.ic_settings),
+            "switch" to ("Switch keyboard" to R.drawable.ic_globe),
+            "keyboard" to ("Show keyboard" to R.drawable.ic_activity),
+            "hide" to ("Hide keyboard" to R.drawable.ic_hide)
+        )
+        fun renderToolbarRows() {
+            toolbarRows.removeAllViews()
+            val active = Prefs.toolbarTools(this).toMutableList()
+            val ordered = active + toolOptions.keys.filterNot { it in active }
+            ordered.forEach { id ->
+                val option = toolOptions[id] ?: return@forEach
+                val enabled = id in active
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, dp(7), 0, dp(7))
+                }
+                row.addView(ImageView(this).apply {
+                    setImageResource(option.second)
+                    setColorFilter(ink)
+                    setPadding(dp(4), dp(4), dp(4), dp(4))
+                    contentDescription = option.first
+                }, LinearLayout.LayoutParams(dp(34), dp(34)))
+                row.addView(text(option.first, 13f, ink, enabled),
+                    LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(8) })
+                if (enabled) {
+                    val index = active.indexOf(id)
+                    val up = text("↑", 19f, if (index > 0) ink else muted, true).apply {
+                        gravity = Gravity.CENTER
+                        background = shape(actionBg, 9)
+                        isClickable = index > 0
+                        setPadding(dp(10), dp(5), dp(10), dp(5))
+                        setOnClickListener {
+                            val list = Prefs.toolbarTools(this@SettingsActivity).toMutableList()
+                            if (index > 0) {
+                                val item = list.removeAt(index)
+                                list.add(index - 1, item)
+                                Prefs.setToolbarTools(this@SettingsActivity, list)
+                                renderToolbarRows()
+                            }
+                        }
+                    }
+                    val down = text("↓", 19f, if (index < active.lastIndex) ink else muted, true).apply {
+                        gravity = Gravity.CENTER
+                        background = shape(actionBg, 9)
+                        isClickable = index < active.lastIndex
+                        setPadding(dp(10), dp(5), dp(10), dp(5))
+                        setOnClickListener {
+                            val list = Prefs.toolbarTools(this@SettingsActivity).toMutableList()
+                            if (index < list.lastIndex) {
+                                val item = list.removeAt(index)
+                                list.add(index + 1, item)
+                                Prefs.setToolbarTools(this@SettingsActivity, list)
+                                renderToolbarRows()
+                            }
+                        }
+                    }
+                    row.addView(up, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = dp(5) })
+                    row.addView(down, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = dp(6) })
+                }
+                row.addView(Switch(this).apply {
+                    isChecked = enabled
+                    contentDescription = "Show ${option.first}"
+                    setOnCheckedChangeListener { _, checked ->
+                        val list = Prefs.toolbarTools(this@SettingsActivity).toMutableList()
+                        if (checked && id !in list) list.add(id)
+                        if (!checked) list.remove(id)
+                        Prefs.setToolbarTools(this@SettingsActivity, list)
+                        renderToolbarRows()
+                    }
+                })
+                toolbarRows.addView(row)
+                if (id != ordered.last()) toolbarRows.addView(divider())
+            }
+        }
+        renderToolbarRows()
+        toolbarSection.addView(toolbarRows)
+        content.addView(toolbarSection, margin())
+
         val privacy = section(
             "Privacy & data",
             "Clipboard history stays on this device and is only collected while the keyboard is active. Password and no-personalized-learning fields are excluded."
