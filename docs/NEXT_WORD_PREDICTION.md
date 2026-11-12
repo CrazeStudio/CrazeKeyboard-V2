@@ -28,3 +28,12 @@ The build script prints the resulting size. Use a corpus and pruning settings th
 ## Memory target
 
 The runtime maps the pack read-only and keeps no in-memory copy of the full n-gram table. This avoids a 20–30 MiB heap allocation, but it does not mean zero RAM: the OS may page mapped data into memory as accessed. Validate actual process PSS on the target phone before claiming a sub-5 MiB total-RAM guarantee.
+
+
+## CrazePredictionAPI vocabulary packs
+
+- Open Settings → Language packs and download English, Bengali or Hindi.
+- The keyboard fetches the compressed `.cpack` from CrazePredictionAPI, verifies its SHA-256 against the manifest, and writes a sorted local word index.
+- The sorted index is memory-mapped and used for offline prefix suggestions; the original archive is retained for future update checks.
+- Online prefix suggestions are separately controlled by the **Online prefix suggestions** switch. Only the current prefix and language are sent to `/v1/predict`; no surrounding sentence is transmitted.
+- API base URL: `https://crazepredictionapi.onrender.com`.
