@@ -19,6 +19,7 @@ import android.view.inputmethod.InputMethodManager
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.HorizontalScrollView
 import android.widget.TextView
 
 /** Full-screen editor companion. Results return through a mailbox after the original editor regains focus. */
@@ -83,6 +84,31 @@ class TextEditorActivity : Activity() {
             setOnClickListener { click() }
         }
 
+    /** Compact horizontally-scrollable action row so the editor keeps usable height above the IME. */
+    private fun toolStrip(items: List<Pair<String, () -> Unit>>): HorizontalScrollView {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        items.forEachIndexed { index, item ->
+            val button = action(item.first, click = item.second).apply {
+                textSize = 12f
+                minHeight = dp(36)
+                setPadding(dp(10), dp(5), dp(10), dp(5))
+            }
+            row.addView(button, LinearLayout.LayoutParams(-2, dp(38)).apply {
+                if (index > 0) leftMargin = dp(4)
+                if (index < items.lastIndex) rightMargin = dp(2)
+            })
+        }
+        return HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            clipToPadding = false
+            addView(row, HorizontalScrollView.LayoutParams(-2, dp(40)))
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.statusBarColor = page
@@ -128,7 +154,7 @@ class TextEditorActivity : Activity() {
             imeOptions = EditorInfo.IME_ACTION_NONE
             setPadding(dp(15), dp(15), dp(15), dp(15))
             background = shape(Color.WHITE, 18, Color.rgb(229, 232, 240))
-            minLines = 7
+            minLines = 3
             setText(intent.getStringExtra(EXTRA_INITIAL_TEXT).orEmpty())
         }
         root.addView(editor, LinearLayout.LayoutParams(-1, 0, 1f).apply {
@@ -152,59 +178,30 @@ class TextEditorActivity : Activity() {
             }
         })
 
-        val history = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        history.addView(action("Undo") { undo() },
-            LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(5) })
-        history.addView(action("Redo") { redo() },
-            LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(5) })
-        root.addView(history)
-
-        // Cursor and selection controls inspired by mobile keyboard editing toolbars.
-        val cursorTools = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(8), 0, dp(8))
-        }
-        val cursorActions = listOf<Pair<String, () -> Unit>>(
+        // Editing actions share two compact horizontal strips instead of four tall rows.
+        // This leaves substantially more room for text while the keyboard is visible.
+        root.addView(toolStrip(listOf(
+            "Undo" to { undo() },
+            "Redo" to { redo() },
             "←" to { moveCursor(-1) },
             "→" to { moveCursor(1) },
             "Word" to { selectWord() },
             "Line" to { selectLine() },
             "Start" to { moveToLineBoundary(false) },
             "End" to { moveToLineBoundary(true) }
-        )
-        cursorActions.forEachIndexed { index, item ->
-            cursorTools.addView(action(item.first, click = item.second),
-                LinearLayout.LayoutParams(0, -2, 1f).apply {
-                    if (index > 0) leftMargin = dp(3)
-                    if (index < cursorActions.lastIndex) rightMargin = dp(3)
-                })
-        }
-        root.addView(cursorTools)
-
-        val tools = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(9), 0, dp(8))
-        }
-        val operations = listOf<Pair<String, () -> Unit>>(
+        )), LinearLayout.LayoutParams(-1, dp(40)).apply {
+            topMargin = dp(4)
+        })
+        root.addView(toolStrip(listOf(
             "Select all" to { editor.selectAll() },
             "Copy" to { copyText() },
             "Cut" to { cutText() },
-            "Paste" to { pasteText() }
-        )
-        operations.forEachIndexed { index, item ->
-            tools.addView(action(item.first, click = item.second), LinearLayout.LayoutParams(0, -2, 1f).apply {
-                if (index > 0) leftMargin = dp(4)
-                if (index < operations.lastIndex) rightMargin = dp(4)
-            })
-        }
-        root.addView(tools)
-
-        val lowerTools = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        lowerTools.addView(action("Find / replace") { findReplace() },
-            LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(5) })
-        lowerTools.addView(action("Clear") { editor.text?.clear() },
-            LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(5) })
-        root.addView(lowerTools)
+            "Paste" to { pasteText() },
+            "Find / replace" to { findReplace() },
+            "Clear" to { editor.text?.clear() }
+        )), LinearLayout.LayoutParams(-1, dp(40)).apply {
+            topMargin = dp(2)
+        })
 
         root.addView(action(
             if (intent.getBooleanExtra(EXTRA_REPLACE_SELECTION, false)) "Replace selected text" else "Insert into current field",
