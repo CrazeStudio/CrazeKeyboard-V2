@@ -4,7 +4,7 @@ CrazeKeyboard is an offline-first Android IME by CrazeStudio.
 
 **Application ID:** `com.crazestudio.crazekeyboard`
 
-## V1 typing features
+## Phase-one capabilities
 
 - English QWERTY keyboard with optional number row, symbols pages, shift/caps lock, and editor-aware Enter/Search/Send/Next/Done actions.
 - Adaptive key sizing with a live graphical width/height resizer, left/right one-handed layouts, Light/Dark/Craze themes, configurable key-click sounds and haptic feedback, and a separate candidate strip.
@@ -25,7 +25,7 @@ The keyboard does not request Internet permission and has no remote prediction e
 
 Open the project in Android Studio and build the `app` debug variant, or use the repository's GitHub Actions workflow. Install the APK, enable CrazeKeyboard in Android's keyboard settings, and then select it as the active input method.
 
-## V1 boundaries
+## Current scope
 
 Phase one is a practical offline foundation, not a Gboard clone. It does **not** include swipe/gesture typing, neural language models, voice dictation, cloud sync, translation, GIF/sticker search, or broad multilingual/Indic input layouts. The included English word list is a lightweight starter lexicon, not a full commercial dictionary. Accuracy and latency must still be validated on physical devices and across different editor apps.
 

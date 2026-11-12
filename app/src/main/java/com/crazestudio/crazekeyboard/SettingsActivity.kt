@@ -511,15 +511,31 @@ class SettingsActivity : Activity() {
         val layout = section("Keyboard modes", "Choose how the keyboard sits above the app.")
         layout.addView(settingSwitch("Floating keyboard", "Move the keyboard independently without resizing the app underneath.", "float", false))
         layout.addView(divider())
-        val oneHandLabel = text(oneHandName(Prefs.i(this, "onehand", 0)), 14f, ink, true)
-        layout.addView(LinearLayout(this).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            addView(oneHandLabel, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(action("Change") {
-                Prefs.nextOneHand(this@SettingsActivity)
-                oneHandLabel.text = oneHandName(Prefs.i(this@SettingsActivity, "onehand", 0))
-            })
+        layout.addView(text("One-handed layout", 14f, ink, true).apply {
+            setPadding(0, dp(10), 0, dp(8))
         })
+        val handButtons = ArrayList<Pair<Int, TextView>>()
+        fun refreshHandButtons() {
+            val selected = Prefs.i(this@SettingsActivity, "onehand", 0)
+            handButtons.forEach { (value, button) ->
+                val active = value == selected
+                button.background = shape(if (active) accent else actionBg, 12)
+                button.setTextColor(if (active) Color.WHITE else ink)
+            }
+        }
+        val handRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        listOf("Full" to 0, "Left" to 1, "Right" to 2).forEach { (label, value) ->
+            val button = action(label, Prefs.i(this, "onehand", 0) == value) {
+                Prefs.setI(this@SettingsActivity, "onehand", value)
+                refreshHandButtons()
+            }
+            handButtons.add(value to button)
+            handRow.addView(button, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                setMargins(dp(3), 0, dp(3), 0)
+            })
+        }
+        layout.addView(handRow)
+        refreshHandButtons()
         content.addView(layout, margin())
 
         content.addView(text("CrazeStudio  •  Offline-first", 11f, muted).apply {

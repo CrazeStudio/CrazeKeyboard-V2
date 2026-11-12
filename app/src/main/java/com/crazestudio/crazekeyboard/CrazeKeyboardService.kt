@@ -118,9 +118,9 @@ class CrazeKeyboardService : InputMethodService() {
         val b = ((c and 0xFF) * f).toInt()
         return (0xFF shl 24) or (r shl 16) or (g shl 8) or b
     }
-    private fun rounded(c: Int, r: Int = 9) = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dp(r).toFloat(); setColor(c) }
-    // Key face with a thin darker lower edge for depth.
-    private fun keyBg(c: Int, r: Int = 9): Drawable =
+    private fun rounded(c: Int, r: Int = 11) = GradientDrawable().apply { shape = GradientDrawable.RECTANGLE; cornerRadius = dp(r).toFloat(); setColor(c) }
+    // Key face with a soft lower edge and more generous corner radius.
+    private fun keyBg(c: Int, r: Int = 11): Drawable =
         LayerDrawable(arrayOf<Drawable>(rounded(darken(c), r), rounded(c, r))).apply { setLayerInset(1, 0, 0, 0, dp(2)) }
 
     // Tinted SVG (vector drawable) button
@@ -761,6 +761,7 @@ class CrazeKeyboardService : InputMethodService() {
             setPadding(dp(3), dp(4), dp(3), dp(4))
             isClickable = true
             isFocusable = true
+            contentDescription = label
             setOnClickListener { a() }
         }
         box.addView(ImageView(ctx).apply { setImageResource(icon); setColorFilter(t.text) }, lp(dp(26), dp(26)))
