@@ -367,6 +367,7 @@ class CrazeKeyboardService : InputMethodService() {
     private var resizeStartX = 0f
     private var resizeStartWidth = 0
     private var editorField: EditText? = null
+    private var editorDraft = ""
 
     private fun isPasswordField(cls: Int, v: Int): Boolean =
         (cls == InputType.TYPE_CLASS_TEXT && (v == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
@@ -509,7 +510,7 @@ class CrazeKeyboardService : InputMethodService() {
     }
     private fun runTool(id: String) {
         when (id) {
-            "editor" -> { showPanel("editor") }
+            "editor" -> { editorDraft = currentInputConnection?.getSelectedText(0)?.toString().orEmpty(); showPanel("editor") }
             "clipboard" -> showPanel("clip")
             "emoji" -> showPanel("emoji")
             "voice" -> { showPanel("letters"); startVoice() }
@@ -1485,6 +1486,13 @@ class CrazeKeyboardService : InputMethodService() {
             background = rounded(t.key, 12)
             setPadding(dp(10), dp(7), dp(10), dp(7))
         }
+        field.setText(editorDraft)
+        field.setSelection(field.text?.length ?: 0)
+        field.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: Editable?) { editorDraft = s?.toString().orEmpty() }
+        })
         editorField = field
         col.addView(field, lp(MATCH, 0, 1f))
         val actions = hrow()
@@ -1500,6 +1508,7 @@ class CrazeKeyboardService : InputMethodService() {
         }; actions.addView(paste.cell)
         val insert = mk("Insert", 1.3f, t.accent, t.accentText, 12f); attach(insert) {
             currentInputConnection?.commitText(field.text?.toString().orEmpty(), 1)
+            editorDraft = ""
             editorField = null
             showPanel("letters")
             syncContextAsync()
