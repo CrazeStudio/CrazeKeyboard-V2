@@ -17,7 +17,7 @@ internal object CrazeRemotePredictor {
     @Volatile private var pending: Runnable? = null
 
     fun request(prefix: String, language: String, callback: (List<String>) -> Unit) {
-        val clean = prefix.trim().take(40)
+        val clean = prefix.trim().lowercase().take(40)
         val code = language.substringBefore('-').lowercase()
         if (clean.isEmpty() || code !in setOf("en", "bn", "hi")) return
         val requestId = sequence.incrementAndGet()
