@@ -676,8 +676,8 @@ class CrazeKeyboardService : InputMethodService() {
 
             if (word.isNotEmpty() && Prefs.b(this, "onlinepred", true)) {
                 val remoteLanguage = when {
-                    word.any { it in '\\u0980'..'\\u09FF' } -> "bn"
-                    word.any { it in '\\u0900'..'\\u097F' } -> "hi"
+                    word.any { it in '\u0980'..'\u09FF' } -> "bn"
+                    word.any { it in '\u0900'..'\u097F' } -> "hi"
                     else -> java.util.Locale.getDefault().language
                 }
                 CrazeRemotePredictor.request(word, remoteLanguage) { remote ->
