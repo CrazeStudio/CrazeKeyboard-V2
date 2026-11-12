@@ -945,8 +945,7 @@ class CrazeKeyboardService : InputMethodService() {
     private fun bottomRow(left: String, leftTarget: String): LinearLayout = hrow().apply {
         val l = mk(left, 1.4f, t.special, t.text, 14f); attach(l) { showPanel(leftTarget) }; addView(l.cell)
         val c = mk(",", 0.9f, t.special, t.text); attach(c, onLong = { showPanel("emoji") }) { type(",") }; addView(c.cell)
-        val g = mk("", 0.9f, t.special, t.text, 17f, R.drawable.ic_globe); attach(g) { switchKeyboard() }; addView(g.cell)
-        val sp = mk("CrazeKeyboard", 4f, t.key, t.text, 11f)
+        val sp = mk("CrazeKeyboard", 4.9f, t.key, t.text, 11f)
         attach(sp, onLong = { (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker() }) { type(" ") }; addView(sp.cell)
         val d = mk(".", 0.9f, t.special, t.text); attach(d, onLong = { showAlts(d.cell, Alts.map["."].orEmpty()) }) { type(".") }; addView(d.cell)
         val e = mk("", 1.4f, t.accent, t.accentText, 18f, enterIcon()); attach(e) { enter() }; addView(e.cell)
