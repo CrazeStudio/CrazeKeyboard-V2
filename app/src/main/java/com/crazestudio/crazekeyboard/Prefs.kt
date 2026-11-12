@@ -26,7 +26,8 @@ object Prefs {
     fun nextTheme(c: Context) = setI(c, "theme", (i(c, "theme", 0) + 1) % themes.size)
     fun nextOneHand(c: Context) = setI(c, "onehand", (i(c, "onehand", 0) + 1) % 3)
     fun keyH(c: Context) = i(c, "keyh", 46).coerceIn(34, 64)
-    fun sig(c: Context) = "${i(c, "theme", 0)}|${i(c, "onehand", 0)}|${keyH(c)}|${b(c, "numrow", true)}"
+    fun keyWidth(c: Context) = i(c, "kbdwidth", 82).coerceIn(55, 100)
+    fun sig(c: Context) = "${i(c, "theme", 0)}|${i(c, "onehand", 0)}|${keyH(c)}|${keyWidth(c)}|${b(c, "numrow", true)}"
 
     private fun list(c: Context, k: String) = (sp(c).getString(k, "") ?: "").split(SEP).filter { it.isNotEmpty() }
     private fun put(c: Context, k: String, l: List<String>) = sp(c).edit().putString(k, l.joinToString(SEP)).apply()

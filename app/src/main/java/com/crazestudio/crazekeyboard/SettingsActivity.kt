@@ -177,18 +177,48 @@ class SettingsActivity : Activity() {
 
     private fun hero() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(20), dp(22), dp(20), dp(22))
+        setPadding(dp(20), dp(20), dp(20), dp(18))
         background = GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
-            intArrayOf(Color.rgb(42, 35, 82), Color.rgb(105, 82, 218))
-        ).apply { cornerRadius = dp(24).toFloat() }
-        addView(text("CRAZESTUDIO  •  ANDROID KEYBOARD", 10f, Color.rgb(224, 218, 255), true))
+            intArrayOf(Color.rgb(31, 28, 61), Color.rgb(93, 72, 193), Color.rgb(126, 79, 191))
+        ).apply { cornerRadius = dp(26).toFloat() }
+        addView(text("CRAZESTUDIO  /  INPUT STUDIO", 10f, Color.rgb(222, 216, 255), true))
         addView(text("CrazeKeyboard", 29f, Color.WHITE, true).apply {
-            setPadding(0, dp(7), 0, dp(2))
+            setPadding(0, dp(6), 0, dp(2))
         })
-        addView(text("Your typing space. Tuned by you.", 13f, Color.rgb(238, 235, 255)))
-        addView(text("OFFLINE SUGGESTIONS  ·  VOICE TYPING  ·  QUICK EDITING", 10f, Color.WHITE, true).apply {
-            setPadding(0, dp(17), 0, 0)
+        addView(text("A calmer, faster space to type.", 13f, Color.rgb(240, 237, 255)))
+        val mock = LinearLayout(this@SettingsActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(7), dp(7), dp(7), dp(7))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(14).toFloat()
+                setColor(Color.argb(42, 255, 255, 255))
+            }
+        }
+        listOf("q w e r t y u i o p", "a s d f g h j k l", "⇧ z x c v b n m ⌫").forEach { line ->
+            val keys = LinearLayout(this@SettingsActivity).apply { gravity = Gravity.CENTER }
+            line.split(" ").filter { it.isNotEmpty() }.forEach { key ->
+                keys.addView(
+                    TextView(this@SettingsActivity).apply {
+                        text = key
+                        gravity = Gravity.CENTER
+                        textSize = 10f
+                        setTextColor(Color.WHITE)
+                        background = GradientDrawable().apply {
+                            cornerRadius = dp(5).toFloat()
+                            setColor(Color.argb(54, 255, 255, 255))
+                        }
+                    },
+                    LinearLayout.LayoutParams(0, dp(24), 1f).apply {
+                        setMargins(dp(2), 0, dp(2), dp(3))
+                    }
+                )
+            }
+            mock.addView(keys)
+        }
+        addView(mock, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) })
+        addView(text("OFFLINE-FIRST  ·  PERSONALISABLE  ·  PRIVATE", 10f, Color.WHITE, true).apply {
+            setPadding(0, dp(13), 0, 0)
         })
     }
 
@@ -329,6 +359,8 @@ class SettingsActivity : Activity() {
         prefs.addView(settingSwitch("Double-space period", "Turn two quick spaces into a full stop.", "doubleSpacePeriod", true))
         prefs.addView(divider())
         prefs.addView(settingSwitch("Haptic feedback", "A light vibration on key press.", "haptics", true))
+        prefs.addView(divider())
+        prefs.addView(settingSwitch("Key sounds", "Play a soft system key-click while typing.", "keysound", false))
         content.addView(prefs, margin())
 
         val privacy = section(
@@ -358,41 +390,152 @@ class SettingsActivity : Activity() {
         appearance.addView(themeRow)
         content.addView(appearance, margin())
 
-        val size = section("Keyboard size", "Adjust key height. The keyboard automatically limits it on short screens.")
-        val keyPreview = View(this).apply { background = shape(actionBg, 9) }
-        val previewBox = FrameLayout(this).apply {
+        val resizeSection = section(
+            "Keyboard studio",
+            "Resize visually. Width controls floating and one-handed layouts; height changes every keyboard key."
+        )
+        val previewFrame = FrameLayout(this).apply {
+            background = shape(fieldBg, 16)
             setPadding(dp(8), dp(8), dp(8), dp(8))
-            background = shape(fieldBg, 14)
-            addView(keyPreview, FrameLayout.LayoutParams(-1, dp(Prefs.keyH(this@SettingsActivity))))
+            minimumHeight = dp(116)
         }
-        size.addView(previewBox, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) })
-        val sizeRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+        val previewBoard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = shape(actionBg, 12)
+            setPadding(dp(5), dp(6), dp(5), dp(6))
+            elevation = dp(2).toFloat()
         }
-        val sizeValue = text("${Prefs.keyH(this)} dp", 15f, ink, true)
-        fun applySize(v: Int) {
-            Prefs.setI(this, "keyh", v.coerceIn(34, 64))
-            sizeValue.text = "${Prefs.keyH(this)} dp"
-            keyPreview.layoutParams = (keyPreview.layoutParams as FrameLayout.LayoutParams).apply { height = dp(Prefs.keyH(this@SettingsActivity)) }
-        }
-        sizeRow.addView(sizeValue, LinearLayout.LayoutParams(0, -2, 1f))
-        sizeRow.addView(action("−") { applySize(Prefs.keyH(this) - 2) }, LinearLayout.LayoutParams(dp(56), -2))
-        sizeRow.addView(Space(this), LinearLayout.LayoutParams(dp(8), 1))
-        sizeRow.addView(action("+", true) { applySize(Prefs.keyH(this) + 2) }, LinearLayout.LayoutParams(dp(56), -2))
-        size.addView(sizeRow)
-        content.addView(size, margin())
-
-        val layout = section("One-handed mode", "Cycle between full width, left aligned and right aligned.")
-        val oneHandLabel = text(oneHandName(Prefs.i(this, "onehand", 0)), 14f, ink, true)
-        layout.addView(LinearLayout(this).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            addView(oneHandLabel, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(action("Change") {
-                Prefs.nextOneHand(this@SettingsActivity)
-                oneHandLabel.text = oneHandName(Prefs.i(this@SettingsActivity, "onehand", 0))
+        val previewRows = ArrayList<LinearLayout>()
+        listOf("qwertyuiop", "asdfghjkl", "⇧zxcvbnm⌫").forEach { chars ->
+            val row = LinearLayout(this).apply { gravity = Gravity.CENTER }
+            chars.forEach { character ->
+                row.addView(TextView(this).apply {
+                    text = character.toString()
+                    textSize = 10f
+                    gravity = Gravity.CENTER
+                    setTextColor(ink)
+                    background = shape(card, 5)
+                    includeFontPadding = false
+                }, LinearLayout.LayoutParams(0, dp(23), 1f).apply {
+                    setMargins(dp(1), 0, dp(1), 0)
+                })
+            }
+            previewBoard.addView(row, LinearLayout.LayoutParams(-1, dp(23)).apply {
+                bottomMargin = dp(4)
             })
+            previewRows.add(row)
+        }
+        previewFrame.addView(previewBoard, FrameLayout.LayoutParams(dp(270), -2, Gravity.CENTER))
+        resizeSection.addView(previewFrame, LinearLayout.LayoutParams(-1, -2).apply {
+            bottomMargin = dp(14)
         })
+
+        val widthHeader = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            addView(text("Keyboard width", 14f, ink, true), LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        val widthValue = text("${Prefs.keyWidth(this)}%", 13f, accent, true)
+        widthHeader.addView(widthValue)
+        resizeSection.addView(widthHeader)
+        val widthSeek = SeekBar(this).apply {
+            max = 45
+            progress = Prefs.keyWidth(this@SettingsActivity) - 55
+            progressTintList = ColorStateList.valueOf(accent)
+            thumbTintList = ColorStateList.valueOf(accent)
+        }
+        resizeSection.addView(widthSeek, LinearLayout.LayoutParams(-1, -2))
+        resizeSection.addView(text("55% — 100%  ·  Compact to full width", 11f, muted).apply {
+            setPadding(0, dp(1), 0, dp(10))
+        })
+
+        val heightHeader = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            addView(text("Key height", 14f, ink, true), LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        val heightValue = text("${Prefs.keyH(this)} dp", 13f, accent, true)
+        heightHeader.addView(heightValue)
+        resizeSection.addView(heightHeader)
+        val heightSeek = SeekBar(this).apply {
+            max = 30
+            progress = Prefs.keyH(this@SettingsActivity) - 34
+            progressTintList = ColorStateList.valueOf(accent)
+            thumbTintList = ColorStateList.valueOf(accent)
+        }
+        resizeSection.addView(heightSeek, LinearLayout.LayoutParams(-1, -2))
+        resizeSection.addView(text("34 dp — 64 dp  ·  Smaller keys save screen space", 11f, muted).apply {
+            setPadding(0, dp(1), 0, dp(10))
+        })
+
+        fun updateKeyboardPreview() {
+            val width = Prefs.keyWidth(this)
+            val height = Prefs.keyH(this)
+            widthValue.text = "${width}%"
+            heightValue.text = "${height} dp"
+            val availableWidth = (previewFrame.width - dp(12)).coerceAtLeast(dp(190))
+            val previewWidth = (availableWidth * width / 100f).toInt().coerceIn(dp(180), availableWidth)
+            (previewBoard.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
+                params.width = previewWidth
+                previewBoard.layoutParams = params
+            }
+            val previewKeyHeight = dp((height * 0.52f).toInt().coerceIn(18, 34))
+            previewRows.forEach { row ->
+                (row.layoutParams as? LinearLayout.LayoutParams)?.let { params ->
+                    params.height = previewKeyHeight
+                    row.layoutParams = params
+                }
+                for (index in 0 until row.childCount) {
+                    row.getChildAt(index).layoutParams = LinearLayout.LayoutParams(
+                        0, previewKeyHeight, 1f
+                    ).apply { setMargins(dp(1), 0, dp(1), 0) }
+                }
+            }
+        }
+        widthSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                Prefs.setI(this@SettingsActivity, "kbdwidth", progress + 55)
+                updateKeyboardPreview()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+            override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
+        })
+        heightSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                Prefs.setI(this@SettingsActivity, "keyh", progress + 34)
+                updateKeyboardPreview()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+            override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
+        })
+        content.addView(resizeSection, margin())
+        previewFrame.post { updateKeyboardPreview() }
+        val layout = section("Keyboard modes", "Choose how the keyboard sits above the app.")
+        layout.addView(settingSwitch("Floating keyboard", "Move the keyboard independently without resizing the app underneath.", "float", false))
+        layout.addView(divider())
+        layout.addView(text("One-handed layout", 14f, ink, true).apply {
+            setPadding(0, dp(10), 0, dp(8))
+        })
+        val handButtons = ArrayList<Pair<Int, TextView>>()
+        fun refreshHandButtons() {
+            val selected = Prefs.i(this@SettingsActivity, "onehand", 0)
+            handButtons.forEach { (value, button) ->
+                val active = value == selected
+                button.background = shape(if (active) accent else actionBg, 12)
+                button.setTextColor(if (active) Color.WHITE else ink)
+            }
+        }
+        val handRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        listOf("Full" to 0, "Left" to 1, "Right" to 2).forEach { (label, value) ->
+            val button = action(label, Prefs.i(this, "onehand", 0) == value) {
+                Prefs.setI(this@SettingsActivity, "onehand", value)
+                refreshHandButtons()
+            }
+            handButtons.add(value to button)
+            handRow.addView(button, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                setMargins(dp(3), 0, dp(3), 0)
+            })
+        }
+        layout.addView(handRow)
+        refreshHandButtons()
         content.addView(layout, margin())
 
         content.addView(text("CrazeStudio  •  Offline-first", 11f, muted).apply {
@@ -402,6 +545,9 @@ class SettingsActivity : Activity() {
 
         setContentView(root)
         refreshKeyboardStatus()
+        if (intent.getBooleanExtra("open_resizer", false)) {
+            scroll.post { scroll.smoothScrollTo(0, resizeSection.top) }
+        }
         if (intent.getBooleanExtra("request_voice_permission", false) &&
             checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), voicePermissionRequest)
