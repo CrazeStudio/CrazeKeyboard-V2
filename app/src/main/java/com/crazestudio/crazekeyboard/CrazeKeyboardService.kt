@@ -373,6 +373,8 @@ class CrazeKeyboardService : InputMethodService() {
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        emojiSearchActive = false
+        emojiSearchQuery = ""
         if (info.packageName != packageName) targetInputConnection = currentInputConnection
         TextEditorActivity.callback = { deliverEditor() }
         val orient = resources.configuration.orientation
