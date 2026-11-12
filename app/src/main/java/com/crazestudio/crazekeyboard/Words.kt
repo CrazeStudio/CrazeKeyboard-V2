@@ -109,9 +109,9 @@ object Words {
             if (out.size >= 3) break
             if (x.startsWith(lower) && x != lower) { val cx = cased(x, w); if (cx !in out) out.add(cx) }
         }
-        // Typo fallback: nothing starts with what was typed, so offer close matches ("teh" -> "the").
+        // Typo fallback is uncommon; retain the full lexicon here so first-letter mistakes still match.
         if (out.size < 3 && lower.length >= 2) {
-            for (x in byFirst[lower.first()].orEmpty()) {
+            for (x in dict) {
                 if (out.size >= 3) break
                 if (near(lower, x)) { val cx = cased(x, w); if (cx !in out) out.add(cx) }
             }
