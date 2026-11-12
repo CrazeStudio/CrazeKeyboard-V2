@@ -602,6 +602,21 @@ class SettingsActivity : Activity() {
             override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
             override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
         })
+
+        resizeSection.addView(text("Quick height presets", 13f, ink, true).apply {
+            setPadding(0, dp(6), 0, dp(8))
+        })
+        val heightPresets = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        listOf("Compact" to 40, "Standard" to 46, "Tall" to 54).forEachIndexed { index, preset ->
+            heightPresets.addView(action(preset.first) {
+                heightSeek.progress = preset.second - 34
+                updateKeyboardPreview()
+            }, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                if (index > 0) leftMargin = dp(5)
+                if (index < 2) rightMargin = dp(5)
+            })
+        }
+        resizeSection.addView(heightPresets)
         content.addView(resizeSection, margin())
         previewFrame.post { updateKeyboardPreview() }
         val layout = section("Keyboard modes", "Choose how the keyboard sits above the app.")
