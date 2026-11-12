@@ -7,6 +7,10 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
 import java.util.Locale
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
+import android.os.Handler
+import android.os.Looper
 import java.util.zip.GZIPInputStream
 
 /**
@@ -27,6 +31,10 @@ internal object NextWordPredictor {
     @Volatile private var mapped: ByteBuffer? = null
     @Volatile private var indexedCount = 0
     @Volatile private var dataStart = 0
+    @Volatile private var loading = false
+    @Volatile private var loadFailed = false
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val callbacks = CopyOnWriteArrayList<() -> Unit>()
 
     private fun validModel(file: File): Boolean {
         if (!file.isFile || file.length() < HEADER_SIZE) return false
@@ -98,9 +106,45 @@ internal object NextWordPredictor {
         }
     }
 
-    /** Pre-decompress and open the index off the UI thread during service startup. */
-    fun warm(context: Context) {
-        open(context.applicationContext)
+    /**
+     * Load the optional language model only after a real next-word lookup is requested.
+     * GZIP extraction and memory mapping run off the keyboard UI thread. The mapped
+     * file is demand-paged by the OS, so only index/data pages touched by lookups enter RAM.
+     */
+    fun loadAsync(context: Context, onReady: (() -> Unit)? = null) {
+        mapped?.let {
+            onReady?.let { callback -> mainHandler.post(callback) }
+            return
+        }
+        if (loadFailed) return
+        onReady?.let { callbacks.add(it) }
+        synchronized(this) {
+            if (mapped != null) {
+                drainCallbacks()
+                return
+            }
+            if (loading || loadFailed) return
+            loading = true
+        }
+        Thread({
+            val result = open(context.applicationContext)
+            synchronized(this) {
+                loading = false
+                if (result == null) loadFailed = true
+            }
+            drainCallbacks()
+        }, "craze-language-model").apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    private fun drainCallbacks() {
+        val pending = callbacks.toList()
+        callbacks.clear()
+        if (pending.isNotEmpty()) mainHandler.post { pending.forEach { callback ->
+            try { callback() } catch (_: Exception) { }
+        } }
     }
 
     /** Return up to three likely next words for the text immediately before the cursor. */
@@ -111,7 +155,7 @@ internal object NextWordPredictor {
             .filter { it.isNotBlank() }
             .takeLast(3)
         if (tokens.isEmpty()) return emptyList()
-        val buffer = open(context) ?: return emptyList()
+        val buffer = mapped ?: return emptyList()
         val ranked = LinkedHashSet<String>(limit)
         // Prefer the most specific context, then back off to shorter contexts.
         for (size in minOf(3, tokens.size) downTo 1) {
