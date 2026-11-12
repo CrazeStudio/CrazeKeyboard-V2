@@ -1263,7 +1263,11 @@ class CrazeKeyboardService : InputMethodService() {
             val tab = iconBtn(key, 18f) { }
             tab.alpha = if (key == "😀") 1f else 0.48f
             tab.setOnClickListener {
-                if (search.text.isNotEmpty()) search.setText("")
+                if (emojiSearchQuery.isNotEmpty()) {
+                    emojiSearchQuery = ""
+                    showPanel("emoji")
+                    return@setOnClickListener
+                }
                 selectTab(key)
                 body.post {
                     sectionViews[key]?.let { body.smoothScrollTo(0, it.top) }
