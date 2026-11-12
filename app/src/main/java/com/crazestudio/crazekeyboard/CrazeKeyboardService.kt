@@ -13,7 +13,9 @@ import android.inputmethodservice.InputMethodService
 import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.Looper
+import android.os.Process
 import android.os.SystemClock
 import android.text.InputType
 import android.text.TextUtils
@@ -41,6 +43,33 @@ class CrazeKeyboardService : InputMethodService() {
     private val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
     private val ctx: Context get() = this
     private val hd = Handler(Looper.getMainLooper())
+    // Editor reads and ranking are isolated from the keyboard UI thread.
+    private val suggestionThread = HandlerThread("craze-suggestions", Process.THREAD_PRIORITY_BACKGROUND).apply { start() }
+    private val suggestionWorker = Handler(suggestionThread.looper)
+    @Volatile private var cachedBeforeCursor = ""
+    @Volatile private var cachedHasEditorText = false
+    @Volatile private var contextEpoch = 0L
+    @Volatile private var predictionEpoch = 0L
+    private var predictionTask: Runnable? = null
+    private var waitingForPhraseModel = false
+    private var waitingForVocabulary = false
+    private var pendingCorrectedWord: Pair<List<String>, String>? = null
+
+    private val contextSyncR = Runnable {
+        val epoch = contextEpoch
+        val connection = currentInputConnection
+        if (connection != null) {
+            val before = try { connection.getTextBeforeCursor(160, 0)?.toString().orEmpty() } catch (_: Exception) { "" }
+            val hasAfter = try { !connection.getTextAfterCursor(1, 0).isNullOrEmpty() } catch (_: Exception) { false }
+            hd.post {
+                if (epoch == contextEpoch && connection === currentInputConnection) {
+                    cachedBeforeCursor = before
+                    cachedHasEditorText = before.isNotEmpty() || hasAfter
+                    scheduleRefresh()
+                }
+            }
+        }
+    }
 
     private lateinit var outer: FrameLayout
     private lateinit var kbd: LinearLayout
@@ -152,6 +181,8 @@ class CrazeKeyboardService : InputMethodService() {
         dismissPopups()
         VoiceActivity.callback = null   // the callback captures this service; don't leak it
         TextEditorActivity.callback = null
+        suggestionWorker.removeCallbacksAndMessages(null)
+        suggestionThread.quitSafely()
         pageCache.clear(); emojiGrids.clear()
         super.onDestroy()
     }
@@ -344,9 +375,14 @@ class CrazeKeyboardService : InputMethodService() {
         shift = 0
         autoShift = false
         lastCorrection = null
+        pendingCorrectedWord = null
+        cachedBeforeCursor = ""
+        cachedHasEditorText = false
+        contextEpoch++
         mode = if (cls == InputType.TYPE_CLASS_NUMBER || cls == InputType.TYPE_CLASS_PHONE) "symbols" else "letters"
         buildTop()
         showPanel(mode)
+        syncContextAsync()
         updateSuggestions()
         deliverVoice()
         deliverEditor()
@@ -355,13 +391,19 @@ class CrazeKeyboardService : InputMethodService() {
     // Cursor moved / text changed outside the keyboard. Debounced so rapid edits cost one refresh.
     override fun onUpdateSelection(oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int, candidatesStart: Int, candidatesEnd: Int) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        syncContextAsync()
         if (::top.isInitialized) scheduleRefresh()
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
         hd.removeCallbacksAndMessages(null)   // pending refresh, key-repeat and long-press timers must not outlive the input view
+        suggestionWorker.removeCallbacks(contextSyncR)
+        predictionTask?.let(suggestionWorker::removeCallbacks)
+        predictionEpoch++
+        contextEpoch++
         dismissPopups()
         lastCorrection = null
+        pendingCorrectedWord = null
         super.onFinishInputView(finishingInput)
     }
 
@@ -379,11 +421,25 @@ class CrazeKeyboardService : InputMethodService() {
     }
 
     // ---------- adaptive top bar ----------
-    private fun hasEditorText(): Boolean {
-        val ic = currentInputConnection ?: return false
-        return !ic.getTextBeforeCursor(1, 0).isNullOrEmpty() ||
-            !ic.getTextAfterCursor(1, 0).isNullOrEmpty()
+    private fun hasEditorText(): Boolean = cachedHasEditorText || cachedBeforeCursor.isNotEmpty()
+
+    /** Read target-editor context off the UI thread; callers only read the local snapshot. */
+    private fun syncContextAsync() {
+        suggestionWorker.removeCallbacks(contextSyncR)
+        suggestionWorker.postDelayed(contextSyncR, 45)
     }
+
+    private fun setLocalContext(value: String) {
+        cachedBeforeCursor = value.takeLast(160)
+        cachedHasEditorText = cachedBeforeCursor.isNotEmpty()
+        contextEpoch++
+    }
+
+    private fun tokensBeforeCursor(value: String): List<String> =
+        value.lowercase().split(Regex("[^\\\\p{L}']+")).filter { it.isNotBlank() }.takeLast(3)
+
+    private fun wordAtCursor(value: String): String =
+        value.takeLastWhile { it.isLetter() || it == '\'' }
 
     private fun desiredTopState(): String = when {
         mode == "menu" -> "menu"
@@ -401,7 +457,6 @@ class CrazeKeyboardService : InputMethodService() {
         "floating" -> if (floating) "Dock" else "Floating"
         "resize" -> "Resize"
         "settings" -> "Settings"
-        "switch" -> "Switch keyboard"
         "keyboard" -> "Keyboard"
         "hide" -> "Hide"
         else -> "Tool"
@@ -417,7 +472,6 @@ class CrazeKeyboardService : InputMethodService() {
         "floating" -> if (floating) R.drawable.ic_dock else R.drawable.ic_float
         "resize" -> R.drawable.ic_grip
         "settings" -> R.drawable.ic_settings
-        "switch" -> R.drawable.ic_globe
         "keyboard" -> R.drawable.ic_activity
         "hide" -> R.drawable.ic_hide
         else -> R.drawable.ic_menu
@@ -435,7 +489,6 @@ class CrazeKeyboardService : InputMethodService() {
             "resize" -> startActivity(Intent(ctx, SettingsActivity::class.java)
                 .putExtra("open_resizer", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             "settings" -> startActivity(Intent(ctx, SettingsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            "switch" -> switchKeyboard()
             "keyboard" -> showPanel("letters")
             "hide" -> { showPanel("letters"); requestHideSelf(0) }
         }
@@ -506,62 +559,102 @@ class CrazeKeyboardService : InputMethodService() {
         top.addView(row, FrameLayout.LayoutParams(MATCH, MATCH))
     }
 
-    private fun currentWord(): String {
-        val before = currentInputConnection?.getTextBeforeCursor(30, 0)?.toString() ?: ""
-        return before.takeLastWhile { it.isLetter() || it == '\'' }
-    }
+    private fun currentWord(): String = wordAtCursor(cachedBeforeCursor)
 
     private fun updateSuggestions() {
         val state = desiredTopState()
         if (state != lastTopState) buildTop()
         if (state != "suggestions" || sugViews.isEmpty()) return
 
-        val w = currentWord()
-        val list = when {
-            w.isEmpty() && !nextWordOn -> emptyList()
-            w.isEmpty() -> {
-                val context = currentInputConnection?.getTextBeforeCursor(160, 0)?.toString().orEmpty()
-                val predicted = NextWordPredictor.predict(this, context)
-                if (context.isNotBlank() && predicted.isEmpty()) {
-                    // Do not inflate the model at keyboard startup. Load it only when the
-                    // user actually asks for next-word suggestions after typing a word.
-                    NextWordPredictor.loadAsync(applicationContext) { scheduleRefresh() }
+        val snapshot = cachedBeforeCursor
+        val epoch = ++predictionEpoch
+        predictionTask?.let(suggestionWorker::removeCallbacks)
+        val task = Runnable {
+            val word = wordAtCursor(snapshot)
+            val suggestions = when {
+                word.isEmpty() && !nextWordOn -> emptyList()
+                word.isEmpty() -> {
+                    val base = NextWordPredictor.predict(this, snapshot)
+                    if (snapshot.isNotBlank() && base.isEmpty() && !waitingForPhraseModel) {
+                        waitingForPhraseModel = true
+                        NextWordPredictor.loadAsync(applicationContext) {
+                            waitingForPhraseModel = false
+                            scheduleRefresh()
+                        }
+                    }
+                    val tokens = tokensBeforeCursor(snapshot)
+                    if (Prefs.b(this, "personalized", true))
+                        UserLanguageModel.rank(this, tokens, base, 3).ifEmpty { base }
+                    else base
                 }
-                predicted.ifEmpty { Words.suggest(this, "") }
+                else -> {
+                    if (!VocabularyIndex.isLoaded() && !waitingForVocabulary) {
+                        waitingForVocabulary = true
+                        VocabularyIndex.loadAsync(applicationContext) {
+                            waitingForVocabulary = false
+                            scheduleRefresh()
+                        }
+                    }
+                    Words.suggest(this, word)
+                }
+            }.ifEmpty { Words.suggest(this, if (word.isEmpty()) "" else word) }
+
+            hd.post {
+                if (epoch != predictionEpoch || !::top.isInitialized || desiredTopState() != "suggestions") return@post
+                for (i in 0..2) {
+                    if (i < sugViews.size) sugViews[i].text = suggestions.getOrNull(i) ?: ""
+                }
             }
-            else -> Words.suggest(this, w)
         }
-        for (i in 0..2) sugViews[i].text = list.getOrNull(i) ?: ""
+        predictionTask = task
+        suggestionWorker.post(task)
     }
 
     private fun pickSuggestion(s: String) {
         val ic = currentInputConnection ?: return
         if (s.isEmpty()) return
+        val before = cachedBeforeCursor
         val w = currentWord()
+        val previous = tokensBeforeCursor(before).let {
+            if (w.isNotEmpty() && it.lastOrNull() == w.lowercase()) it.dropLast(1) else it
+        }.takeLast(2)
+        acceptPendingCorrection()
         lastCorrection = null
         ic.beginBatchEdit()
         ic.deleteSurroundingText(w.length, 0)
         ic.commitText("$s ", 1)
         ic.endBatchEdit()
+        setLocalContext((if (w.isNotEmpty()) before.dropLast(w.length) else before) + "$s ")
+        if (!incognito && Prefs.b(this, "personalized", true)) {
+            val count = UserLanguageModel.observe(this, previous, s)
+            if (!Words.known(s) && count >= 2) Words.learn(this, s)
+        }
         scheduleRefresh()
     }
 
-    // Only learn a new word once it has been typed twice, so one-off typos don't pollute suggestions.
-    private fun noteWord(w: String) {
-        if (incognito || w.length < 3 || Words.known(w)) return
-        val k = w.lowercase()
-        if (seen.size > 300) seen.clear()
-        val n = (seen[k] ?: 0) + 1
-        seen[k] = n
-        if (n >= 2) Words.learn(this, w)
+    private fun confirmWord(word: String, before: String) {
+        if (incognito || word.length < 2 || !Prefs.b(this, "personalized", true)) return
+        val tokens = tokensBeforeCursor(before)
+        val previous = if (tokens.lastOrNull() == word.lowercase()) tokens.dropLast(1).takeLast(2) else tokens.takeLast(2)
+        val count = UserLanguageModel.observe(this, previous, word)
+        if (!Words.known(word) && count >= 2) Words.learn(this, word)
+    }
+
+    private fun acceptPendingCorrection() {
+        val pending = pendingCorrectedWord ?: return
+        pendingCorrectedWord = null
+        if (!incognito && Prefs.b(this, "personalized", true)) {
+            val count = UserLanguageModel.observe(this, pending.first, pending.second)
+            if (!Words.known(pending.second) && count >= 2) Words.learn(this, pending.second)
+        }
+        lastCorrection = null
     }
 
     // ---------- typing actions ----------
     private fun autoCap() {
         if (shift == 2 || mode != "letters") return
-        val ei = currentInputEditorInfo ?: return
-        val ic = currentInputConnection ?: return
-        val want = ei.inputType != 0 && ic.getCursorCapsMode(ei.inputType) != 0
+        val trimmed = cachedBeforeCursor.trimEnd()
+        val want = trimmed.isEmpty() || trimmed.last() in ".!?\\n"
         if (want && shift == 0) { shift = 1; autoShift = true; updateCase() }
         else if (!want && shift == 1 && autoShift) { shift = 0; autoShift = false; updateCase() }
     }
@@ -579,20 +672,29 @@ class CrazeKeyboardService : InputMethodService() {
     private fun type(s: String) {
         dismissAlts()
         val ic = currentInputConnection ?: return
-        lastCorrection = null
         if (s == " ") { space(ic); return }
-        ic.commitText(if (shift > 0 && mode == "letters") s.uppercase() else s, 1)
+        acceptPendingCorrection()
+        lastCorrection = null
+        val inserted = if (shift > 0 && mode == "letters") s.uppercase() else s
+        ic.commitText(inserted, 1)
+        setLocalContext(cachedBeforeCursor + inserted)
         if (shift == 1) { shift = 0; autoShift = false; updateCase() }
         scheduleRefresh()
     }
 
     private fun space(ic: InputConnection) {
-        val before = ic.getTextBeforeCursor(30, 0)?.toString() ?: ""
-        val word = before.takeLastWhile { it.isLetter() || it == '\'' }
-        noteWord(word)
-        // Second space right after a word turns into ". "
+        val before = cachedBeforeCursor
+        val word = wordAtCursor(before)
+        val previousTokens = tokensBeforeCursor(before).let {
+            if (word.isNotEmpty() && it.lastOrNull() == word.lowercase()) it.dropLast(1).takeLast(2) else it.takeLast(2)
+        }
+
+        // A subsequent space accepts the displayed correction, while backspace can still undo it.
+        acceptPendingCorrection()
         if (doubleSpaceOn && before.length >= 2 && before[before.length - 1] == ' ' && before[before.length - 2].isLetterOrDigit()) {
-            ic.deleteSurroundingText(1, 0); ic.commitText(". ", 1)
+            ic.deleteSurroundingText(1, 0)
+            ic.commitText(". ", 1)
+            setLocalContext(before.dropLast(1) + ". ")
         } else {
             val fix = if (autoCorrectOn && suggestOn && !incognito && word.isNotEmpty()) Words.correction(this, word) else null
             if (fix != null) {
@@ -601,7 +703,13 @@ class CrazeKeyboardService : InputMethodService() {
                 ic.commitText("$fix ", 1)
                 ic.endBatchEdit()
                 lastCorrection = word to fix
-            } else ic.commitText(" ", 1)
+                pendingCorrectedWord = previousTokens to fix
+                setLocalContext(before.dropLast(word.length) + "$fix ")
+            } else {
+                confirmWord(word, before)
+                ic.commitText(" ", 1)
+                setLocalContext(before + " ")
+            }
         }
         scheduleRefresh()
     }
@@ -613,24 +721,29 @@ class CrazeKeyboardService : InputMethodService() {
         lastCorrection = null
         if (lc != null) {
             val ic = currentInputConnection
-            val before = ic?.getTextBeforeCursor(lc.second.length + 1, 0)?.toString()
-            if (ic != null && before == lc.second + " ") {
+            val before = cachedBeforeCursor
+            if (ic != null && before.endsWith(lc.second + " ")) {
                 ic.beginBatchEdit()
                 ic.deleteSurroundingText(lc.second.length + 1, 0)
                 ic.commitText(lc.first, 1)
                 ic.endBatchEdit()
-                if (!incognito) Words.learn(this, lc.first)
+                pendingCorrectedWord = null
+                setLocalContext(before.dropLast(lc.second.length + 1) + lc.first)
                 scheduleRefresh()
                 return
             }
         }
+        val before = cachedBeforeCursor
         sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
+        val end = if (before.isEmpty()) 0 else before.offsetByCodePoints(before.length, -1)
+        setLocalContext(before.substring(0, end))
         scheduleRefresh()
     }
 
     private fun actionId(): Int = (currentInputEditorInfo?.imeOptions ?: 0) and EditorInfo.IME_MASK_ACTION
 
     private fun enter() {
+        acceptPendingCorrection()
         lastCorrection = null
         val ei = currentInputEditorInfo
         val a = actionId()
@@ -678,6 +791,7 @@ class CrazeKeyboardService : InputMethodService() {
         val edited = TextEditorActivity.take() ?: return
         val ic = currentInputConnection ?: return
         ic.commitText(edited, 1)
+        setLocalContext(cachedBeforeCursor + edited)
         scheduleRefresh()
         TextEditorActivity.callback = null
     }
@@ -695,6 +809,7 @@ class CrazeKeyboardService : InputMethodService() {
         val ic = currentInputConnection
         if (ic == null) { VoiceActivity.post(txt); return }
         ic.commitText("$txt ", 1)
+        setLocalContext(cachedBeforeCursor + "$txt ")
         scheduleRefresh()
     }
 
