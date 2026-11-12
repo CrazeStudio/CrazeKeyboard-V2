@@ -40,7 +40,7 @@ object Words {
     }
     private val starters = listOf("I", "The", "Thanks")
 
-    fun known(w: String) = dictSet.contains(w.lowercase())
+    fun known(w: String) = dictSet.contains(w.lowercase()) || VocabularyIndex.contains(w)
 
     fun learn(c: Context, w: String) {
         val lw = w.lowercase()
@@ -85,7 +85,11 @@ object Words {
         val lower = w.lowercase()
         if (lower in dictSet || Prefs.isLearned(c, lower)) return null
         var found: String? = null
-        for (x in byFirst[lower[0]].orEmpty()) {
+        val candidates = LinkedHashSet<String>()
+        candidates.addAll(byFirst[lower[0]].orEmpty())
+        candidates.addAll(Prefs.learned(c))
+        candidates.addAll(VocabularyIndex.byFirstLetter(lower[0]))
+        for (x in candidates) {
             if (!near(lower, x)) continue
             if (found != null) return null
             found = x
@@ -102,6 +106,12 @@ object Words {
         for (x in Prefs.learned(c)) {
             if (out.size >= 3) break
             if (x.startsWith(lower) && x != lower) { val cx = cased(x, w); if (cx !in out) out.add(cx) }
+        }
+        val lexiconCandidates = VocabularyIndex.suggest(lower, 3)
+        for (x in lexiconCandidates) {
+            if (out.size >= 3) break
+            val cx = cased(x, w)
+            if (cx !in out) out.add(cx)
         }
         val prefixCandidates = if (lower.length >= 2) byPrefix[lower.take(2)].orEmpty()
             else byFirst[lower.first()].orEmpty()
