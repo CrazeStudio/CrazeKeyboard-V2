@@ -32,6 +32,7 @@ import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupWindow
@@ -1373,16 +1374,6 @@ class CrazeKeyboardService : InputMethodService() {
         val tabViews = LinkedHashMap<String, TextView>()
         var selectedKey = categoryKeys.firstOrNull() ?: "😀"
 
-        fun selectTab(key: String) {
-            selectedKey = key
-            tabViews.forEach { (name, view) ->
-                val active = name == key
-                view.alpha = if (active) 1f else 0.58f
-                view.background = if (active) rounded(t.special, 12) else rounded(t.bg, 12)
-            }
-            render()
-        }
-
         fun render() {
             content.removeAllViews()
             val query = emojiSearchQuery.trim()
@@ -1412,6 +1403,16 @@ class CrazeKeyboardService : InputMethodService() {
             }
             content.addView(emojiGrid(values))
             body.scrollTo(0, 0)
+        }
+
+        fun selectTab(key: String) {
+            selectedKey = key
+            tabViews.forEach { (name, view) ->
+                val active = name == key
+                view.alpha = if (active) 1f else 0.58f
+                view.background = if (active) rounded(t.special, 12) else rounded(t.bg, 12)
+            }
+            render()
         }
 
         categoryKeys.forEach { key ->
