@@ -315,6 +315,13 @@ class SettingsActivity : Activity() {
         addPackRow("bn", "Bengali")
         packsSection.addView(divider())
         addPackRow("hi", "Hindi")
+        packsSection.addView(divider())
+        packsSection.addView(settingSwitch(
+            "Online prefix suggestions",
+            "Send only the current word prefix and language to CrazePredictionAPI. Never sends the sentence.",
+            "onlinepred",
+            true
+        ))
         content.addView(packsSection, margin())
 
         val status = section("Keyboard status", "Complete both steps to use CrazeKeyboard in other apps.")
