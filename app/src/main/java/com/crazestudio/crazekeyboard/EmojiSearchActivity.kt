@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.Context
 import android.graphics.Color
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -78,9 +80,12 @@ class EmojiSearchActivity : Activity() {
     }
 
     private fun submit() {
-        callback?.invoke(query.text.toString().trim())
-        callback = null
+        val value = query.text.toString().trim()
         (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(query.windowToken, 0)
         finish()
+        Handler(Looper.getMainLooper()).postDelayed({
+            callback?.invoke(value)
+            callback = null
+        }, 250)
     }
 }
