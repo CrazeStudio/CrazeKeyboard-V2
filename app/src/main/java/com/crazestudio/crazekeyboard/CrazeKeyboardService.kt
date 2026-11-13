@@ -434,7 +434,7 @@ class CrazeKeyboardService : InputMethodService() {
     private val refreshR = Runnable { if (::top.isInitialized) { autoCap(); updateSuggestions() } }
     private fun scheduleRefresh() {
         hd.removeCallbacks(refreshR)
-        hd.postDelayed(refreshR, 24)
+        hd.postDelayed(refreshR, 32)
     }
 
     // ---------- top bar: menu button + suggestions ----------
@@ -643,13 +643,10 @@ class CrazeKeyboardService : InputMethodService() {
             val suggestions = when {
                 word.isEmpty() && !nextWordOn -> emptyList()
                 word.isEmpty() -> {
-                    // CrazeLM is the primary next-word predictor once its local LiteRT
-                    // runtime is ready. Keep the compact phrase model as a non-blocking fallback.
-                    val aiBase = if (!incognito) {
-                        CrazeLmTflitePredictor.predictNextWords(applicationContext, snapshot, 3)
-                    } else emptyList()
-                    val base = aiBase.ifEmpty { NextWordPredictor.predict(this, snapshot) }
-                    if (snapshot.isNotBlank() && base.isEmpty() && aiBase.isEmpty() && !waitingForPhraseModel) {
+                    // Show the tiny phrase model immediately; never make the user wait
+                    // for the 100k-logit neural model before the suggestion strip updates.
+                    val phraseBase = NextWordPredictor.predict(this, snapshot, 3)
+                    if (snapshot.isNotBlank() && phraseBase.isEmpty() && !waitingForPhraseModel) {
                         waitingForPhraseModel = true
                         NextWordPredictor.loadAsync(applicationContext) {
                             waitingForPhraseModel = false
@@ -657,9 +654,30 @@ class CrazeKeyboardService : InputMethodService() {
                         }
                     }
                     val tokens = tokensBeforeCursor(snapshot)
-                    if (Prefs.b(this, "personalized", true)) {
-                        val personalized = UserLanguageModel.rank(this, tokens, base, 8).ifEmpty { base }
-                        TinyNeuralRanker.rank(this, tokens, personalized, 3)
+                    val personalized = Prefs.b(this, "personalized", true)
+                    val quickBase = phraseBase.ifEmpty { Words.suggest(this, "") }
+                    val quickSuggestions = if (personalized) {
+                        val ranked = UserLanguageModel.rank(this, tokens, quickBase, 8).ifEmpty { quickBase }
+                        TinyNeuralRanker.rank(this, tokens, ranked, 3)
+                    } else quickBase
+                    hd.post {
+                        if (epoch == predictionEpoch && ::top.isInitialized &&
+                            desiredTopState() == "suggestions") {
+                            for (i in 0..2) if (i < sugViews.size) {
+                                sugViews[i].text = quickSuggestions.getOrNull(i) ?: ""
+                            }
+                        }
+                    }
+
+                    // Refine in the background. The runtime now reuses tensors and
+                    // scans prevalidated word-start pieces instead of all 100k IDs.
+                    val aiBase = if (!incognito) {
+                        CrazeLmTflitePredictor.predictNextWords(applicationContext, snapshot, 3)
+                    } else emptyList()
+                    val base = aiBase.ifEmpty { phraseBase }
+                    if (base.isEmpty()) quickSuggestions else if (personalized) {
+                        val ranked = UserLanguageModel.rank(this, tokens, base, 8).ifEmpty { base }
+                        TinyNeuralRanker.rank(this, tokens, ranked, 3)
                     } else base
                 }
                 else -> {
