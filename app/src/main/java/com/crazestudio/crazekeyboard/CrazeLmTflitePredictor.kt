@@ -8,8 +8,6 @@ import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import java.io.File
 import java.util.concurrent.Executors
-import java.util.concurrent.ScheduledFuture
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -69,7 +67,7 @@ internal object CrazeLmTflitePredictor {
         val app = context.applicationContext
         executor.execute {
             try {
-                // Reloads after an idle unload reuse the verified files instead of re-checking them.
+                // Rebuilds after memory-pressure unload reuse verified files instead of re-checking them.
                 val known = files?.takeIf { it.model.isFile && it.tokenizer.isFile }
                 val resolved = known ?: CrazeLmAssets.ensureDownloaded(app) { message -> publish(message) }
                     .also { files = it }
