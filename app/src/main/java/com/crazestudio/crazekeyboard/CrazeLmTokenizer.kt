@@ -82,9 +82,11 @@ internal class CrazeLmTokenizer private constructor(
             while (!reader.done()) {
                 val (field, wire) = reader.readTag()
                 if (field == 1 && wire == 2) {
-                    val length = reader.varint().toInt()
-                    val end = reader.position + length
-                    require(length >= 0 && end <= data.size) { "Invalid SentencePiece record length." }
+                    val length = reader.varint()
+                    require(length >= 0 && length <= (data.size - reader.position).toLong()) {
+                        "Invalid SentencePiece record length $length at byte ${reader.position}."
+                    }
+                    val end = reader.position + length.toInt()
                     parsed.add(parsePiece(data, reader.position, end))
                     reader.setPosition(end)
                 } else reader.skipField(field, wire)
@@ -125,16 +127,19 @@ internal class CrazeLmTokenizer private constructor(
                 val (field, wire) = reader.readTag()
                 when {
                     field == 1 && wire == 2 -> {
-                        val len = reader.varint().toInt()
-                        require(len >= 0 && reader.position + len <= end) { "Invalid piece string length." }
-                        token = String(data, reader.position, len, Charsets.UTF_8)
-                        reader.position += len
+                        val len = reader.varint()
+                        require(len >= 0 && len <= (end - reader.position).toLong()) {
+                            "Invalid piece string length $len at byte ${reader.position}."
+                        }
+                        val byteLength = len.toInt()
+                        token = String(data, reader.position, byteLength, Charsets.UTF_8)
+                        reader.setPosition(reader.position + byteLength)
                     }
                     field == 2 && wire == 5 -> {
                         require(reader.position + 4 <= end) { "Truncated SentencePiece score." }
                         score = ByteBuffer.wrap(data, reader.position, 4)
                             .order(ByteOrder.LITTLE_ENDIAN).float
-                        reader.position += 4
+                        reader.setPosition(reader.position + 4)
                     }
                     field == 3 && wire == 0 -> type = reader.varint().toInt()
                     else -> reader.skipField(field, wire)
