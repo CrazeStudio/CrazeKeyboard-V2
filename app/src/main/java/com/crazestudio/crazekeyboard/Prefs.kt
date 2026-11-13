@@ -1,6 +1,7 @@
 package com.crazestudio.crazekeyboard
 
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Color
 import android.content.SharedPreferences
 
@@ -31,34 +32,65 @@ object Prefs {
     fun setB(c: Context, k: String, v: Boolean) = sp(c).edit().putBoolean(k, v).apply()
     fun i(c: Context, k: String, d: Int) = sp(c).getInt(k, d)
     fun setI(c: Context, k: String, v: Int) = sp(c).edit().putInt(k, v).apply()
-    private fun systemTheme(c: Context): Theme {
+    private fun isNightMode(c: Context): Boolean =
+        (c.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+
+    private fun contrastText(color: Int): Int {
+        val luminance = (0.2126 * Color.red(color) + 0.7152 * Color.green(color) +
+            0.0722 * Color.blue(color)) / 255.0
+        return if (luminance > 0.58) Color.BLACK else Color.WHITE
+    }
+
+    private fun darken(color: Int, amount: Float): Int = Color.rgb(
+        (Color.red(color) * (1f - amount)).toInt().coerceIn(0, 255),
+        (Color.green(color) * (1f - amount)).toInt().coerceIn(0, 255),
+        (Color.blue(color) * (1f - amount)).toInt().coerceIn(0, 255)
+    )
+
+    private fun systemTheme(c: Context, night: Boolean): Theme {
         val attrs = c.obtainStyledAttributes(intArrayOf(
             android.R.attr.colorBackground,
             android.R.attr.textColorPrimary,
-            android.R.attr.colorAccent,
-            android.R.attr.colorControlHighlight
+            android.R.attr.colorAccent
         ))
         val bg = attrs.getColor(0, Color.rgb(245, 246, 250))
         val text = attrs.getColor(1, Color.rgb(28, 32, 40))
         val accent = attrs.getColor(2, Color.rgb(80, 100, 210))
-        val highlight = attrs.getColor(3, Color.argb(28, 80, 100, 210))
         attrs.recycle()
-        val luminance = (0.2126 * Color.red(accent) + 0.7152 * Color.green(accent) +
-            0.0722 * Color.blue(accent)) / 255.0
-        return Theme(bg, bg, highlight, text, accent,
-            if (luminance > 0.55) Color.BLACK else Color.WHITE)
+        return if (night) {
+            // Host-app theme attributes can remain light even while Android is in dark mode.
+            Theme(0xFF15171D.toInt(), 0xFF292D36.toInt(), 0xFF222630.toInt(),
+                0xFFF0F2F7.toInt(), accent, contrastText(accent))
+        } else {
+            Theme(bg, Color.WHITE, Color.rgb(229, 233, 241), text, accent, contrastText(accent))
+        }
     }
 
-    // Theme index 0 follows Android's current system/dynamic palette (Material You on Android 12+).
+    private fun darkVariant(theme: Theme): Theme = Theme(
+        darken(theme.bg, 0.82f),
+        darken(theme.key, 0.76f),
+        darken(theme.special, 0.72f),
+        0xFFF0F2F7.toInt(),
+        theme.accent,
+        contrastText(theme.accent)
+    )
+
+    // System follows Android's light/dark mode. Custom light palettes also become dark surfaces at night.
     fun theme(c: Context): Theme {
         val index = i(c, "theme", 0).coerceIn(0, themes.size - 1)
-        return if (index == 0) systemTheme(c) else themes[index]
+        val night = isNightMode(c)
+        return when {
+            index == 0 -> systemTheme(c, night)
+            night && index != 1 -> darkVariant(themes[index])
+            else -> themes[index]
+        }
     }
     fun nextTheme(c: Context) = setI(c, "theme", (i(c, "theme", 0) + 1) % themes.size)
     fun nextOneHand(c: Context) = setI(c, "onehand", (i(c, "onehand", 0) + 1) % 3)
     fun keyH(c: Context) = i(c, "keyh", 46).coerceIn(34, 64)
     fun keyWidth(c: Context) = i(c, "kbdwidth", 100).coerceIn(55, 100)
-    fun sig(c: Context) = "${i(c, "theme", 0)}|${i(c, "onehand", 0)}|${keyH(c)}|${keyWidth(c)}|${b(c, "numrow", true)}"
+    fun oneHandWidth(c: Context) = i(c, "onehandWidth", 78).coerceIn(60, 90)
+    fun sig(c: Context) = "${i(c, "theme", 0)}|${i(c, "onehand", 0)}|${keyH(c)}|${keyWidth(c)}|${oneHandWidth(c)}|${b(c, "numrow", true)}|${c.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK}"
 
     private fun list(c: Context, k: String) = (sp(c).getString(k, "") ?: "").split(SEP).filter { it.isNotEmpty() }
     private fun put(c: Context, k: String, l: List<String>) = sp(c).edit().putString(k, l.joinToString(SEP)).apply()
