@@ -13,6 +13,7 @@ import android.graphics.drawable.RippleDrawable
 import android.os.Bundle
 import java.util.concurrent.Executors
 import java.io.FileOutputStream
+import java.security.MessageDigest
 import java.io.File
 import android.os.Looper
 import android.os.Handler
@@ -36,7 +37,7 @@ class SettingsActivity : Activity() {
 
     private fun testCrazeLmModel(uri: Uri) {
         val status = crazeLmStatus ?: return
-        status.text = "Copying the selected model into private app storage…"
+        status.text = "Copying and verifying the selected FP16 model… "
         crazeLmTestExecutor.execute {
             val modelDir = File(filesDir, "crazelm-test")
             val temporary = File(modelDir, "CrazeLM-test.onnx.tmp")
@@ -46,6 +47,7 @@ class SettingsActivity : Activity() {
                     error("Could not create the private model test directory.")
                 }
                 var copied = 0L
+                val sha256 = MessageDigest.getInstance("SHA-256")
                 val source = contentResolver.openInputStream(uri)
                     ?: error("Android could not open the selected file.")
                 source.use { input ->
@@ -55,6 +57,7 @@ class SettingsActivity : Activity() {
                             val count = input.read(buffer)
                             if (count < 0) break
                             copied += count
+                            sha256.update(buffer, 0, count)
                             if (copied > 512L * 1024L * 1024L) {
                                 error("Model file is larger than the 512 MiB test limit.")
                             }
@@ -63,6 +66,16 @@ class SettingsActivity : Activity() {
                     }
                 }
                 if (copied == 0L) error("The selected file is empty.")
+                val actualSha256 = sha256.digest().joinToString("") { "%02x".format(it) }
+                val expectedBytes = 59287679L
+                val expectedSha256 = "30530abe9ab79e6f2d849b0719b27f5c8ddf7a5db469e6fe6aefa6164860669a"
+                if (copied != expectedBytes || actualSha256 != expectedSha256) {
+                    error(
+                        "This is not the exact published CrazeLM FP16 ONNX asset, or the download is incomplete. " +
+                            "Size: $copied bytes (expected $expectedBytes). SHA-256: $actualSha256. " +
+                            "Download the FP16 .onnx asset again from the official CrazeLM v1.0 GitHub release."
+                    )
+                }
                 if (destination.exists() && !destination.delete()) {
                     error("Could not replace the previous test model.")
                 }
