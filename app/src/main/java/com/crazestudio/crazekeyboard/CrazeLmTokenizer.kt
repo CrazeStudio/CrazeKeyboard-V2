@@ -130,14 +130,14 @@ internal class CrazeLmTokenizer private constructor(
                         token = String(data, reader.position, len, Charsets.UTF_8)
                         reader.position += len
                     }
-                    key ushr 3 == 2 && key and 7 == 5 -> {
+                    field == 2 && wire == 5 -> {
                         require(reader.position + 4 <= end) { "Truncated SentencePiece score." }
                         score = ByteBuffer.wrap(data, reader.position, 4)
                             .order(ByteOrder.LITTLE_ENDIAN).float
                         reader.position += 4
                     }
-                    key ushr 3 == 3 && key and 7 == 0 -> type = reader.varint().toInt()
-                    else -> reader.skip(key and 7)
+                    field == 3 && wire == 0 -> type = reader.varint().toInt()
+                    else -> reader.skipField(field, wire)
                 }
             }
             require(token.isNotEmpty()) { "SentencePiece entry has no token string." }
@@ -149,39 +149,101 @@ internal class CrazeLmTokenizer private constructor(
         private val bytes: ByteArray, start: Int = 0, private val limit: Int = bytes.size
     ) {
         var position: Int = start
-        fun done(): Boolean = position >= limit
-        fun varint(): Long {
-            var result = 0L; var shift = 0
-            while (shift < 64) {
-                require(position < limit) { "Truncated protobuf varint." }
-                val b = bytes[position++].toInt() and 0xff
-                result = result or ((b and 0x7f).toLong() shl shift)
-                if ((b and 0x80) == 0) return result
-                shift += 7
+            private set
+
+        init {
+            require(start >= 0 && limit >= start && limit <= bytes.size) {
+                "Invalid protobuf reader bounds."
             }
-            throw IllegalArgumentException("Invalid protobuf varint.")
         }
-        fun skip(wire: Int) {
+
+        fun done(): Boolean = position == limit
+
+        fun varint(): Long {
+            var result = 0L
+            for (index in 0 until 10) {
+                require(position < limit) { "Truncated protobuf varint at byte $position." }
+                val b = bytes[position++].toInt() and 0xff
+                if (index == 9) {
+                    require(b <= 1) { "Protobuf varint overflows 64 bits at byte ${position - 1}." }
+                }
+                result = result or ((b and 0x7f).toLong() shl (index * 7))
+                if ((b and 0x80) == 0) return result
+            }
+            throw IllegalArgumentException("Invalid protobuf varint at byte $position.")
+        }
+
+        fun readTag(): Pair<Int, Int> {
+            val offset = position
+            val raw = varint()
+            require(raw in 1..0x7fffffffL) { "Invalid protobuf tag $raw at byte $offset." }
+            val field = (raw ushr 3).toInt()
+            val wire = (raw and 7).toInt()
+            require(field > 0) { "Invalid protobuf field number at byte $offset." }
+            require(wire in 0..5) {
+                "Invalid/reserved protobuf wire type $wire at byte $offset (tag=$raw). " +
+                    "The data may be truncated, corrupted, or parsed from the wrong offset."
+            }
+            return field to wire
+        }
+
+        fun skipField(fieldNumber: Int, wire: Int) {
             when (wire) {
                 0 -> varint()
-                1 -> position += 8
-                2 -> position += varint().toInt()
+                1 -> advance(8)
+                2 -> {
+                    val length = varint()
+                    require(length >= 0 && length <= (limit - position).toLong()) {
+                        "Invalid protobuf length $length at byte $position."
+                    }
+                    advance(length.toInt())
+                }
                 3 -> {
-                    // Deprecated protobuf groups: consume nested fields through END_GROUP.
-                    // SentencePiece ModelProto may contain unknown grouped extension fields.
+                    // Groups are deprecated but valid in the protobuf wire format.
                     while (true) {
-                        require(position < limit) { "Truncated protobuf group." }
-                        val key = varint().toInt()
-                        val nestedWire = key and 7
-                        if (nestedWire == 4) break
-                        skip(nestedWire)
+                        require(position < limit) { "Truncated protobuf group for field $fieldNumber." }
+                        val (nestedField, nestedWire) = readTagAllowEndGroup()
+                        if (nestedWire == 4) {
+                            require(nestedField == fieldNumber) {
+                                "Mismatched protobuf END_GROUP: expected field $fieldNumber, got $nestedField."
+                            }
+                            break
+                        }
+                        skipField(nestedField, nestedWire)
                     }
                 }
-                4 -> Unit // END_GROUP is consumed by the enclosing START_GROUP handler.
-                5 -> position += 4
+                4 -> throw IllegalArgumentException(
+                    "Unexpected protobuf END_GROUP for field $fieldNumber at byte $position."
+                )
+                5 -> advance(4)
                 else -> throw IllegalArgumentException("Unsupported protobuf wire type $wire.")
             }
-            require(position <= limit) { "Truncated SentencePiece protobuf." }
+        }
+
+        private fun readTagAllowEndGroup(): Pair<Int, Int> {
+            val offset = position
+            val raw = varint()
+            require(raw in 1..0x7fffffffL) { "Invalid protobuf tag $raw at byte $offset." }
+            val field = (raw ushr 3).toInt()
+            val wire = (raw and 7).toInt()
+            require(field > 0) { "Invalid protobuf field number at byte $offset." }
+            require(wire in 0..5) {
+                "Invalid/reserved protobuf wire type $wire at byte $offset (tag=$raw)."
+            }
+            return field to wire
+        }
+
+        private fun advance(count: Int) {
+            require(count >= 0 && count <= limit - position) {
+                "Truncated protobuf field at byte $position (need $count bytes)."
+            }
+            position += count
+        }
+
+        fun setPosition(value: Int) {
+            require(value >= position && value <= limit) { "Invalid protobuf seek to $value." }
+            position = value
         }
     }
+}
 }
