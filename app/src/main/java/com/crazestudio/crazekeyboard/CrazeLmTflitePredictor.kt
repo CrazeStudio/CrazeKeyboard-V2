@@ -146,7 +146,6 @@ internal object CrazeLmTflitePredictor {
     fun predictNextWords(context: Context, beforeCursor: String, limit: Int = 3): List<String> {
         if (limit <= 0 || beforeCursor.isBlank()) return emptyList()
         val active = runtime ?: return emptyList()
-        lastUsedAt = SystemClock.elapsedRealtime()
         return try {
             active.predict(beforeCursor, limit)
         } catch (error: Throwable) {
