@@ -4,6 +4,7 @@ import android.content.Context
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import java.io.File
+import java.util.PriorityQueue
 import java.util.concurrent.Executors
 
 /**
@@ -13,6 +14,7 @@ import java.util.concurrent.Executors
 internal object CrazeLmTflitePredictor {
     private const val SEQUENCE_LENGTH = 48
     private const val VOCAB_SIZE = 100_000
+    private const val CANDIDATE_SCAN = 384
 
     @Volatile private var runtime: Runtime? = null
     @Volatile private var loading = false
@@ -78,6 +80,7 @@ internal object CrazeLmTflitePredictor {
 
     private class Runtime(modelFile: File, private val tokenizer: CrazeLmTokenizer) {
         private data class CandidatePiece(val id: Int, val word: String)
+        private data class ScoredCandidate(val word: String, val score: Float)
         private val interpreter: Interpreter
         private val lock = Any()
         private val candidatePieces: List<CandidatePiece>
@@ -151,33 +154,28 @@ internal object CrazeLmTflitePredictor {
                 interpreter.runForMultipleInputsOutputs(inputs, outputs)
             }
             val logits = logitsOutput[0]
-            val bestWords = arrayOfNulls<String>(3)
-            val bestScores = FloatArray(3) { Float.NEGATIVE_INFINITY }
-            val bestKeys = HashSet<String>(3)
-
+            // Rank a bounded shortlist first; dictionary validation can perform mapped-file
+            // lookups, so do it only for the highest-scoring candidates, not every token.
+            val best = PriorityQueue<ScoredCandidate>(CANDIDATE_SCAN, compareBy { it.score })
             for (candidate in candidatePieces) {
                 val score = logits[candidate.id]
-                if (!score.isFinite() || !Words.known(candidate.word)) continue
-                val normalized = candidate.word.lowercase()
-                if (normalized in bestKeys) continue
-                var insertAt = -1
-                for (i in 0 until 3) {
-                    if (score > bestScores[i]) { insertAt = i; break }
+                if (!score.isFinite()) continue
+                if (best.size < CANDIDATE_SCAN) best.add(ScoredCandidate(candidate.word, score))
+                else if (score > best.peek().score) {
+                    best.poll()
+                    best.add(ScoredCandidate(candidate.word, score))
                 }
-                if (insertAt < 0) continue
-                for (i in 2 downTo insertAt + 1) {
-                    bestScores[i] = bestScores[i - 1]
-                    bestWords[i] = bestWords[i - 1]
-                }
-                bestScores[insertAt] = score
-                bestWords[insertAt] = candidate.word
-                bestKeys.clear()
-                bestWords.filterNotNull().forEach { bestKeys.add(it.lowercase()) }
             }
+            val seen = HashSet<String>(limit)
             val capitalize = text.lastOrNull()?.let { it == '.' || it == '!' || it == '?' } == true
-            val result = bestWords.filterNotNull().map { word ->
-                if (capitalize) word.replaceFirstChar { it.uppercase() } else word
-            }
+            val result = best.toList().sortedByDescending { it.score }
+                .asSequence()
+                .map { it.word }
+                .filter { Words.known(it) && seen.add(it.lowercase()) }
+                .take(limit)
+                .map { word ->
+                    if (capitalize) word.replaceFirstChar { it.uppercase() } else word
+                }.toList()
             synchronized(lock) { resultCache[cacheKey] = result }
             return result.take(limit)
         }
