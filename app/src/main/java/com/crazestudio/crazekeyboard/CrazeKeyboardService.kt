@@ -232,6 +232,10 @@ class CrazeKeyboardService : InputMethodService() {
 
     override fun onCreateInputView(): View {
         t = Prefs.theme(this)
+        try {
+            window.window?.navigationBarColor = t.bg
+            if (Build.VERSION.SDK_INT >= 29) window.window?.isNavigationBarContrastEnforced = false
+        } catch (_: Exception) { }
         lastSig = Prefs.sig(this)
         floating = Prefs.b(this, "float", false)
         builtOrientation = resources.configuration.orientation
