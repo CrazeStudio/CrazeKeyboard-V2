@@ -515,7 +515,19 @@ class CrazeKeyboardService : InputMethodService() {
     }
     private fun runTool(id: String) {
         when (id) {
-            "editor" -> { editorDraft = currentInputConnection?.getSelectedText(0)?.toString().orEmpty(); showPanel("editor") }
+            "editor" -> {
+                val selected = currentInputConnection?.getSelectedText(0)?.toString().orEmpty()
+                TextEditorActivity.callback = {
+                    TextEditorActivity.take()?.let { value ->
+                        currentInputConnection?.commitText(value, 1)
+                        setLocalContext(value)
+                        scheduleRefresh()
+                    }
+                }
+                startActivity(Intent(ctx, TextEditorActivity::class.java)
+                    .putExtra(TextEditorActivity.EXTRA_INITIAL_TEXT, selected)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
             "clipboard" -> showPanel("clip")
             "emoji" -> showPanel("emoji")
             "voice" -> { showPanel("letters"); startVoice() }
@@ -641,110 +653,27 @@ class CrazeKeyboardService : InputMethodService() {
         val snapshot = cachedBeforeCursor
         val epoch = ++predictionEpoch
         predictionTask?.let(suggestionWorker::removeCallbacks)
+        // CrazeLM is the sole suggestion source: no dictionary, phrase n-gram,
+        // learned-word ranker, or remote merge.
+        hd.post {
+            if (epoch == predictionEpoch && ::top.isInitialized) sugViews.forEach { it.text = "" }
+        }
+        if (snapshot.isBlank()) return
+
         val task = Runnable {
-            val word = wordAtCursor(snapshot)
-            val suggestions = when {
-                word.isEmpty() && !nextWordOn -> emptyList()
-                word.isEmpty() -> {
-                    // Show the tiny phrase model immediately; never make the user wait
-                    // for the 100k-logit neural model before the suggestion strip updates.
-                    val phraseBase = NextWordPredictor.predict(this, snapshot, 3)
-                    if (snapshot.isNotBlank() && phraseBase.isEmpty() && !waitingForPhraseModel) {
-                        waitingForPhraseModel = true
-                        NextWordPredictor.loadAsync(applicationContext) {
-                            waitingForPhraseModel = false
-                            scheduleRefresh()
-                        }
-                    }
-                    val tokens = tokensBeforeCursor(snapshot)
-                    val personalized = Prefs.b(this, "personalized", true)
-                    val quickBase = phraseBase.ifEmpty { Words.suggest(this, "") }
-                    val quickSuggestions = if (personalized) {
-                        val ranked = UserLanguageModel.rank(this, tokens, quickBase, 8).ifEmpty { quickBase }
-                        TinyNeuralRanker.rank(this, tokens, ranked, 3)
-                    } else quickBase
-                    hd.post {
-                        if (epoch == predictionEpoch && ::top.isInitialized &&
-                            desiredTopState() == "suggestions") {
-                            for (i in 0..2) if (i < sugViews.size) {
-                                sugViews[i].text = quickSuggestions.getOrNull(i) ?: ""
-                            }
-                        }
-                    }
-
-                    // Generic TFLite suggestions are safe in private fields: inference
-                    // does not write user text or update the model. Never consult personal
-                    // history/rankers while incognito is active.
-                    CrazeLmTflitePredictor.predictNextWordsAsync(applicationContext, snapshot, 3) { aiBase ->
-                        if (aiBase.isNotEmpty() && epoch == predictionEpoch) {
-                            val usePersonalization = personalized && !incognito
-                            val refined = if (usePersonalization) {
-                                val ranked = UserLanguageModel.rank(this, tokens, aiBase, 8).ifEmpty { aiBase }
-                                TinyNeuralRanker.rank(this, tokens, ranked, 3)
-                            } else aiBase
-                            refinedPredictionEpoch = epoch
-                            hd.post {
-                                if (epoch == predictionEpoch && ::top.isInitialized &&
-                                    desiredTopState() == "suggestions") {
-                                    for (i in 0..2) if (i < sugViews.size) {
-                                        sugViews[i].text = refined.getOrNull(i) ?: ""
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    quickSuggestions
-                }
-                else -> {
-                    if (!VocabularyIndex.isLoaded() && !waitingForVocabulary) {
-                        waitingForVocabulary = true
-                        VocabularyIndex.loadAsync(applicationContext) {
-                            waitingForVocabulary = false
-                            scheduleRefresh()
-                        }
-                    }
-                    cachedCorrection = Words.correction(this, word)?.let { word to it }
-                    val packLanguage = when {
-                        word.any { it in '\u0980'..'\u09FF' } -> "bn"
-                        word.any { it in '\u0900'..'\u097F' } -> "hi"
-                        word.any { it in 'a'..'z' || it in 'A'..'Z' } -> "en"
-                        else -> java.util.Locale.getDefault().language
-                    }
-                    val prefixBase = DownloadedVocabularyIndex.suggest(packLanguage, word, 3)
-                        .ifEmpty { Words.suggest(this, word) }
-                    if (!incognito && Prefs.b(this, "personalized", true)) {
-                        val contextWords = tokensBeforeCursor(snapshot).let { tokens ->
-                            if (tokens.lastOrNull() == word.lowercase()) tokens.dropLast(1).takeLast(2)
-                            else tokens.takeLast(2)
-                        }
-                        UserLanguageModel.rankPrefix(this, contextWords, word, prefixBase, 3)
-                    } else prefixBase
-                }
-            }.ifEmpty { Words.suggest(this, if (word.isEmpty()) "" else word) }
-
-            if (word.isNotEmpty() && Prefs.b(this, "onlinepred", false)) {
-                val remoteLanguage = when {
-                    word.any { it in '\u0980'..'\u09FF' } -> "bn"
-                    word.any { it in '\u0900'..'\u097F' } -> "hi"
-                    word.any { it in 'a'..'z' || it in 'A'..'Z' } -> "en"
-                    else -> java.util.Locale.getDefault().language
-                }
-                CrazeRemotePredictor.request(word, remoteLanguage) { remote ->
-                    if (remote.isNotEmpty() && epoch == predictionEpoch &&
-                        ::top.isInitialized && desiredTopState() == "suggestions") {
-                        val merged = (suggestions + remote).distinct().take(3)
-                        for (i in 0..2) {
-                            if (i < sugViews.size) sugViews[i].text = merged.getOrNull(i) ?: ""
-                        }
-                    }
-                }
-            }
-
-            hd.post {
-                if (epoch != predictionEpoch || !::top.isInitialized || desiredTopState() != "suggestions") return@post
-                if (refinedPredictionEpoch != epoch) {
-                    for (i in 0..2) {
-                        if (i < sugViews.size) sugViews[i].text = suggestions.getOrNull(i) ?: ""
+            CrazeLmTflitePredictor.predictNextWordsAsync(applicationContext, snapshot, 3) { modelWords ->
+                if (epoch != predictionEpoch) return@predictNextWordsAsync
+                val clean = modelWords.asSequence()
+                    .map { it.trim() }
+                    .filter { it.length in 1..24 && it.all { ch -> ch.isLetter() || ch == '\'' || ch == '-' } }
+                    .distinctBy { it.lowercase() }
+                    .take(3)
+                    .toList()
+                hd.post {
+                    if (epoch != predictionEpoch || !::top.isInitialized ||
+                        desiredTopState() != "suggestions") return@post
+                    for (i in 0..2) if (i < sugViews.size) {
+                        sugViews[i].text = clean.getOrNull(i) ?: ""
                     }
                 }
             }
@@ -1491,11 +1420,14 @@ class CrazeKeyboardService : InputMethodService() {
         val tabViews = LinkedHashMap<String, TextView>()
         var selectedKey = categoryKeys.firstOrNull() ?: "😀"
 
+        var aiMatches: List<String> = emptyList()
         fun render() {
             content.removeAllViews()
             val query = emojiSearchQuery.trim()
             val values = if (query.isNotEmpty()) {
                 emojiSearchMatches(query)
+            } else if (aiMatches.isNotEmpty()) {
+                (aiMatches + if (selectedKey == "🕘") Prefs.recents(ctx) else emojiLists[selectedKey].orEmpty()).distinct()
             } else if (selectedKey == "🕘") {
                 Prefs.recents(ctx)
             } else {
@@ -1511,7 +1443,7 @@ class CrazeKeyboardService : InputMethodService() {
                 })
             } else {
                 content.addView(TextView(ctx).apply {
-                    text = emojiCategoryName(selectedKey)
+                    text = if (aiMatches.isNotEmpty()) "AI picks · ${emojiCategoryName(selectedKey)}" else emojiCategoryName(selectedKey)
                     textSize = 12f
                     typeface = Typeface.DEFAULT_BOLD
                     setTextColor(t.text)
@@ -1560,6 +1492,21 @@ class CrazeKeyboardService : InputMethodService() {
             view.background = if (active) rounded(t.special, 12) else rounded(t.bg, 12)
         }
         render()
+        // CrazeLM predicts likely words from the current sentence; local aliases map
+        // those concepts to relevant emoji without sending text off-device.
+        if (cachedBeforeCursor.isNotBlank()) {
+            CrazeLmTflitePredictor.predictNextWordsAsync(applicationContext, cachedBeforeCursor, 6) { words ->
+                val related = words.flatMap { emojiSearchMatches(it) }.distinct().take(18)
+                if (related.isNotEmpty()) {
+                    hd.post {
+                        if (mode == "emoji" && ::panel.isInitialized) {
+                            aiMatches = related
+                            render()
+                        }
+                    }
+                }
+            }
+        }
         return col
     }
 
