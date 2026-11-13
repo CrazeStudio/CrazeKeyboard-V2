@@ -89,7 +89,6 @@ class CrazeKeyboardService : InputMethodService() {
     private val seen = HashMap<String, Int>()
     // Pages are built once per input view and reused: switching ?123 / ABC / menu no longer rebuilds ~40 views each time.
     private val pageCache = HashMap<String, View>()
-    private val emojiGrids = HashMap<String, View>()
     private var shiftKey: K? = null
     private var t = Prefs.themes[0]
     private var shift = 0
@@ -202,7 +201,7 @@ class CrazeKeyboardService : InputMethodService() {
         TextEditorActivity.callback = null
         suggestionWorker.removeCallbacksAndMessages(null)
         suggestionThread.quitSafely()
-        pageCache.clear(); emojiGrids.clear()
+        pageCache.clear()
         super.onDestroy()
     }
 
@@ -225,7 +224,7 @@ class CrazeKeyboardService : InputMethodService() {
     }
 
     private fun resetPages() {
-        pageCache.clear(); emojiGrids.clear()
+        pageCache.clear()
         letterKeys.clear(); enterKeys.clear()
         shiftKey = null
     }
