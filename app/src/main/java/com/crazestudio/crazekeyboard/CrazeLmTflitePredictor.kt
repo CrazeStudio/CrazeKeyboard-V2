@@ -15,7 +15,7 @@ internal object CrazeLmTflitePredictor {
     private const val SEQUENCE_LENGTH = 48
     private const val VOCAB_SIZE = 100_000
     // A smaller heap means fewer temporary objects and less dictionary I/O per keystroke.
-    private const val CANDIDATE_SCAN = 128
+    private const val CANDIDATE_SCAN = 256
 
     @Volatile private var runtime: Runtime? = null
     @Volatile private var loading = false
