@@ -30,3 +30,9 @@ android {
         freeCompilerArgs += listOf("-Xno-call-assertions", "-Xno-param-assertions", "-Xno-receiver-assertions")
     }
 }
+
+
+dependencies {
+    // Pinned runtime for the first on-device CrazeLM FP16 smoke-test phase.
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.31.1")
+}
