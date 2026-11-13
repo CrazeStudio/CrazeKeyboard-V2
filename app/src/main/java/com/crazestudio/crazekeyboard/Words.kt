@@ -51,7 +51,18 @@ object Words {
     }
     private val starters = listOf("I", "The", "Thanks")
 
-    fun known(w: String) = dictSet.contains(w.lowercase()) || VocabularyIndex.contains(w)
+    fun known(w: String): Boolean {
+        val value = w.lowercase()
+        if (value in dictSet) return true
+        val language = when {
+            value.any { it in '\u0980'..'\u09FF' } -> "bn"
+            value.any { it in '\u0900'..'\u097F' } -> "hi"
+            else -> "en"
+        }
+        return if (language == "en") {
+            VocabularyIndex.contains(value) || DownloadedVocabularyIndex.contains("en", value)
+        } else DownloadedVocabularyIndex.contains(language, value)
+    }
 
     fun learn(c: Context, w: String) {
         val lw = w.lowercase()
