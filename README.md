@@ -1,44 +1,50 @@
-# CrazeKeyboard V2 — Phase Two
+# CrazeKeyboard-V2
 
-CrazeKeyboard is an offline-first Android IME by CrazeStudio.
+CrazeKeyboard is an offline-first Android keyboard with a local next-word model, dictionary packs, a built-in editor, emoji search and privacy-aware personalization.
 
 **Application ID:** `com.crazestudio.crazekeyboard`
 
-## Phase-two capabilities
+## Keyboard and tools
 
-- Adaptive toolbar: quick tools before typing, live word suggestions after typing, and an expanded tool menu.
-- Customisable toolbar shortcuts with enable/disable controls and user-defined ordering.
-- Built-in full-screen text editor with selection editing, insert-at-cursor, undo/redo, select-all, copy, cut, paste, clear, and find/replace.
-- Simplified CrazeKeyboard launcher icon and a consistent keyboard identity.
-- Predictor index warmed off the main thread and a shorter debounced suggestion refresh to reduce first-use and typing pauses.
+- English QWERTY input with number row, symbols, shift/caps lock, editor-aware Enter/Search/Send/Next/Done actions, haptics and optional key sounds.
+- Grouped tools menu with All, Typing, Editing and Layout tabs.
+- Adjustable keyboard height, one-handed mode and an independently sized floating keyboard. Resizing persists after the drag rather than writing preferences on every movement.
+- An in-keyboard live text editor, clipboard tools, theme chooser and quick settings access.
+- Searchable Settings page with category navigation for languages, setup, AI, typing, toolbar, privacy, appearance, layout and keyboard behaviour.
 
-## Phase-one capabilities
+## Emoji catalogue
 
-- English QWERTY keyboard with optional number row, symbols pages, shift/caps lock, and editor-aware Enter/Search/Send/Next/Done actions.
-- Adaptive key sizing with a live graphical width/height resizer, left/right one-handed layouts, Light/Dark/Craze themes, configurable key-click sounds and haptic feedback, and a separate candidate strip.
-- A draggable floating keyboard layer with an independent touch region, a move grip, and a live horizontal resize grip.
-- Local English dictionary loaded from `app/src/main/assets/main_en-US.dict`, with a small built-in fallback list.
-- CrazeLM-only next-word suggestions using an on-device TensorFlow Lite model and the matching 100k SentencePiece tokenizer. Legacy dictionary, phrase n-gram, learned-word ranking, and remote suggestion sources are not mixed into the suggestion strip.
-- AI assets download on first keyboard use into app-private storage, are SHA-256 verified, and then run offline. The current CrazeLM is a next-word model; full-text AI rewriting is not yet supported.
-- An in-keyboard live text editor that mirrors the focused app field, supports native long-press selection and selection actions, and writes edits back immediately.
-- A conservative on-device Quick polish action for punctuation spacing, repeated spaces, and sentence capitalization. It is a local formatter, not generative AI; the next-word model is not a rewriting model.
-- Contextual emoji recommendations from CrazeLM's predicted words and the local emoji alias index.
-- Double-space period, repeat backspace, long-press word deletion, and long-press accented character alternatives.
-- Emoji categories and recents, plus optional local clipboard history.
-- Suggestions, correction, and clipboard capture are suppressed in password and no-personalized-learning fields; clipboard capture only runs while the keyboard is visible.
+The keyboard uses its bundled emoji inventory and offline CLDR English annotations. All 1,940 emoji sequences in the inventory have a human-readable name and search terms, including modifier and combined sequences. Emoji names are for English search; they do not imply localized names in every language. CLDR data is Unicode-3.0 licensed.
 
-## Privacy and offline behaviour
+## Language packs
 
-By default, text prediction is local. The CrazeLM model and matching tokenizer are downloaded on first use, verified, and saved in app-private storage. After installation, CrazeLM next-word prediction and contextual emoji recommendations run locally. The live editor edits the active app field directly; its experimental AI-polish entry remains informational until a rewrite-capable model is integrated. The default keyboard theme follows Android system colours. Clipboard history is opt-in and remains on-device. Voice typing is different: it uses the Android-selected speech recognition service, which may send audio to its provider for recognition. Microphone access is permission-gated and voice input is suppressed in password and restricted fields.
+The app reads the language catalogue from CrazePredictionAPI. The catalogue contains 44 wordfreq-supported language codes. A language is listed separately from pack availability, suggestions and trained-model availability.
 
-## Build and install
+- English uses the current CrazeLM next-word model.
+- Bengali and Hindi can use downloaded vocabulary prefix suggestions when their packs are installed.
+- Other catalogue languages initially provide downloadable vocabulary only. Suggestions and models are disabled until appropriate ranking models and physical keyboard layouts are validated.
+- Selecting a dictionary does not change the QWERTY key layout or provide transliteration. This is not yet a full 44-language keyboard.
 
-Open the project in Android Studio and build the `app` debug variant, or use the repository's GitHub Actions workflow. Install the APK, enable CrazeKeyboard in Android's keyboard settings, and then select it as the active input method.
+Vocabulary archives are downloaded on demand, SHA-256 checked against the server manifest, checked against their declared entry count, and converted into private local prefix indexes.
 
-## Current scope
+## Local prediction and AI
 
-Phase two adds an adaptive, customisable toolbar and a companion text editor while keeping the offline-first keyboard foundation. It is not a Gboard clone. It does **not** include swipe/gesture typing, voice dictation, cloud sync, translation, GIF/sticker search, or broad multilingual/Indic input layouts. CrazeLM is an experimental 30M model; its word ranking and latency still need evaluation on physical devices. The included English word list is a lightweight starter lexicon, not a full commercial dictionary. Accuracy, editor hand-off, and latency must still be validated on physical devices and across different editor apps.
+CrazeLM is an experimental 30M-parameter English next-word model with a matching SentencePiece tokenizer. The model and tokenizer are installed on first use into app-private storage, checksum-verified and then used offline. CI no longer copies the full model files into the APK, reducing the release package; first-time model use therefore requires a download.
 
-## Dictionary and data licensing
+The model is a next-word predictor, not a full-text rewrite model. Quick polish remains a deterministic local formatter for spacing, punctuation and capitalization. No unvalidated quantized model or other-language model is shipped.
 
-The bundled word list is a curated starter list maintained in this repository. Any future replacement or expansion using third-party corpora must include its source, license, attribution, and redistribution terms before being bundled.
+## Swipe typing
+
+Swipe typing is an opt-in experimental feature and is disabled by default. It captures the path across QWERTY keys and ranks local dictionary candidates with a lightweight edit-distance heuristic. It is not a trained neural swipe decoder and its accuracy has not been validated on physical devices; it is restricted to the English dictionary for now.
+
+## Privacy
+
+Personalized prediction and word learning operate locally and respect the keyboard's incognito/private-field gates. Password and no-personalized-learning fields suppress prediction/personalization as configured by the IME. Swipe learning is disabled in private fields and follows the personalization preference. Clipboard history is opt-in and stored on-device. Voice typing uses the Android-selected speech-recognition service, which may send audio to its provider.
+
+## Build
+
+Build the debug APK with Android Studio or use the repository's GitHub Actions workflow (JDK 17, Gradle 8.7). CI compiles the app and uploads the APK. It does not package model weights into the APK.
+
+## Validation status
+
+The automated build checks compilation. Actual IME layout behaviour, resize interaction, key-hit accuracy, memory use, language input methods and swipe accuracy still require physical-device testing across Android versions and target apps. Do not treat experimental swipe or vocabulary-only languages as production-grade prediction support.
