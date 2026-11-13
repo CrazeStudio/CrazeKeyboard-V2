@@ -25,7 +25,8 @@ internal object DownloadedVocabularyIndex {
     fun loadInstalledAsync(context: Context) {
         val app = context.applicationContext
         Thread({
-            listOf("en", "bn", "hi").forEach { language -> open(app, language) }
+            File(app.filesDir, "language_packs").listFiles { file -> file.isFile && file.name.endsWith(".words") }
+                ?.forEach { file -> open(app, file.name.removeSuffix(".words")) }
         }, "craze-pack-index").apply { isDaemon = true; start() }
     }
 
