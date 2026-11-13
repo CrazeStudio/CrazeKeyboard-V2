@@ -44,6 +44,10 @@ object Prefs {
         val safeText = s.take(4_000)
         if (safeText.isNotBlank()) put(c, "clips", (listOf(safeText) + clips(c).filter { it != safeText }).take(20))
     }
+    fun removeClip(c: Context, value: String) {
+        put(c, "clips", clips(c).filterNot { it == value })
+        put(c, "pinnedClips", pinnedClips(c).filterNot { it == value })
+    }
     fun clearClips(c: Context) {
         put(c, "clips", emptyList())
         put(c, "pinnedClips", emptyList())
