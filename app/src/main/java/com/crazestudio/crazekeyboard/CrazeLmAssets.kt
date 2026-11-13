@@ -11,7 +11,7 @@ import java.security.MessageDigest
 
 internal data class CrazeLmFiles(val model: File, val tokenizer: File)
 
-/** Downloads model assets into app-private storage and verifies them before activation. */
+/** Uses verified APK-bundled assets first; falls back to a verified release download. */
 internal object CrazeLmAssets {
     private const val BASE =
         "https://github.com/CrazeStudio/Crazekeyboard-llm/releases/download/v1.0/"
@@ -25,7 +25,8 @@ internal object CrazeLmAssets {
     fun ensureDownloaded(context: Context, progress: (String) -> Unit = {}): CrazeLmFiles {
         val directory = File(context.filesDir, "crazelm")
         if (!directory.exists() && !directory.mkdirs()) error("Cannot create CrazeLM private storage.")
-        val manifest = JSONObject(readText(MANIFEST_URL))
+        val manifestText = readBundledText(context, "crazelm/manifest.json") ?: readText(MANIFEST_URL)
+        val manifest = JSONObject(manifestText)
         require(manifest.optString("format") == "LiteRT/TFLite") {
             "The published CrazeLM asset is not a TFLite model."
         }
@@ -46,13 +47,77 @@ internal object CrazeLmAssets {
         require(modelBytes > 0L && modelSha.matches(Regex("[0-9a-f]{64}"))) {
             "CrazeLM model manifest is invalid."
         }
+
         val model = File(directory, "CrazeLM-30M-v1.0.tflite")
-        downloadVerified(MODEL_URL, model, modelBytes, modelSha,
-            File(directory, "model.verified"), "AI model", progress)
+        val modelMarker = File(directory, "model.verified")
+        if (!copyBundledVerified(context, "crazelm/CrazeLM-30M-v1.0.tflite",
+                model, modelBytes, modelSha, modelMarker, "AI model", progress)) {
+            downloadVerified(MODEL_URL, model, modelBytes, modelSha,
+                modelMarker, "AI model", progress)
+        }
+
         val tokenizer = File(directory, "tokenizer.model")
-        downloadVerified(TOKENIZER_URL, tokenizer, TOKENIZER_BYTES, TOKENIZER_SHA256,
-            File(directory, "tokenizer.verified"), "Tokenizer", progress)
+        val tokenizerMarker = File(directory, "tokenizer.verified")
+        if (!copyBundledVerified(context, "crazelm/tokenizer.model",
+                tokenizer, TOKENIZER_BYTES, TOKENIZER_SHA256, tokenizerMarker, "Tokenizer", progress)) {
+            downloadVerified(TOKENIZER_URL, tokenizer, TOKENIZER_BYTES, TOKENIZER_SHA256,
+                tokenizerMarker, "Tokenizer", progress)
+        }
         return CrazeLmFiles(model, tokenizer)
+    }
+
+    private fun copyBundledVerified(
+        context: Context, assetPath: String, destination: File, expectedBytes: Long,
+        expectedSha: String, marker: File, label: String, progress: (String) -> Unit
+    ): Boolean {
+        val asset = try {
+            context.assets.open(assetPath)
+        } catch (_: java.io.IOException) {
+            return false
+        }
+        asset.use { input ->
+            if (destination.isFile && destination.length() == expectedBytes &&
+                marker.isFile && marker.readText().trim() == expectedSha) {
+                progress("$label already verified")
+                return true
+            }
+            progress("Installing bundled $label…")
+            val temporary = File(destination.parentFile, destination.name + ".part")
+            temporary.delete()
+            val digest = MessageDigest.getInstance("SHA-256")
+            var copied = 0L
+            try {
+                BufferedInputStream(input).use { source ->
+                    FileOutputStream(temporary).use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            val count = source.read(buffer)
+                            if (count < 0) break
+                            copied += count
+                            require(copied <= expectedBytes) { "$label asset exceeded expected size." }
+                            digest.update(buffer, 0, count)
+                            output.write(buffer, 0, count)
+                        }
+                        output.fd.sync()
+                    }
+                }
+                val actualSha = digest.digest().joinToString("") { "%02x".format(it) }
+                require(copied == expectedBytes && actualSha == expectedSha) {
+                    "$label bundled asset failed SHA-256 verification."
+                }
+                if (destination.exists() && !destination.delete()) error("Cannot replace old $label file.")
+                if (!temporary.renameTo(destination)) {
+                    temporary.copyTo(destination, overwrite = true)
+                    temporary.delete()
+                }
+                marker.writeText(expectedSha)
+                progress("$label installed and verified")
+                return true
+            } catch (error: Throwable) {
+                temporary.delete()
+                throw error
+            }
+        }
     }
 
     private fun downloadVerified(
@@ -123,6 +188,13 @@ internal object CrazeLmAssets {
             connection.disconnect()
         }
     }
+
+    private fun readBundledText(context: Context, assetPath: String): String? =
+        try {
+            context.assets.open(assetPath).bufferedReader(Charsets.UTF_8).use { it.readText() }
+        } catch (_: java.io.IOException) {
+            null
+        }
 
     private fun readText(url: String): String {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
