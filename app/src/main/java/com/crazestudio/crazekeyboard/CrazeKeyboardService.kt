@@ -1566,39 +1566,57 @@ class CrazeKeyboardService : InputMethodService() {
     private fun buildEditor(): View {
         val col = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(7), dp(2), dp(7), 0)
+            setPadding(dp(7), dp(2), dp(7), dp(1))
         }
-        val header = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
+
+        // A compact editing deck: distinct from the reference layout, but built
+        // around the same quick cursor-navigation and editing workflow.
+        val header = LinearLayout(ctx).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(2), 0, dp(2), 0)
+        }
+        val back = iconBtn("‹", 25f) { showPanel("letters") }
+        header.addView(back, lp(dp(34), dp(32)))
         header.addView(TextView(ctx).apply {
-            text = "Text editor"
+            text = "Quick editor"
             textSize = 14f
-            typeface = Typeface.DEFAULT_BOLD
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setTextColor(t.text)
-        }, lp(0, dp(30), 1f))
+        }, lp(0, dp(32), 1f))
         val countLabel = TextView(ctx).apply {
-            textSize = 10f
+            textSize = 9f
             setTextColor(t.text)
-            alpha = 0.68f
+            alpha = 0.72f
             gravity = Gravity.CENTER_VERTICAL
         }
-        header.addView(countLabel, lp(WRAP, dp(30)))
-        header.addView(iconBtn("×", 21f) { showPanel("letters") }, lp(dp(34), dp(30)))
-        col.addView(header)
+        header.addView(countLabel, lp(WRAP, dp(32)))
+        val insert = mk("Insert ↑", 0f, t.accent, t.accentText, 10f)
+        insert.cell.minimumWidth = dp(66)
+        attach(insert) {
+            val value = editorField?.text?.toString().orEmpty()
+            if (value.isNotEmpty()) currentInputConnection?.commitText(value, 1)
+            editorDraft = ""
+            editorField = null
+            showPanel("letters")
+            syncContextAsync()
+        }
+        header.addView(insert.cell, lp(dp(72), dp(30)))
+        col.addView(header, lp(MATCH, dp(34)))
 
         val field = EditText(ctx).apply {
             textSize = 14f
             setTextColor(t.text)
-            setHintTextColor(t.text)
-            hint = "Write or edit text…"
+            setHintTextColor(darken(t.text, 0.58f))
+            hint = "Edit your text here…"
             gravity = Gravity.TOP or Gravity.START
             minLines = 2
-            maxLines = 4
+            maxLines = 3
             isFocusable = true
             isFocusableInTouchMode = true
             showSoftInputOnFocus = false
             isCursorVisible = true
-            background = rounded(t.key, 11)
-            setPadding(dp(9), dp(6), dp(9), dp(6))
+            background = rounded(t.key, 13)
+            setPadding(dp(10), dp(7), dp(10), dp(7))
             textDirection = View.TEXT_DIRECTION_FIRST_STRONG
         }
         field.setText(editorDraft)
@@ -1609,7 +1627,7 @@ class CrazeKeyboardService : InputMethodService() {
         val redo = ArrayDeque<String>()
         fun updateCount(value: String) {
             val words = value.trim().split(Regex("\\s+")).count { it.isNotBlank() }
-            countLabel.text = "$words words · ${value.length} chars"
+            countLabel.text = "$words words · ${value.length}"
         }
         field.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
@@ -1627,62 +1645,113 @@ class CrazeKeyboardService : InputMethodService() {
             }
         })
         editorField = field
-        col.addView(field, lp(MATCH, 0, 1f))
+        col.addView(field, LinearLayout.LayoutParams(MATCH, dp(62)).apply {
+            topMargin = dp(3)
+            bottomMargin = dp(4)
+        })
         updateCount(editorDraft)
 
-        val controls = hrow()
-        fun action(label: String, weight: Float = 1f, click: () -> Unit) {
-            val key = mk(label, weight, t.special, t.text, 11f)
+        fun keyButton(text: String, weight: Float = 1f, strong: Boolean = false, click: () -> Unit) {
+            val key = mk(text, weight, if (strong) t.accent else t.special,
+                if (strong) t.accentText else t.text, 12f)
             attach(key) { click() }
-            controls.addView(key.cell)
+            key.cell.contentDescription = text
         }
-        action("Undo") {
-            if (undo.isNotEmpty()) {
-                restoringEditor = true
-                redo.addLast(field.text.toString())
-                val value = undo.removeLast()
-                field.setText(value); field.setSelection(value.length)
-                previousText = value; editorDraft = value
-                restoringEditor = false; updateCount(value)
+        fun restore(value: String) {
+            restoringEditor = true
+            field.setText(value)
+            field.setSelection(field.text?.length ?: 0)
+            previousText = value
+            editorDraft = value
+            restoringEditor = false
+            updateCount(value)
+        }
+        fun cursorTo(target: Int) {
+            val length = field.text?.length ?: 0
+            val safe = target.coerceIn(0, length)
+            field.setSelection(safe)
+            field.requestFocus()
+        }
+        fun moveVertical(down: Boolean) {
+            val value = field.text?.toString().orEmpty()
+            val cursor = field.selectionStart.coerceIn(0, value.length)
+            val lineStart = value.lastIndexOf('\n', (cursor - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
+            val column = cursor - lineStart
+            if (down) {
+                val nextBreak = value.indexOf('\n', cursor)
+                if (nextBreak < 0) return
+                val nextStart = nextBreak + 1
+                val nextEnd = value.indexOf('\n', nextStart).let { if (it < 0) value.length else it }
+                cursorTo((nextStart + column).coerceAtMost(nextEnd))
+            } else {
+                if (lineStart == 0) return
+                val previousEnd = lineStart - 1
+                val previousStart = value.lastIndexOf('\n', (previousEnd - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
+                cursorTo((previousStart + column).coerceAtMost(previousEnd))
             }
         }
-        action("Redo") {
-            if (redo.isNotEmpty()) {
-                restoringEditor = true
-                undo.addLast(field.text.toString())
-                val value = redo.removeLast()
-                field.setText(value); field.setSelection(value.length)
-                previousText = value; editorDraft = value
-                restoringEditor = false; updateCount(value)
-            }
+
+        // Navigation cluster and editing actions sit side-by-side for thumb reach.
+        val main = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
         }
-        action("Select all") { field.selectAll(); field.requestFocus() }
-        action("Copy") {
-            val start = minOf(field.selectionStart, field.selectionEnd).coerceAtLeast(0)
-            val end = maxOf(field.selectionStart, field.selectionEnd).coerceAtLeast(0)
-            val value = if (start != end) field.text?.substring(start, end).orEmpty() else field.text?.toString().orEmpty()
-            if (value.isNotEmpty()) (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
+        val nav = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        keyButton("←", 1f) {
+            val a = minOf(field.selectionStart, field.selectionEnd)
+            val b = maxOf(field.selectionStart, field.selectionEnd)
+            cursorTo(if (a != b) a else a - 1)
+        }
+        // Build the navigation keys in their own equal-width cells.
+        val left = mk("←", 1f, t.special, t.text, 18f)
+        attach(left) {
+            val a = minOf(field.selectionStart, field.selectionEnd)
+            val b = maxOf(field.selectionStart, field.selectionEnd)
+            cursorTo(if (a != b) a else a - 1)
+        }
+        val vertical = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+        }
+        val up = mk("↑", 1f, t.special, t.text, 17f)
+        attach(up) { moveVertical(false) }
+        val down = mk("↓", 1f, t.special, t.text, 17f)
+        attach(down) { moveVertical(true) }
+        vertical.addView(up.cell, lp(MATCH, 0, 1f))
+        vertical.addView(down.cell, lp(MATCH, 0, 1f))
+        val right = mk("→", 1f, t.special, t.text, 18f)
+        attach(right) {
+            val a = minOf(field.selectionStart, field.selectionEnd)
+            val b = maxOf(field.selectionStart, field.selectionEnd)
+            cursorTo(if (a != b) b else b + 1)
+        }
+        nav.addView(left.cell, lp(0, dp(82), 1f))
+        nav.addView(vertical, lp(0, dp(82), 1f).apply {
+            leftMargin = dp(4); rightMargin = dp(4)
+        })
+        nav.addView(right.cell, lp(0, dp(82), 1f))
+        main.addView(nav, LinearLayout.LayoutParams(0, dp(82), 3f))
+
+        val side = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+        }
+        fun sideKey(text: String, click: () -> Unit) {
+            val key = mk(text, 1f, t.key, t.text, 13f)
+            attach(key) { click() }
+            side.addView(key.cell, lp(MATCH, 0, 1f).apply { if (side.childCount > 0) topMargin = dp(3) })
+        }
+        sideKey("Copy") {
+            val a = minOf(field.selectionStart, field.selectionEnd).coerceAtLeast(0)
+            val b = maxOf(field.selectionStart, field.selectionEnd).coerceAtLeast(0)
+            val value = if (a != b) field.text?.substring(a, b).orEmpty() else field.text?.toString().orEmpty()
+            if (value.isNotEmpty()) (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
                 .setPrimaryClip(android.content.ClipData.newPlainText("CrazeKeyboard editor", value))
         }
-        action("Cut") {
-            val start = minOf(field.selectionStart, field.selectionEnd).coerceAtLeast(0)
-            val end = maxOf(field.selectionStart, field.selectionEnd).coerceAtLeast(0)
-            if (start != end) {
-                val value = field.text?.substring(start, end).orEmpty()
-                (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
-                    .setPrimaryClip(android.content.ClipData.newPlainText("CrazeKeyboard editor", value))
-                field.text?.delete(start, end)
-            }
-        }
-        col.addView(controls, lp(MATCH, dp(36)))
-
-        val actions = hrow()
-        fun second(label: String, weight: Float = 1f, click: () -> Unit) {
-            val key = mk(label, weight, t.special, t.text, 11f)
-            attach(key) { click() }
-            actions.addView(key.cell)
-        }
-        second("Paste") {
+        sideKey("Paste") {
             val clip = (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).primaryClip
             if (clip != null && clip.itemCount > 0) {
                 val value = clip.getItemAt(0).coerceToText(ctx)?.toString().orEmpty()
@@ -1691,16 +1760,36 @@ class CrazeKeyboardService : InputMethodService() {
                 field.text?.replace(a, b, value)
             }
         }
-        second("Clear") { field.text?.clear() }
-        second("Insert", 1.35f) {
-            val value = field.text?.toString().orEmpty()
-            if (value.isNotEmpty()) currentInputConnection?.commitText(value, 1)
-            editorDraft = ""
-            editorField = null
-            showPanel("letters")
-            syncContextAsync()
+        sideKey("⌫") {
+            val a = minOf(field.selectionStart, field.selectionEnd).coerceAtLeast(0)
+            val b = maxOf(field.selectionStart, field.selectionEnd).coerceAtLeast(0)
+            if (a != b) field.text?.delete(a, b)
+            else if (a > 0) field.text?.delete(a - 1, a)
         }
-        col.addView(actions, lp(MATCH, dp(36)))
+        main.addView(side, LinearLayout.LayoutParams(0, dp(82), 1.05f).apply { leftMargin = dp(5) })
+        col.addView(main, lp(MATCH, dp(84)))
+
+        val bottom = hrow()
+        fun bottomKey(text: String, weight: Float = 1f, click: () -> Unit) {
+            val key = mk(text, weight, t.special, t.text, 11f)
+            attach(key) { click() }
+            bottom.addView(key.cell)
+        }
+        bottomKey("Select all", 1.25f) { field.selectAll(); field.requestFocus() }
+        bottomKey("Undo", 0.9f) {
+            if (undo.isNotEmpty()) {
+                redo.addLast(field.text.toString())
+                restore(undo.removeLast())
+            }
+        }
+        bottomKey("Redo", 0.9f) {
+            if (redo.isNotEmpty()) {
+                undo.addLast(field.text.toString())
+                restore(redo.removeLast())
+            }
+        }
+        bottomKey("Clear", 0.9f) { field.text?.clear() }
+        col.addView(bottom, lp(MATCH, dp(38)).apply { topMargin = dp(4) })
         return col
     }
 
