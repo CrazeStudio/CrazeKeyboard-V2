@@ -19,8 +19,8 @@ CrazeKeyboard is an offline-first Android IME by CrazeStudio.
 - A draggable floating keyboard layer with an independent touch region, a move grip, and a live horizontal resize grip.
 - Local English dictionary loaded from `app/src/main/assets/main_en-US.dict`, with a small built-in fallback list.
 - CrazeLM-only next-word suggestions using an on-device TensorFlow Lite model and the matching 100k SentencePiece tokenizer. Legacy dictionary, phrase n-gram, learned-word ranking, and remote suggestion sources are not mixed into the suggestion strip.
-- AI assets download on first keyboard use into app-private storage, are SHA-256 verified, and then run offline with the existing phrase predictor as fallback.
-- A dedicated full-screen writing pad with undo/redo, formatting, lists, find/replace, and vector toolbar icons.
+- AI assets download on first keyboard use into app-private storage, are SHA-256 verified, and then run offline. The current CrazeLM is a next-word model; full-text AI rewriting is not yet supported.
+- An in-keyboard live text editor that mirrors the focused app field, supports native long-press selection and selection actions, and writes edits back immediately.
 - Contextual emoji recommendations from CrazeLM's predicted words and the local emoji alias index.
 - Double-space period, repeat backspace, long-press word deletion, and long-press accented character alternatives.
 - Emoji categories and recents, plus optional local clipboard history.
@@ -28,7 +28,7 @@ CrazeKeyboard is an offline-first Android IME by CrazeStudio.
 
 ## Privacy and offline behaviour
 
-By default, text prediction is local. The CrazeLM model and matching tokenizer are downloaded on first use, verified, and saved in app-private storage. After installation, CrazeLM next-word prediction and contextual emoji recommendations run locally. Optional online prefix suggestions are disabled by default; when explicitly enabled, only the current word prefix and language are sent, never the surrounding sentence. Clipboard history is opt-in and remains on-device. Voice typing is different: it uses the Android-selected speech recognition service, which may send audio to its provider for recognition. Microphone access is permission-gated and voice input is suppressed in password and restricted fields.
+By default, text prediction is local. The CrazeLM model and matching tokenizer are downloaded on first use, verified, and saved in app-private storage. After installation, CrazeLM next-word prediction and contextual emoji recommendations run locally. The live editor edits the active app field directly; its experimental AI-polish entry remains informational until a rewrite-capable model is integrated. The default keyboard theme follows Android system colours. Optional online prefix suggestions are disabled by default; when explicitly enabled, only the current word prefix and language are sent, never the surrounding sentence. Clipboard history is opt-in and remains on-device. Voice typing is different: it uses the Android-selected speech recognition service, which may send audio to its provider for recognition. Microphone access is permission-gated and voice input is suppressed in password and restricted fields.
 
 ## Build and install
 
