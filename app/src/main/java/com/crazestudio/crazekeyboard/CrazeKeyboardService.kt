@@ -1053,16 +1053,20 @@ class CrazeKeyboardService : InputMethodService() {
 
     private fun attachLetterKey(key: K, value: String) {
         val alts = Alts.map[value]
-        if (alts != null) addSecondaryHint(key, alts.first().toString())
+        val number = Alts.numberHints[value]
+        val hint = number ?: alts?.firstOrNull()?.toString()
+        if (hint != null) addSecondaryHint(key, hint)
         attach(
             key,
             showPrev = true,
-            fast = alts == null,
-            onLong = alts?.let { alternatives ->
-                {
-                    if (alternatives.length == 1) type(alternatives)
-                    else showAlts(key.cell, alternatives)
-                }
+            fast = alts == null && number == null,
+            onLong = when {
+                number != null -> ({ type(number) })
+                alts != null -> ({
+                    if (alts.length == 1) type(alts)
+                    else showAlts(key.cell, alts)
+                })
+                else -> null
             }
         ) { type(value) }
     }
@@ -1921,10 +1925,10 @@ class CrazeKeyboardService : InputMethodService() {
         val page = pageFor(m)
         (page.parent as? ViewGroup)?.removeView(page)
         panel.removeAllViews()
-        val targetPanelHeight = panelH() + when (m) {
-            "emoji" -> emojiExtraHeight()
-            "editor" -> dp(32)
-            else -> 0
+        val targetPanelHeight = when (m) {
+            "emoji" -> panelH() + emojiExtraHeight()
+            "editor" -> dp(158)
+            else -> panelH()
         }
         panel.layoutParams = panel.layoutParams.apply { height = targetPanelHeight }
         panel.addView(page, FrameLayout.LayoutParams(MATCH, targetPanelHeight))
