@@ -1511,8 +1511,8 @@ class CrazeKeyboardService : InputMethodService() {
         val sourceText = fullText
             ?: ((connection?.getTextBeforeCursor(10000, 0)?.toString().orEmpty()) +
                 (connection?.getTextAfterCursor(10000, 0)?.toString().orEmpty()))
-        val canMirrorWholeField = connection != null &&
-            (extracted != null && extracted.partialStartOffset < 0 || extracted == null)
+        val canMirrorWholeField = connection != null && extracted != null &&
+            extracted.partialStartOffset < 0
 
         val col = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
