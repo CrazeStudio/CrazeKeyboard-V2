@@ -871,7 +871,7 @@ class SettingsActivity : Activity() {
         })
 
         val settingsSearch = EditText(this).apply {
-            hint = "Search settings"; singleLine = true; textSize = 14f
+            hint = "Search settings"; setSingleLine(true); textSize = 14f
             setTextColor(ink); setHintTextColor(muted)
             setPadding(dp(15), dp(11), dp(15), dp(11))
             background = shape(fieldBg, 14)
