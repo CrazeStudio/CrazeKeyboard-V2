@@ -348,6 +348,8 @@ class CrazeKeyboardService : InputMethodService() {
             setPadding(dp(4), dp(3), dp(4), dp(3))
         }
         row.addView(dock, FrameLayout.LayoutParams(dp(40), dp(26), Gravity.END or Gravity.CENTER_VERTICAL))
+        var pendingWidthPercent = Prefs.keyWidth(ctx)
+        val persistWidth = Runnable { Prefs.setI(ctx, "kbdwidth", pendingWidthPercent) }
         val resize = TextView(ctx).apply {
             text = "↔"
             textSize = 19f
@@ -360,6 +362,7 @@ class CrazeKeyboardService : InputMethodService() {
                     MotionEvent.ACTION_DOWN -> {
                         val params = kbd.layoutParams as? FrameLayout.LayoutParams
                             ?: return@setOnTouchListener false
+                        hd.removeCallbacks(persistWidth)
                         resizeStartWidth = if (params.width > 0) params.width else kbd.width
                         resizeStartX = event.rawX
                         true
@@ -372,10 +375,17 @@ class CrazeKeyboardService : InputMethodService() {
                         params.width = (resizeStartWidth + (event.rawX - resizeStartX).toInt())
                             .coerceIn(minWidth, screenWidth)
                         kbd.layoutParams = params
-                        Prefs.setI(ctx, "kbdwidth", (params.width * 100 / screenWidth).coerceIn(55, 100))
+                        pendingWidthPercent = (params.width * 100 / screenWidth).coerceIn(55, 100)
+                        // Persist once after the drag settles instead of writing preferences on every move.
+                        hd.removeCallbacks(persistWidth)
+                        hd.postDelayed(persistWidth, 180)
                         true
                     }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> true
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        hd.removeCallbacks(persistWidth)
+                        Prefs.setI(ctx, "kbdwidth", pendingWidthPercent)
+                        true
+                    }
                     else -> true
                 }
             }
@@ -1044,16 +1054,25 @@ class CrazeKeyboardService : InputMethodService() {
 
     // fast = type on finger-down (plain keys). Keys with a long-press type on release, unless the long-press fired.
     private fun nearestLetterAt(rawX: Float, rawY: Float): String? {
-        var best = dp(52) * dp(52).toFloat()
+        // Expand each swipe hit region slightly beyond the visible key face. This is an
+        // invisible forgiving zone for path sampling, not a change to the rendered key size.
+        var best = Float.POSITIVE_INFINITY
         var selected: String? = null
         val location = IntArray(2)
+        val margin = dp(8).toFloat()
         letterKeys.forEach { (view, value) ->
             if (view.visibility != View.VISIBLE || view.width == 0 || view.height == 0) return@forEach
             view.getLocationOnScreen(location)
             val dx = rawX - (location[0] + view.width / 2f)
             val dy = rawY - (location[1] + view.height / 2f)
-            val distance = dx * dx + dy * dy
-            if (distance < best) { best = distance; selected = value.lowercase() }
+            val radiusX = view.width / 2f + margin
+            val radiusY = view.height / 2f + margin
+            val normalizedDistance = (dx * dx) / (radiusX * radiusX) +
+                (dy * dy) / (radiusY * radiusY)
+            if (normalizedDistance <= 1f && normalizedDistance < best) {
+                best = normalizedDistance
+                selected = value.lowercase()
+            }
         }
         return selected
     }
@@ -1100,7 +1119,9 @@ class CrazeKeyboardService : InputMethodService() {
                     if (showPrev) showPreview(k)
                     if (repeat) { tap(); hd.postDelayed(repR, 380) }
                     else if (fast) tap()
-                    else if (onLong != null && !swipeTracking) hd.postDelayed(longR, 350)
+                    // Keep long-press alternatives available while swipe capture is enabled.
+                    // A real swipe cancels this timer as soon as the finger crosses to another key.
+                    else if (onLong != null) hd.postDelayed(longR, 350)
                 }
                 MotionEvent.ACTION_MOVE -> {
                     if (swipeTracking && e.pointerCount == 1) {
