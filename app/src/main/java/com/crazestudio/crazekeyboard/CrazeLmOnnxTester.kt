@@ -48,8 +48,8 @@ internal object CrazeLmOnnxTester {
             val outputInfo = session.getOutputInfo()[OUTPUT_NAME]?.getInfo() as? TensorInfo
                 ?: error("Model output '$OUTPUT_NAME' is missing or is not a tensor.")
 
-            require(inputInfo.getType() == OnnxJavaType.INT64) {
-                "Expected input_ids to be INT64, found ${inputInfo.getType()}."
+            require(inputInfo.type == OnnxJavaType.INT64) {
+                "Expected input_ids to be INT64, found ${inputInfo.type}."
             }
             require(outputInfo.getShape().size == 3) {
                 "Expected logits to have [batch, sequence, vocabulary] dimensions."
@@ -59,11 +59,11 @@ internal object CrazeLmOnnxTester {
                 "Expected a $EXPECTED_VOCAB_SIZE-token vocabulary, found $declaredVocab."
             }
             require(
-                outputInfo.getType() == OnnxJavaType.FLOAT ||
-                    outputInfo.getType() == OnnxJavaType.FLOAT16 ||
-                    outputInfo.getType() == OnnxJavaType.BFLOAT16
+                outputInfo.type == OnnxJavaType.FLOAT ||
+                    outputInfo.type == OnnxJavaType.FLOAT16 ||
+                    outputInfo.type == OnnxJavaType.BFLOAT16
             ) {
-                "Unsupported logits type: ${outputInfo.getType()}."
+                "Unsupported logits type: ${outputInfo.type}."
             }
 
             // Stable, in-range IDs only. This verifies graph execution, not text quality.
