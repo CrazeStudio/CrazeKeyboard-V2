@@ -1027,32 +1027,85 @@ class CrazeKeyboardService : InputMethodService() {
     private fun hidePreview() { prevTv?.visibility = View.INVISIBLE }
 
     // fast = type on finger-down (plain keys). Keys with a long-press type on release, unless the long-press fired.
+    private fun nearestLetterAt(rawX: Float, rawY: Float): String? {
+        var best = dp(52) * dp(52).toFloat()
+        var selected: String? = null
+        val location = IntArray(2)
+        letterKeys.forEach { (view, value) ->
+            if (view.visibility != View.VISIBLE || view.width == 0 || view.height == 0) return@forEach
+            view.getLocationOnScreen(location)
+            val dx = rawX - (location[0] + view.width / 2f)
+            val dy = rawY - (location[1] + view.height / 2f)
+            val distance = dx * dx + dy * dy
+            if (distance < best) { best = distance; selected = value.lowercase() }
+        }
+        return selected
+    }
+
+    private fun commitSwipe(sequence: String): Boolean {
+        if (sequence.length < 3) return false
+        val word = Words.swipeCandidates(this, sequence, 3).firstOrNull() ?: return false
+        val connection = currentInputConnection ?: targetInputConnection ?: return false
+        return try {
+            acceptPendingCorrection()
+            connection.commitText("$word ", 1)
+            setLocalContext(cachedBeforeCursor + "$word ")
+            if (!incognito && Prefs.b(this, "personalized", true)) {
+                val previous = tokensBeforeCursor(cachedBeforeCursor).takeLast(2)
+                UserLanguageModel.observe(this, previous, word)
+                if (!Words.known(word)) Words.learn(this, word)
+            }
+            scheduleRefresh()
+            true
+        } catch (_: Exception) { false }
+    }
+
     private fun attach(k: K, repeat: Boolean = false, showPrev: Boolean = false, fast: Boolean = false, onLong: (() -> Unit)? = null, tap: () -> Unit) {
-        var fired = false
+        var fired = false; var swiped = false; var swipeMoved = false; var swipeTracking = false
+        var swipeLastKey = ""
+        val swipePath = StringBuilder()
+        val letterKey = letterKeys.any { it.first === k.tv }
         val longR = Runnable { fired = true; hidePreview(); onLong?.invoke() }
         val repR = object : Runnable { override fun run() { tap(); hd.postDelayed(this, 45) } }
         k.cell.setOnTouchListener { _, e ->
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    fired = false; k.tv.alpha = 0.65f
+                    fired = false; swiped = false; swipeMoved = false
+                    swipeTracking = letterKey && Prefs.b(ctx, "swipeTyping", false)
+                    swipePath.setLength(0)
+                    swipeLastKey = if (swipeTracking) nearestLetterAt(e.rawX, e.rawY).orEmpty() else ""
+                    if (swipeLastKey.isNotEmpty()) swipePath.append(swipeLastKey)
+                    k.tv.alpha = 0.65f
                     if (hapticsOn) k.cell.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     if (keySoundOn) {
-                        try {
-                            (getSystemService(Context.AUDIO_SERVICE) as AudioManager)
-                                .playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD, 0.45f)
-                        } catch (_: Exception) { }
+                        try { (getSystemService(Context.AUDIO_SERVICE) as AudioManager).playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD, 0.45f) }
+                        catch (_: Exception) { }
                     }
                     if (showPrev) showPreview(k)
                     if (repeat) { tap(); hd.postDelayed(repR, 380) }
                     else if (fast) tap()
-                    else if (onLong != null) hd.postDelayed(longR, 350)
+                    else if (onLong != null && !swipeTracking) hd.postDelayed(longR, 350)
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (swipeTracking && e.pointerCount == 1) {
+                        val nearest = nearestLetterAt(e.rawX, e.rawY)
+                        if (!nearest.isNullOrEmpty() && nearest != swipeLastKey) {
+                            swipePath.append(nearest); swipeLastKey = nearest
+                            swipeMoved = true; fired = true
+                            hd.removeCallbacks(longR); hidePreview()
+                        }
+                    }
                 }
                 MotionEvent.ACTION_UP -> {
                     k.tv.alpha = 1f; hd.removeCallbacks(longR); hd.removeCallbacks(repR); hidePreview()
+                    if (swipeTracking && swipeMoved) swiped = commitSwipe(swipePath.toString())
+                    swipeTracking = false
                     if (!repeat && !fast && !fired) tap()
+                    if (swipeMoved && !swiped && !repeat && !fast) tap()
                 }
                 MotionEvent.ACTION_CANCEL -> {
                     k.tv.alpha = 1f; hd.removeCallbacks(longR); hd.removeCallbacks(repR); hidePreview()
+                    swipeTracking = false
                 }
             }
             true
