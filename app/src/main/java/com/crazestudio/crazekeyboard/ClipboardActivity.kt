@@ -92,8 +92,15 @@ class ClipboardActivity : Activity() {
             setOnClickListener { onPaste?.invoke(value); finish() }
         }
         row.addView(preview, LinearLayout.LayoutParams(0, -2, 1f))
-        row.addView(button(if (pinned) "📌" else "＋") { Prefs.togglePinnedClip(this, value); render() })
+        row.addView(button(if (pinned) "📌" else "☆") {
+            Prefs.togglePinnedClip(this, value)
+            render()
+        })
         row.addView(button("⧉") { onPaste?.invoke(value); finish() })
+        row.addView(button("×") {
+            Prefs.removeClip(this, value)
+            render()
+        })
         contentList.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(7) })
     }
     private fun render() {
