@@ -33,6 +33,6 @@ android {
 
 
 dependencies {
-    // Pinned runtime for the first on-device CrazeLM FP16 smoke-test phase.
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.31.1")
+    // LiteRT (TensorFlow Lite flatbuffer) CPU runtime for on-device CrazeLM inference.
+    implementation("com.google.ai.edge.litert:litert:2.3.2")
 }
