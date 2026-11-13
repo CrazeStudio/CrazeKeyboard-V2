@@ -651,9 +651,10 @@ class CrazeKeyboardService : InputMethodService() {
                         }
                     }
                     val tokens = tokensBeforeCursor(snapshot)
-                    if (Prefs.b(this, "personalized", true))
-                        UserLanguageModel.rank(this, tokens, base, 3).ifEmpty { base }
-                    else base
+                    if (Prefs.b(this, "personalized", true)) {
+                        val personalized = UserLanguageModel.rank(this, tokens, base, 8).ifEmpty { base }
+                        TinyNeuralRanker.rank(this, tokens, personalized, 3)
+                    } else base
                 }
                 else -> {
                     if (!VocabularyIndex.isLoaded() && !waitingForVocabulary) {
@@ -720,7 +721,9 @@ class CrazeKeyboardService : InputMethodService() {
         ic.endBatchEdit()
         setLocalContext((if (w.isNotEmpty()) before.dropLast(w.length) else before) + "$s ")
         if (!incognito && Prefs.b(this, "personalized", true)) {
+            val alternatives = sugViews.map { it.text?.toString().orEmpty() }.filter { it.isNotBlank() }
             val count = UserLanguageModel.observe(this, previous, s)
+            TinyNeuralRanker.learn(this, previous, s, alternatives)
             if (!Words.known(s) && count >= 2) Words.learn(this, s)
         }
         scheduleRefresh()
@@ -730,7 +733,9 @@ class CrazeKeyboardService : InputMethodService() {
         if (incognito || word.length < 2 || !Prefs.b(this, "personalized", true)) return
         val tokens = tokensBeforeCursor(before)
         val previous = if (tokens.lastOrNull() == word.lowercase()) tokens.dropLast(1).takeLast(2) else tokens.takeLast(2)
+        val alternatives = sugViews.map { it.text?.toString().orEmpty() }.filter { it.isNotBlank() }
         val count = UserLanguageModel.observe(this, previous, word)
+        TinyNeuralRanker.learn(this, previous, word, alternatives)
         if (!Words.known(word) && count >= 2) Words.learn(this, word)
     }
 
@@ -1505,50 +1510,143 @@ class CrazeKeyboardService : InputMethodService() {
     }
 
     private fun buildEditor(): View {
-        val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(7), dp(3), dp(7), 0) }
+        val col = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(7), dp(2), dp(7), 0)
+        }
         val header = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
-        header.addView(TextView(ctx).apply { text = "Text editor"; textSize = 15f; typeface = Typeface.DEFAULT_BOLD; setTextColor(t.text) }, lp(0, dp(34), 1f))
-        header.addView(iconBtn("×", 22f) { showPanel("letters") }, lp(dp(38), dp(34)))
-        col.addView(header)
-        val field = EditText(ctx).apply {
-            textSize = 15f
+        header.addView(TextView(ctx).apply {
+            text = "Text editor"
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
             setTextColor(t.text)
-            hint = "Write text here…"
+        }, lp(0, dp(30), 1f))
+        val countLabel = TextView(ctx).apply {
+            textSize = 10f
+            setTextColor(t.text)
+            alpha = 0.68f
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        header.addView(countLabel, lp(WRAP, dp(30)))
+        header.addView(iconBtn("×", 21f) { showPanel("letters") }, lp(dp(34), dp(30)))
+        col.addView(header)
+
+        val field = EditText(ctx).apply {
+            textSize = 14f
+            setTextColor(t.text)
+            setHintTextColor(t.text)
+            hint = "Write or edit text…"
             gravity = Gravity.TOP or Gravity.START
             minLines = 2
             maxLines = 4
+            isFocusable = true
+            isFocusableInTouchMode = true
             showSoftInputOnFocus = false
-            background = rounded(t.key, 12)
-            setPadding(dp(10), dp(7), dp(10), dp(7))
+            isCursorVisible = true
+            background = rounded(t.key, 11)
+            setPadding(dp(9), dp(6), dp(9), dp(6))
+            textDirection = View.TEXT_DIRECTION_FIRST_STRONG
         }
         field.setText(editorDraft)
         field.setSelection(field.text?.length ?: 0)
+        var previousText = editorDraft
+        var restoringEditor = false
+        val undo = ArrayDeque<String>()
+        val redo = ArrayDeque<String>()
+        fun updateCount(value: String) {
+            val words = value.trim().split(Regex("\\s+")).count { it.isNotBlank() }
+            countLabel.text = "$words words · ${value.length} chars"
+        }
         field.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
-            override fun afterTextChanged(s: Editable?) { editorDraft = s?.toString().orEmpty() }
+            override fun afterTextChanged(s: Editable?) {
+                val value = s?.toString().orEmpty()
+                if (!restoringEditor && value != previousText) {
+                    undo.addLast(previousText)
+                    while (undo.size > 40) undo.removeFirst()
+                    redo.clear()
+                }
+                previousText = value
+                editorDraft = value
+                updateCount(value)
+            }
         })
         editorField = field
         col.addView(field, lp(MATCH, 0, 1f))
+        updateCount(editorDraft)
+
+        val controls = hrow()
+        fun action(label: String, weight: Float = 1f, click: () -> Unit) {
+            val key = mk(label, weight, t.special, t.text, 11f)
+            attach(key) { click() }
+            controls.addView(key.cell)
+        }
+        action("Undo") {
+            if (undo.isNotEmpty()) {
+                restoringEditor = true
+                redo.addLast(field.text.toString())
+                val value = undo.removeLast()
+                field.setText(value); field.setSelection(value.length)
+                previousText = value; editorDraft = value
+                restoringEditor = false; updateCount(value)
+            }
+        }
+        action("Redo") {
+            if (redo.isNotEmpty()) {
+                restoringEditor = true
+                undo.addLast(field.text.toString())
+                val value = redo.removeLast()
+                field.setText(value); field.setSelection(value.length)
+                previousText = value; editorDraft = value
+                restoringEditor = false; updateCount(value)
+            }
+        }
+        action("Select all") { field.selectAll(); field.requestFocus() }
+        action("Copy") {
+            val start = minOf(field.selectionStart, field.selectionEnd).coerceAtLeast(0)
+            val end = maxOf(field.selectionStart, field.selectionEnd).coerceAtLeast(0)
+            val value = if (start != end) field.text?.substring(start, end).orEmpty() else field.text?.toString().orEmpty()
+            if (value.isNotEmpty()) (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
+                .setPrimaryClip(android.content.ClipData.newPlainText("CrazeKeyboard editor", value))
+        }
+        action("Cut") {
+            val start = minOf(field.selectionStart, field.selectionEnd).coerceAtLeast(0)
+            val end = maxOf(field.selectionStart, field.selectionEnd).coerceAtLeast(0)
+            if (start != end) {
+                val value = field.text?.substring(start, end).orEmpty()
+                (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
+                    .setPrimaryClip(android.content.ClipData.newPlainText("CrazeKeyboard editor", value))
+                field.text?.delete(start, end)
+            }
+        }
+        col.addView(controls, lp(MATCH, dp(36)))
+
         val actions = hrow()
-        val clear = mk("Clear", 1f, t.special, t.text, 12f); attach(clear) { field.text?.clear() }; actions.addView(clear.cell)
-        val paste = mk("Paste", 1f, t.special, t.text, 12f); attach(paste) {
-            val clip = (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).primaryClip
+        fun second(label: String, weight: Float = 1f, click: () -> Unit) {
+            val key = mk(label, weight, t.special, t.text, 11f)
+            attach(key) { click() }
+            actions.addView(key.cell)
+        }
+        second("Paste") {
+            val clip = (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).primaryClip
             if (clip != null && clip.itemCount > 0) {
                 val value = clip.getItemAt(0).coerceToText(ctx)?.toString().orEmpty()
                 val a = minOf(field.selectionStart, field.selectionEnd).coerceAtLeast(0)
                 val b = maxOf(field.selectionStart, field.selectionEnd).coerceAtLeast(0)
                 field.text?.replace(a, b, value)
             }
-        }; actions.addView(paste.cell)
-        val insert = mk("Insert", 1.3f, t.accent, t.accentText, 12f); attach(insert) {
-            currentInputConnection?.commitText(field.text?.toString().orEmpty(), 1)
+        }
+        second("Clear") { field.text?.clear() }
+        second("Insert", 1.35f) {
+            val value = field.text?.toString().orEmpty()
+            if (value.isNotEmpty()) currentInputConnection?.commitText(value, 1)
             editorDraft = ""
             editorField = null
             showPanel("letters")
             syncContextAsync()
-        }; actions.addView(insert.cell)
-        col.addView(actions, lp(MATCH, dp(42)))
+        }
+        col.addView(actions, lp(MATCH, dp(36)))
         return col
     }
 
