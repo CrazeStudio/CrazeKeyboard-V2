@@ -1,16 +1,15 @@
 package com.crazestudio.crazekeyboard
 
 import android.content.Context
-import com.google.ai.edge.litert.Accelerator
-import com.google.ai.edge.litert.CompiledModel
-import com.google.ai.edge.litert.TensorBuffer
+import org.tensorflow.lite.DataType
+import org.tensorflow.lite.Interpreter
 import java.io.File
 import java.util.PriorityQueue
 import java.util.concurrent.Executors
 
 /**
- * On-device next-word predictions using a single long-lived LiteRT CPU model.
- * Model loading/download is asynchronous; predict() never waits for installation.
+ * On-device next-word prediction with one long-lived TensorFlow Lite Interpreter.
+ * Download and initialization are asynchronous; keyboard typing never waits for setup.
  */
 internal object CrazeLmTflitePredictor {
     private const val SEQUENCE_LENGTH = 48
@@ -56,7 +55,7 @@ internal object CrazeLmTflitePredictor {
                 require(tokenizer.vocabularySize == VOCAB_SIZE) {
                     "CrazeLM tokenizer vocabulary mismatch."
                 }
-                publish("Loading LiteRT model…")
+                publish("Loading TensorFlow Lite model…")
                 val nextRuntime = Runtime(files.model, tokenizer)
                 runtime = nextRuntime
                 publish("CrazeLM is ready · offline")
@@ -80,21 +79,41 @@ internal object CrazeLmTflitePredictor {
     }
 
     private class Runtime(modelFile: File, private val tokenizer: CrazeLmTokenizer) {
-        private val model: CompiledModel
-        private val inputs: List<TensorBuffer>
-        private val outputs: List<TensorBuffer>
+        private val interpreter: Interpreter
         private val lock = Any()
 
         init {
-            require(modelFile.isFile && modelFile.length() > 0L) { "TFLite model file is missing." }
-            val options = CompiledModel.Options(Accelerator.CPU).apply {
-                cpuOptions = CompiledModel.CpuOptions(numThreads = 2)
+            require(modelFile.isFile && modelFile.length() > 0L) {
+                "TFLite model file is missing."
             }
-            model = CompiledModel.create(modelFile.absolutePath, options)
-            inputs = model.createInputBuffers()
-            outputs = model.createOutputBuffers()
-            require(inputs.size == 2) { "Expected input_ids and lengths model inputs." }
-            require(outputs.size == 1) { "Expected one next-token logits output." }
+            val options = Interpreter.Options()
+                .setNumThreads(2)
+                .setUseXNNPACK(true)
+            interpreter = Interpreter(modelFile, options)
+
+            require(interpreter.inputTensorCount == 2) {
+                "Expected input_ids and lengths model inputs."
+            }
+            require(interpreter.outputTensorCount == 1) {
+                "Expected one next-token logits output."
+            }
+            val idsInput = interpreter.getInputTensor(0)
+            val lengthsInput = interpreter.getInputTensor(1)
+            val logitsOutput = interpreter.getOutputTensor(0)
+            require(idsInput.dataType() == DataType.INT32 &&
+                idsInput.shape().contentEquals(intArrayOf(1, SEQUENCE_LENGTH))) {
+                "Unexpected input_ids tensor type or shape: " +
+                    idsInput.dataType() + " " + idsInput.shape().contentToString()
+            }
+            require(lengthsInput.dataType() == DataType.INT32 &&
+                lengthsInput.shape().contentEquals(intArrayOf(1))) {
+                "Unexpected lengths tensor type or shape."
+            }
+            require(logitsOutput.dataType() == DataType.FLOAT32 &&
+                logitsOutput.shape().contentEquals(intArrayOf(1, VOCAB_SIZE))) {
+                "Unexpected logits tensor type or shape: " +
+                    logitsOutput.dataType() + " " + logitsOutput.shape().contentToString()
+            }
         }
 
         fun predict(text: String, limit: Int): List<String> {
@@ -103,16 +122,14 @@ internal object CrazeLmTflitePredictor {
             val padded = IntArray(SEQUENCE_LENGTH)
             tokens.forEachIndexed { index, id -> padded[index] = id }
             val lengths = intArrayOf(tokens.size)
+            val logitsOutput = Array(1) { FloatArray(VOCAB_SIZE) }
+            val inputs = arrayOf<Any>(arrayOf(padded), lengths)
+            val outputs = hashMapOf<Int, Any>(0 to logitsOutput)
 
-            val logits = synchronized(lock) {
-                inputs[0].writeInt(padded)
-                inputs[1].writeInt(lengths)
-                model.run(inputs, outputs)
-                outputs[0].readFloat()
+            synchronized(lock) {
+                interpreter.runForMultipleInputsOutputs(inputs, outputs)
             }
-            require(logits.size == VOCAB_SIZE) {
-                "Unexpected CrazeLM output length: " + logits.size
-            }
+            val logits = logitsOutput[0]
 
             data class Candidate(val word: String, val score: Float)
             val best = PriorityQueue<Candidate>(CANDIDATE_SCAN, compareBy { it.score })
@@ -122,7 +139,8 @@ internal object CrazeLmTflitePredictor {
                 val piece = tokenizer.piece(id)
                 if (!piece.startsWith("▁")) continue
                 val word = piece.substring(1)
-                if (word.length !in 2..20 || !word.all { it.isLetter() || it == '\'' || it == '-' }) continue
+                if (word.length !in 2..20 ||
+                    !word.all { it.isLetter() || it == '\'' || it == '-' }) continue
                 if (!Words.known(word)) continue
                 val candidate = Candidate(word, score)
                 if (best.size < CANDIDATE_SCAN) best.add(candidate)
