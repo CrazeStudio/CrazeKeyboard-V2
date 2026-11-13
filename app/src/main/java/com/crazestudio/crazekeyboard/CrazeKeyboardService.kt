@@ -1240,6 +1240,15 @@ class CrazeKeyboardService : InputMethodService() {
             isClickable = true
             isFocusable = true
             contentDescription = label
+            setOnTouchListener { view, event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> view.animate().scaleX(0.97f).scaleY(0.97f)
+                        .setDuration(65L).start()
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> view.animate()
+                        .scaleX(1f).scaleY(1f).setDuration(95L).start()
+                }
+                false
+            }
             setOnClickListener { a() }
         }
         box.addView(FrameLayout(ctx).apply {
