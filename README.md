@@ -19,7 +19,8 @@ CrazeKeyboard is an offline-first Android IME by CrazeStudio.
 - A draggable floating keyboard layer with an independent touch region, a move grip, and a live horizontal resize grip.
 - Local English dictionary loaded from `app/src/main/assets/main_en-US.dict`, with a small built-in fallback list.
 - Frequency-ordered prefix completions, typo alternatives using bounded edit distance, and conservative automatic correction on space.
-- Lightweight context-based next-word candidates for common preceding words.
+- CrazeLM 30M next-word suggestions using an on-device TensorFlow Lite model and the matching 100k SentencePiece tokenizer.
+- AI assets download on first keyboard use into app-private storage, are SHA-256 verified, and then run offline with the existing phrase predictor as fallback.
 - On-device learned words (up to 500), with a settings action to clear them.
 - Double-space period, repeat backspace, long-press word deletion, and long-press accented character alternatives.
 - Emoji categories and recents, plus optional local clipboard history.
@@ -27,7 +28,7 @@ CrazeKeyboard is an offline-first Android IME by CrazeStudio.
 
 ## Privacy and offline behaviour
 
-The keyboard does not request Internet permission and has no remote prediction endpoint for text suggestions. Dictionary lookup, spelling alternatives, contextual candidates, and learned words are processed locally. Clipboard history is opt-in and remains on-device. Voice typing is different: it uses the Android-selected speech recognition service, which may send audio to its provider for recognition. Microphone access is permission-gated and voice input is suppressed in password and restricted fields.
+The keyboard uses Internet access only to download the CrazeLM model and its matching tokenizer on first use. Both are saved in app-private storage and verified before activation. After installation, AI prediction, dictionary lookup, spelling alternatives, and learned words run locally; typed text is not sent to a prediction server. Clipboard history is opt-in and remains on-device. Voice typing is different: it uses the Android-selected speech recognition service, which may send audio to its provider for recognition. Microphone access is permission-gated and voice input is suppressed in password and restricted fields.
 
 ## Build and install
 
@@ -35,7 +36,7 @@ Open the project in Android Studio and build the `app` debug variant, or use the
 
 ## Current scope
 
-Phase two adds an adaptive, customisable toolbar and a companion text editor while keeping the offline-first keyboard foundation. It is not a Gboard clone. It does **not** include swipe/gesture typing, neural language models, voice dictation, cloud sync, translation, GIF/sticker search, or broad multilingual/Indic input layouts. The included English word list is a lightweight starter lexicon, not a full commercial dictionary. Accuracy, editor hand-off, and latency must still be validated on physical devices and across different editor apps.
+Phase two adds an adaptive, customisable toolbar and a companion text editor while keeping the offline-first keyboard foundation. It is not a Gboard clone. It does **not** include swipe/gesture typing, voice dictation, cloud sync, translation, GIF/sticker search, or broad multilingual/Indic input layouts. CrazeLM is an experimental 30M model; its word ranking and latency still need evaluation on physical devices. The included English word list is a lightweight starter lexicon, not a full commercial dictionary. Accuracy, editor hand-off, and latency must still be validated on physical devices and across different editor apps.
 
 ## Dictionary and data licensing
 
