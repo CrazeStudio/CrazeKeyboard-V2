@@ -34,5 +34,5 @@ android {
 
 dependencies {
     // LiteRT (TensorFlow Lite flatbuffer) CPU runtime for on-device CrazeLM inference.
-    implementation("com.google.ai.edge.litert:litert:2.3.2")
+    implementation("org.tensorflow:tensorflow-lite:2.17.0")
 }
