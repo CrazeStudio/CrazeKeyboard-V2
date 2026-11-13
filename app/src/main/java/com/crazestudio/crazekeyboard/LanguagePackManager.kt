@@ -2,6 +2,7 @@ package com.crazestudio.crazekeyboard
 
 import android.content.Context
 import android.util.JsonReader
+import org.json.JSONArray
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
@@ -158,6 +159,9 @@ internal object LanguagePackManager {
                     }
                 }
                 if (uniqueWords.isEmpty()) throw IllegalStateException("Downloaded pack contains no valid words")
+                if (expectedCount > 0 && uniqueWords.size != expectedCount) {
+                    throw IllegalStateException("Pack word count mismatch: expected $expectedCount, found ${uniqueWords.size}")
+                }
                 wordsTemp.bufferedWriter(Charsets.UTF_8).use { writer ->
                     uniqueWords.forEach { writer.append(it).append('\n') }
                 }
