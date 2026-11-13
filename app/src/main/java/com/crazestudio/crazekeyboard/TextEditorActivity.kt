@@ -181,21 +181,23 @@ class TextEditorActivity : Activity() {
             background = shape(Color.rgb(245, 246, 248), 28)
             setPadding(dp(5), dp(3), dp(5), dp(3))
         }
-        fun tool(glyph: String, description: String, onClick: () -> Unit) {
-            toolbar.addView(TextView(this).apply {
-                text = glyph
+        fun tool(iconRes: Int, description: String, onClick: () -> Unit) {
+            val icon = android.widget.ImageView(this).apply {
+                setImageResource(iconRes)
                 contentDescription = description
-                textSize = if (glyph == "B") 20f else 23f
-                gravity = Gravity.CENTER
-                setTextColor(Color.rgb(34, 38, 45))
+                scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
+                setPadding(dp(11), dp(11), dp(11), dp(11))
+                isClickable = true
+                isFocusable = true
                 setOnClickListener { onClick() }
-            }, LinearLayout.LayoutParams(0, dp(48), 1f))
+            }
+            toolbar.addView(icon, LinearLayout.LayoutParams(0, dp(48), 1f))
         }
-        tool("↶", "Undo") { undo() }
-        tool("↷", "Redo") { redo() }
-        tool("A", "Text formatting") { toggleBold() }
-        tool("☷", "List") { insertBullet() }
-        tool("⌨", "Show or hide keyboard") { toggleKeyboard() }
+        tool(R.drawable.ic_editor_undo, "Undo") { undo() }
+        tool(R.drawable.ic_editor_redo, "Redo") { redo() }
+        tool(R.drawable.ic_editor_bold, "Text formatting") { toggleBold() }
+        tool(R.drawable.ic_editor_list, "List") { insertBullet() }
+        tool(R.drawable.ic_editor_keyboard, "Show or hide keyboard") { toggleKeyboard() }
         root.addView(toolbar, LinearLayout.LayoutParams(-1, dp(54)).apply {
             topMargin = dp(8)
         })
