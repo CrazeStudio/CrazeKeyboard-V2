@@ -1,12 +1,13 @@
 package com.crazestudio.crazekeyboard
 
 import android.content.Context
+import android.graphics.Color
 import android.content.SharedPreferences
 
 class Theme(val bg: Int, val key: Int, val special: Int, val text: Int, val accent: Int, val accentText: Int)
 
 object Prefs {
-    val themeNames = listOf("Light", "Dark", "Craze", "🌿 Sage Garden", "🏜 Sandstone", "〰 Mist Blue")
+    val themeNames = listOf("System", "Dark", "Craze", "🌿 Sage Garden", "🏜 Sandstone", "〰 Mist Blue")
     val themes = listOf(
         Theme(0xFFF1F3F8.toInt(), 0xFFFFFFFF.toInt(), 0xFFE2E7F0.toInt(), 0xFF202633.toInt(), 0xFF6656D9.toInt(), 0xFFFFFFFF.toInt()),
         Theme(0xFF17191F.toInt(), 0xFF292D36.toInt(), 0xFF222630.toInt(), 0xFFF0F2F7.toInt(), 0xFFB9A9FF.toInt(), 0xFF17191F.toInt()),
@@ -30,7 +31,29 @@ object Prefs {
     fun setB(c: Context, k: String, v: Boolean) = sp(c).edit().putBoolean(k, v).apply()
     fun i(c: Context, k: String, d: Int) = sp(c).getInt(k, d)
     fun setI(c: Context, k: String, v: Int) = sp(c).edit().putInt(k, v).apply()
-    fun theme(c: Context) = themes[i(c, "theme", 0).coerceIn(0, themes.size - 1)]
+    private fun systemTheme(c: Context): Theme {
+        val attrs = c.obtainStyledAttributes(intArrayOf(
+            android.R.attr.colorBackground,
+            android.R.attr.textColorPrimary,
+            android.R.attr.colorAccent,
+            android.R.attr.colorControlHighlight
+        ))
+        val bg = attrs.getColor(0, Color.rgb(245, 246, 250))
+        val text = attrs.getColor(1, Color.rgb(28, 32, 40))
+        val accent = attrs.getColor(2, Color.rgb(80, 100, 210))
+        val highlight = attrs.getColor(3, Color.argb(28, 80, 100, 210))
+        attrs.recycle()
+        val luminance = (0.2126 * Color.red(accent) + 0.7152 * Color.green(accent) +
+            0.0722 * Color.blue(accent)) / 255.0
+        return Theme(bg, bg, highlight, text, accent,
+            if (luminance > 0.55) Color.BLACK else Color.WHITE)
+    }
+
+    // Theme index 0 follows Android's current system/dynamic palette (Material You on Android 12+).
+    fun theme(c: Context): Theme {
+        val index = i(c, "theme", 0).coerceIn(0, themes.size - 1)
+        return if (index == 0) systemTheme(c) else themes[index]
+    }
     fun nextTheme(c: Context) = setI(c, "theme", (i(c, "theme", 0) + 1) % themes.size)
     fun nextOneHand(c: Context) = setI(c, "onehand", (i(c, "onehand", 0) + 1) % 3)
     fun keyH(c: Context) = i(c, "keyh", 46).coerceIn(34, 64)
