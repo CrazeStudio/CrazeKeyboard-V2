@@ -36,6 +36,7 @@ internal object VocabularyIndex {
     @Volatile private var failed = false
     private val main = Handler(Looper.getMainLooper())
     private val callbacks = CopyOnWriteArrayList<() -> Unit>()
+    private val firstLetterCache = java.util.concurrent.ConcurrentHashMap<Char, List<String>>()
 
     fun isLoaded(): Boolean = mapped != null
 
@@ -202,6 +203,9 @@ internal object VocabularyIndex {
         return index < offsets.size && wordAt(source, index) == value
     }
 
-    fun byFirstLetter(first: Char, limit: Int = 5000): List<String> =
-        suggest(first.lowercaseChar().toString(), limit)
+    fun byFirstLetter(first: Char, limit: Int = 256): List<String> {
+        val key = first.lowercaseChar()
+        val cached = firstLetterCache.computeIfAbsent(key) { suggest(it.toString(), 256) }
+        return cached.take(limit)
+    }
 }
