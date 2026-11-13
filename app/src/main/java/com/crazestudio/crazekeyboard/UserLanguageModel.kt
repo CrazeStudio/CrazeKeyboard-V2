@@ -171,7 +171,14 @@ internal object UserLanguageModel {
                 ln(1.0 + trigram) * 2.8 + base
         }
         return candidates.sortedWith(compareByDescending<String> { score(it) }
-            .thenBy { baseOrder[it] ?: Int.MAX_VALUE }).take(limit)
+            .thenBy { baseOrder[it] ?: Int.MAX_VALUE }).take(limit).map { candidate ->
+            when {
+                prefix.length > 1 && prefix.all { it.isUpperCase() } -> candidate.uppercase()
+                prefix.firstOrNull()?.isUpperCase() == true ->
+                    candidate.replaceFirstChar { it.uppercase() }
+                else -> candidate
+            }
+        }
     }
 
     @Synchronized
