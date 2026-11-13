@@ -11,13 +11,8 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.os.Bundle
-import java.util.concurrent.Executors
-import java.io.FileOutputStream
-import java.security.MessageDigest
-import java.io.File
 import android.os.Looper
 import android.os.Handler
-import android.net.Uri
 import android.provider.Settings
 import android.text.InputType
 import android.view.Gravity
@@ -28,76 +23,18 @@ import android.widget.*
 
 class SettingsActivity : Activity() {
     private val voicePermissionRequest = 701
-    private val crazeLmPickerRequest = 702
-    private val crazeLmTestExecutor = Executors.newSingleThreadExecutor { task ->
-        Thread(task, "craze-lm-smoke-test").apply { isDaemon = true }
-    }
     private val mainHandler = Handler(Looper.getMainLooper())
     private var crazeLmStatus: TextView? = null
 
-    private fun testCrazeLmModel(uri: Uri) {
-        val status = crazeLmStatus ?: return
-        status.text = "Copying and verifying the selected FP16 model… "
-        crazeLmTestExecutor.execute {
-            val modelDir = File(filesDir, "crazelm-test")
-            val temporary = File(modelDir, "CrazeLM-test.onnx.tmp")
-            val destination = File(modelDir, "CrazeLM-test.onnx")
-            try {
-                if (!modelDir.exists() && !modelDir.mkdirs()) {
-                    error("Could not create the private model test directory.")
-                }
-                var copied = 0L
-                val sha256 = MessageDigest.getInstance("SHA-256")
-                val source = contentResolver.openInputStream(uri)
-                    ?: error("Android could not open the selected file.")
-                source.use { input ->
-                    FileOutputStream(temporary).use { output ->
-                        val buffer = ByteArray(64 * 1024)
-                        while (true) {
-                            val count = input.read(buffer)
-                            if (count < 0) break
-                            copied += count
-                            sha256.update(buffer, 0, count)
-                            if (copied > 512L * 1024L * 1024L) {
-                                error("Model file is larger than the 512 MiB test limit.")
-                            }
-                            output.write(buffer, 0, count)
-                        }
-                    }
-                }
-                if (copied == 0L) error("The selected file is empty.")
-                val actualSha256 = sha256.digest().joinToString("") { "%02x".format(it) }
-                val expectedBytes = 59287679L
-                val expectedSha256 = "30530abe9ab79e6f2d849b0719b27f5c8ddf7a5db469e6fe6aefa6164860669a"
-                if (copied != expectedBytes || actualSha256 != expectedSha256) {
-                    error(
-                        "This is not the exact published CrazeLM FP16 ONNX asset, or the download is incomplete. " +
-                            "Size: $copied bytes (expected $expectedBytes). SHA-256: $actualSha256. " +
-                            "Download the FP16 .onnx asset again from the official CrazeLM v1.0 GitHub release."
-                    )
-                }
-                if (destination.exists() && !destination.delete()) {
-                    error("Could not replace the previous test model.")
-                }
-                if (!temporary.renameTo(destination)) {
-                    temporary.copyTo(destination, overwrite = true)
-                    temporary.delete()
-                }
-
-                val report = CrazeLmOnnxTester.smokeTest(destination)
-                mainHandler.post {
-                    if (!isFinishing) crazeLmStatus?.text = report
-                }
-            } catch (error: Throwable) {
-                temporary.delete()
-                mainHandler.post {
-                    if (!isFinishing) {
-                        crazeLmStatus?.text = "TEST FAILED\n${error.message ?: error.javaClass.simpleName}"
-                    }
-                }
+    private fun startCrazeLmDownload() {
+        CrazeLmTflitePredictor.observe { message ->
+            mainHandler.post {
+                if (!isFinishing) crazeLmStatus?.text = message
             }
         }
+        CrazeLmTflitePredictor.initializeAsync(applicationContext)
     }
+
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     // Palette follows the system light/dark setting (set in initPalette before any view is built).
@@ -441,22 +378,14 @@ class SettingsActivity : Activity() {
         content.addView(test, margin())
 
         val crazeLm = section(
-            "CrazeLM · ONNX model test",
-            "Choose the FP16 .onnx file you downloaded. The app copies it to private storage and tests one CPU inference. The model is not bundled in the APK and is not used for live suggestions yet."
+            "CrazeLM · Offline AI",
+            "Download the 30M English model and its matching tokenizer. Predictions run locally on this device; the model is stored privately and is not bundled into the APK."
         )
-        val modelStatus = text(
-            "No model tested. Select CrazeLM-30M-v1.0-fp16.onnx to begin.",
-            11f, muted
-        )
+        val modelStatus = text(CrazeLmTflitePredictor.status, 11f, muted)
         crazeLmStatus = modelStatus
         crazeLm.addView(modelStatus)
-        crazeLm.addView(action("Select local ONNX model", true) {
-            val picker = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                addCategory(Intent.CATEGORY_OPENABLE)
-                type = "*/*"
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            startActivityForResult(picker, crazeLmPickerRequest)
+        crazeLm.addView(action("Download / Repair AI model", true) {
+            startCrazeLmDownload()
         }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
         content.addView(crazeLm, margin())
 
@@ -871,17 +800,8 @@ class SettingsActivity : Activity() {
         refreshKeyboardStatus()
     }
 
-    @Deprecated("Used for the Android document picker on older supported API levels.")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == crazeLmPickerRequest && resultCode == RESULT_OK) {
-            val uri = data?.data ?: return
-            testCrazeLmModel(uri)
-        }
-    }
-
     override fun onDestroy() {
-        crazeLmTestExecutor.shutdownNow()
+        CrazeLmTflitePredictor.observe(null)
         mainHandler.removeCallbacksAndMessages(null)
         super.onDestroy()
     }
