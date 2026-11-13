@@ -798,6 +798,9 @@ class SettingsActivity : Activity() {
     override fun onResume() {
         super.onResume()
         refreshKeyboardStatus()
+        CrazeLmTflitePredictor.observe { message ->
+            mainHandler.post { if (!isFinishing) crazeLmStatus?.text = message }
+        }
     }
 
     override fun onDestroy() {
