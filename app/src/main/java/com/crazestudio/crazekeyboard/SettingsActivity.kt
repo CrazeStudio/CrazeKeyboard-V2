@@ -339,12 +339,6 @@ class SettingsActivity : Activity() {
         packsSection.addView(divider())
         addPackRow("hi", "Hindi")
         packsSection.addView(divider())
-        packsSection.addView(settingSwitch(
-            "Online prefix suggestions",
-            "Send only the current word prefix and language to CrazePredictionAPI. Never sends the sentence.",
-            "onlinepred",
-            false
-        ))
         content.addView(category("Languages & downloads"))
         content.addView(packsSection, margin())
 
