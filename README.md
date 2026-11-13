@@ -21,6 +21,7 @@ CrazeKeyboard is an offline-first Android IME by CrazeStudio.
 - CrazeLM-only next-word suggestions using an on-device TensorFlow Lite model and the matching 100k SentencePiece tokenizer. Legacy dictionary, phrase n-gram, learned-word ranking, and remote suggestion sources are not mixed into the suggestion strip.
 - AI assets download on first keyboard use into app-private storage, are SHA-256 verified, and then run offline. The current CrazeLM is a next-word model; full-text AI rewriting is not yet supported.
 - An in-keyboard live text editor that mirrors the focused app field, supports native long-press selection and selection actions, and writes edits back immediately.
+- A conservative on-device Quick polish action for punctuation spacing, repeated spaces, and sentence capitalization. It is a local formatter, not generative AI; the next-word model is not a rewriting model.
 - Contextual emoji recommendations from CrazeLM's predicted words and the local emoji alias index.
 - Double-space period, repeat backspace, long-press word deletion, and long-press accented character alternatives.
 - Emoji categories and recents, plus optional local clipboard history.
