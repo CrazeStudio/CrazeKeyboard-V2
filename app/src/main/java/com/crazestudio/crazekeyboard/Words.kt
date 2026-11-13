@@ -232,4 +232,47 @@ object Words {
         val out = scored.entries.sortedByDescending { it.value }.map { cased(it.key, w) }.distinct().take(limit)
         return if (out.isEmpty()) listOf(w) else out
     }
+    /**
+     * Rank a captured QWERTY key path against the local dictionary. This is a lightweight
+     * edit-distance heuristic, not a trained swipe model; the feature is therefore opt-in.
+     */
+    fun swipeCandidates(c: Context, keyPath: String, limit: Int = 3): List<String> {
+        val path = keyPath.filter { it.isLetter() }.lowercase().take(24)
+        if (path.length < 3 || limit <= 0) return emptyList()
+        val learned = Prefs.learned(c)
+        val candidates = LinkedHashSet<String>()
+        candidates.addAll(dict)
+        candidates.addAll(learned)
+        candidates.addAll(VocabularyIndex.byFirstLetter(path.first(), 2500))
+        fun editDistance(a: String, b: String): Int {
+            if (kotlin.math.abs(a.length - b.length) > maxOf(3, path.length / 3)) return maxOf(a.length, b.length)
+            var previous = IntArray(b.length + 1) { it }
+            var current = IntArray(b.length + 1)
+            for (i in a.indices) {
+                current[0] = i + 1
+                for (j in b.indices) {
+                    val cost = if (a[i] == b[j]) 0 else 1
+                    current[j + 1] = minOf(current[j] + 1, previous[j + 1] + 1, previous[j] + cost)
+                }
+                val swap = previous; previous = current; current = swap
+            }
+            return previous[b.length]
+        }
+        val maxDistance = maxOf(2, path.length / 3)
+        return candidates.asSequence()
+            .filter { it.length in 3..24 && it.all(Char::isLetter) }
+            .map { word ->
+                val edits = editDistance(path, word)
+                val normalizedPenalty = edits.toDouble() / maxOf(path.length, word.length)
+                val personalBonus = if (word in learned) 1.5 else 0.0
+                val score = VocabularyIndex.rankScore(word) + personalBonus - normalizedPenalty * 11.0 - edits * 0.7
+                Triple(word, edits, score)
+            }
+            .filter { it.second <= maxDistance }
+            .sortedByDescending { it.third }
+            .take(limit)
+            .map { it.first }
+            .toList()
+    }
+
 }
