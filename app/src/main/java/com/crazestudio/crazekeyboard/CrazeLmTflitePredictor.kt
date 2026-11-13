@@ -24,6 +24,9 @@ internal object CrazeLmTflitePredictor {
     private val executor = Executors.newSingleThreadExecutor { task ->
         Thread(task, "craze-lm-runtime").apply { isDaemon = true }
     }
+    private val inferenceExecutor = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "craze-lm-inference").apply { isDaemon = true }
+    }
 
     fun observe(callback: ((String) -> Unit)?) {
         observer = callback
@@ -64,6 +67,20 @@ internal object CrazeLmTflitePredictor {
             } finally {
                 loading = false
             }
+        }
+    }
+
+    fun predictNextWordsAsync(
+        context: Context,
+        beforeCursor: String,
+        limit: Int = 3,
+        onResult: (List<String>) -> Unit
+    ) {
+        if (limit <= 0 || beforeCursor.isBlank() || runtime == null) return
+        val app = context.applicationContext
+        inferenceExecutor.execute {
+            val result = predictNextWords(app, beforeCursor, limit)
+            try { onResult(result) } catch (_: Exception) { }
         }
     }
 
