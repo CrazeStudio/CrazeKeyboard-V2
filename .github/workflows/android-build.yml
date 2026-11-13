@@ -13,7 +13,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,6 +29,26 @@ jobs:
         with:
           gradle-version: '8.7'
 
+      - name: Download and verify CrazeLM assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASSET_DIR="app/src/main/assets/crazelm"
+          mkdir -p "$ASSET_DIR"
+          BASE="https://github.com/CrazeStudio/Crazekeyboard-llm/releases/download/v1.0"
+          curl --fail --location --retry 4 --retry-all-errors "$BASE/CrazeLM-30M-v1.0.tflite.json" -o "$ASSET_DIR/manifest.json"
+          curl --fail --location --retry 4 --retry-all-errors "$BASE/CrazeLM-30M-v1.0.tflite" -o "$ASSET_DIR/CrazeLM-30M-v1.0.tflite"
+          curl --fail --location --retry 4 --retry-all-errors "$BASE/tokenizer.model" -o "$ASSET_DIR/tokenizer.model"
+          MODEL_SHA="$(jq -r '.sha256' "$ASSET_DIR/manifest.json")"
+          MODEL_SIZE="$(jq -r '.size_bytes' "$ASSET_DIR/manifest.json")"
+          test "$MODEL_SHA" != "null"
+          test "$MODEL_SIZE" -gt 0
+          test "$(stat -c%s "$ASSET_DIR/CrazeLM-30M-v1.0.tflite")" -eq "$MODEL_SIZE"
+          echo "$MODEL_SHA  $ASSET_DIR/CrazeLM-30M-v1.0.tflite" | sha256sum --check -
+          echo "2f48ce89eee2cd8a49668d4baf08652eaf8206a07def1bee55451f80b1bd981e  $ASSET_DIR/tokenizer.model" | sha256sum --check -
+          test "$(jq -r '.format' "$ASSET_DIR/manifest.json")" = "LiteRT/TFLite"
+          test "$(jq -r '.vocabulary_size' "$ASSET_DIR/manifest.json")" -eq 100000
+
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon --stacktrace
 
@@ -38,3 +58,12 @@ jobs:
           name: CrazeKeyboard-debug
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload standalone CrazeLM assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrazeLM-assets
+          path: app/src/main/assets/crazelm/*
+          if-no-files-found: error
+          compression-level: 0
