@@ -19,6 +19,10 @@ import java.util.zip.GZIPInputStream
  * assets/en-US.cwp.gz. It is expanded once into private app storage and then
  * memory-mapped read-only. The expanded model is never loaded into a Kotlin
  * heap collection.
+ *
+ * Prediction blends the 3-, 2- and 1-word contexts ("stupid backoff": each shorter context
+ * counts for less) using the frequencies stored in the pack, instead of taking the first
+ * words found in the longest matching context.
  */
 internal object NextWordPredictor {
     private const val ASSET_NAME = "en-US.cwp.gz"
@@ -26,6 +30,14 @@ internal object NextWordPredictor {
     private const val MAGIC = 0x31505743 // "CWP1" in little endian
     private const val HEADER_SIZE = 12
     private const val INDEX_ENTRY_SIZE = 8
+    private const val PER_CONTEXT = 64
+
+    private val tokenSplit = Regex("[^\\p{L}']+")
+    private val sentenceBreaks = charArrayOf('.', '!', '?', '\n')
+    // Shown at the start of a sentence, and as a last resort when the model knows no context. Never
+    // returning an empty list once the model is loaded also keeps the keyboard from re-polling it.
+    private val starters = listOf("I", "The", "Thanks", "It", "We")
+    private val fallbackWords = listOf("the", "to", "and", "I", "a")
 
     @Volatile private var mapped: ByteBuffer? = null
     @Volatile private var indexedCount = 0
@@ -34,6 +46,8 @@ internal object NextWordPredictor {
     @Volatile private var loadFailed = false
     private val mainHandler = Handler(Looper.getMainLooper())
     private val callbacks = CopyOnWriteArrayList<() -> Unit>()
+
+    fun isLoaded(): Boolean = mapped != null
 
     private fun validModel(file: File): Boolean {
         if (!file.isFile || file.length() < HEADER_SIZE) return false
@@ -146,26 +160,78 @@ internal object NextWordPredictor {
         } }
     }
 
-    /** Return up to three likely next words for the text immediately before the cursor. */
+    /**
+     * Return up to [limit] likely next words for the text immediately before the cursor.
+     * Returns an empty list only while the model is not loaded (or [textBeforeCursor] is blank);
+     * afterwards it always returns something, so callers never re-poll a loaded model.
+     */
     fun predict(context: Context, textBeforeCursor: String, limit: Int = 3): List<String> {
         if (textBeforeCursor.isBlank() || limit <= 0) return emptyList()
-        val tokens = textBeforeCursor.lowercase(Locale.ROOT)
-            .split(Regex("[^\\p{L}']+"))
-            .filter { it.isNotBlank() }
-            .takeLast(3)
-        if (tokens.isEmpty()) return emptyList()
-        val buffer = mapped ?: return emptyList()
-        val ranked = LinkedHashSet<String>(limit)
-        // Prefer the most specific context, then back off to shorter contexts.
-        for (size in minOf(3, tokens.size) downTo 1) {
-            val phrase = tokens.takeLast(size).joinToString(" ")
-            lookup(buffer, phrase, limit).forEach { if (ranked.size < limit) ranked.add(it) }
-            if (ranked.size >= limit) break
+        if (mapped == null) return emptyList()
+        val lower = textBeforeCursor.lowercase(Locale.ROOT)
+        // A new sentence starts a new context: words from the previous sentence say little about it.
+        val breakAt = lower.lastIndexOfAny(sentenceBreaks)
+        val tail = if (breakAt >= 0) lower.substring(breakAt + 1) else lower
+        val tokens = tail.split(tokenSplit).filter { it.isNotBlank() }.takeLast(3)
+
+        val out = LinkedHashSet<String>(limit * 2)
+        if (tokens.isEmpty()) {
+            for (word in starters) if (out.size < limit) out.add(word)
+            return out.toList()
         }
-        return ranked.toList()
+        for ((word, _) in scoredForTokens(tokens, limit + 2)) {
+            if (out.size < limit) out.add(fixPronoun(word))
+        }
+        for (word in fallbackWords) if (out.size < limit) out.add(word)
+        return out.toList()
     }
 
-    private fun lookup(source: ByteBuffer, phrase: String, limit: Int): List<String> {
+    /**
+     * Words that follow [precedingWords] and start with [prefix], best first. Gives completion of the
+     * word being typed the same context awareness as next-word prediction ("thank y" -> "you").
+     */
+    fun predictForPrefix(precedingWords: List<String>, prefix: String, limit: Int = 8): List<String> {
+        if (prefix.isEmpty() || limit <= 0 || mapped == null) return emptyList()
+        val tokens = precedingWords.map { it.lowercase(Locale.ROOT) }.filter { it.isNotBlank() }.takeLast(3)
+        if (tokens.isEmpty()) return emptyList()
+        val start = prefix.lowercase(Locale.ROOT)
+        return scoredForTokens(tokens, PER_CONTEXT)
+            .map { it.first }
+            .filter { it.startsWith(start) && it != start }
+            .take(limit)
+    }
+
+    private fun fixPronoun(word: String): String = when {
+        word == "i" -> "I"
+        word.startsWith("i'") -> "I" + word.substring(1)
+        else -> word
+    }
+
+    /** Blend the 3-, 2- and 1-word contexts: P(word) summed with weights 1.0 / 0.4 / 0.16. */
+    private fun scoredForTokens(tokens: List<String>, limit: Int): List<Pair<String, Double>> {
+        val buffer = mapped ?: return emptyList()
+        if (tokens.isEmpty() || limit <= 0) return emptyList()
+        val last = tokens.last()
+        val scores = HashMap<String, Double>()
+        for (size in minOf(3, tokens.size) downTo 1) {
+            val phrase = tokens.takeLast(size).joinToString(" ")
+            val entries = lookup(buffer, phrase, PER_CONTEXT)
+            if (entries.isEmpty()) continue
+            val total = entries.sumOf { (it.second + 1).toDouble() }
+            val weight = when (size) { 3 -> 1.0; 2 -> 0.4; else -> 0.16 }
+            for ((word, frequency) in entries) {
+                scores[word] = (scores[word] ?: 0.0) + weight * (frequency + 1) / total
+            }
+        }
+        return scores.entries
+            .filter { it.key != last }
+            .sortedByDescending { it.value }
+            .take(limit)
+            .map { it.key to it.value }
+    }
+
+    /** Candidates stored for [phrase] with their stored frequency, in stored (best-first) order. */
+    private fun lookup(source: ByteBuffer, phrase: String, limit: Int): List<Pair<String, Int>> {
         val hash = fnv1a(phrase)
         var low = 0
         var high = indexedCount - 1
@@ -182,7 +248,7 @@ internal object NextWordPredictor {
         }
         if (first < 0) return emptyList()
         val phraseBytes = phrase.toByteArray(Charsets.UTF_8)
-        val results = ArrayList<String>(limit)
+        val results = ArrayList<Pair<String, Int>>(limit)
         var i = first
         while (i < indexedCount) {
             val slot = HEADER_SIZE + i * INDEX_ENTRY_SIZE
@@ -203,11 +269,10 @@ internal object NextWordPredictor {
                     val len = source.get(p++).toInt() and 0xff
                     if (len < 1 || p + len + 2 > source.capacity()) return results
                     val bytes = ByteArray(len)
-                    val view = source.duplicate()
-                    view.position(p)
-                    view.get(bytes)
-                    p += len + 2 // skip the stored frequency after each candidate
-                    if (results.size < limit) results.add(String(bytes, Charsets.UTF_8))
+                    for (k in 0 until len) bytes[k] = source.get(p + k)
+                    val frequency = source.getShort(p + len).toInt() and 0xffff
+                    p += len + 2
+                    if (results.size < limit) results.add(String(bytes, Charsets.UTF_8) to frequency)
                 }
                 return results
             }

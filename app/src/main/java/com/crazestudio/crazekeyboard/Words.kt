@@ -43,6 +43,9 @@ object Words {
         "believe maybe probably actually definitely absolutely exactly totally literally basically honestly seriously").split(" ").filter { it.isNotEmpty() }.distinct()
 
     private val dictSet = dict.toHashSet()
+    private val dictRank: Map<String, Int> = HashMap<String, Int>(dict.size * 2).also { map ->
+        dict.forEachIndexed { index, word -> map[word] = index }
+    }
     private val byFirst: Map<Char, List<String>> by lazy(LazyThreadSafetyMode.PUBLICATION) {
         dict.groupBy { it.first() }
     }
@@ -50,6 +53,45 @@ object Words {
         dict.groupBy { it.take(2) }
     }
     private val starters = listOf("I", "The", "Thanks")
+
+    // Typing shortcuts that are almost never intended: missing apostrophes, a lone "i" and the
+    // most common misspellings. Applied before the (more conservative) edit-distance search.
+    private val commonFixes: Map<String, String> = mapOf(
+        "i" to "I", "im" to "I'm", "ive" to "I've", "ill" to "ill", "id" to "id",
+        "dont" to "don't", "cant" to "can't", "wont" to "won't", "isnt" to "isn't", "arent" to "aren't",
+        "wasnt" to "wasn't", "werent" to "weren't", "didnt" to "didn't", "doesnt" to "doesn't",
+        "couldnt" to "couldn't", "shouldnt" to "shouldn't", "wouldnt" to "wouldn't", "havent" to "haven't",
+        "hasnt" to "hasn't", "hadnt" to "hadn't", "youre" to "you're", "theyre" to "they're",
+        "thats" to "that's", "whats" to "what's", "theres" to "there's", "heres" to "here's",
+        "wheres" to "where's", "itll" to "it'll", "youll" to "you'll", "youve" to "you've",
+        "weve" to "we've", "theyve" to "they've", "thatll" to "that'll",
+        "teh" to "the", "adn" to "and", "taht" to "that", "waht" to "what", "wiht" to "with",
+        "thier" to "their", "recieve" to "receive", "recieved" to "received", "beleive" to "believe",
+        "seperate" to "separate", "definately" to "definitely", "definatly" to "definitely",
+        "occured" to "occurred", "untill" to "until", "wich" to "which", "becuase" to "because",
+        "becasue" to "because", "freind" to "friend", "wierd" to "weird", "alot" to "a lot",
+        "tommorow" to "tomorrow", "tomorow" to "tomorrow", "tommorrow" to "tomorrow",
+        "thankyou" to "thank you", "goverment" to "government", "enviroment" to "environment",
+        "adress" to "address", "accomodate" to "accommodate", "acheive" to "achieve",
+        "calender" to "calendar", "comming" to "coming", "diffrent" to "different",
+        "existance" to "existence", "foriegn" to "foreign", "happend" to "happened",
+        "immediatly" to "immediately", "independant" to "independent", "knowlege" to "knowledge",
+        "neccessary" to "necessary", "necesary" to "necessary", "noticable" to "noticeable",
+        "occassion" to "occasion", "persistant" to "persistent", "posession" to "possession",
+        "prefered" to "preferred", "publically" to "publicly", "realy" to "really",
+        "reccomend" to "recommend", "recomend" to "recommend", "refered" to "referred",
+        "relevent" to "relevant", "resturant" to "restaurant", "succesful" to "successful",
+        "sucessful" to "successful", "suprise" to "surprise", "truely" to "truly", "writting" to "writing"
+    )
+
+    /**
+     * Ranking bonus for the curated list above: 3.0 for the last entry up to 7.0 for the first.
+     * Words outside it get no bonus. Used to combine with the lexicon's usage frequency.
+     */
+    internal fun dictBonus(word: String): Double {
+        val rank = dictRank[word] ?: return 0.0
+        return 3.0 + 4.0 * (1.0 - rank.toDouble() / dict.size)
+    }
 
     fun known(w: String): Boolean {
         val value = w.lowercase()
@@ -99,57 +141,90 @@ object Words {
         return edits <= 1
     }
 
-    // Conservative auto-correction: only an unknown, plain-letter word with exactly one close dictionary match that
-    // shares its first letter. Three-letter words are only fixed when they are a simple swap ("teh" -> "the").
+    // Ranking used to pick between several equally-close correction candidates.
+    private fun candidateScore(learned: List<String>, word: String): Double =
+        VocabularyIndex.rankScore(word) + if (word in learned) 4.0 else 0.0
+
+    // Conservative auto-correction. Order of checks:
+    //  1. the user's own learned words are never "corrected";
+    //  2. a table of near-certain fixes ("dont" -> "don't", "teh" -> "the", a lone "i" -> "I");
+    //  3. real words of the lexicon are never touched;
+    //  4. an unknown, plain-letter word with one close candidate that shares its first letter. With several
+    //     close candidates the most frequent wins only if it clearly dominates the runner-up.
+    // Three-letter words are only fixed when they are a simple swap ("teh" -> "the").
     fun correction(c: Context, w: String): String? {
-        if (w.length < 3 || w.length > 20 || w.any { !it.isLetter() }) return null
-        if (w.drop(1).any { it.isUpperCase() }) return null
+        if (w.isEmpty() || w.length > 20 || w.any { !it.isLetter() }) return null
         val lower = w.lowercase()
-        if (lower in dictSet || Prefs.isLearned(c, lower)) return null
-        var found: String? = null
+        val learned = Prefs.learned(c)
+        if (lower in learned) return null
+        commonFixes[lower]?.let { fix ->
+            if (fix == lower) return null
+            return cased(fix, w).takeIf { it != w }
+        }
+        if (w.length < 3) return null
+        if (w.drop(1).any { it.isUpperCase() }) return null
+        if (lower in dictSet) return null
+        val vocabReady = VocabularyIndex.isLoaded()
+        if (vocabReady && known(lower)) return null
+
         val candidates = LinkedHashSet<String>()
         candidates.addAll(byFirst[lower[0]].orEmpty())
-        candidates.addAll(Prefs.learned(c))
-        candidates.addAll(VocabularyIndex.byFirstLetter(lower[0]))
-        for (x in candidates) {
-            if (!near(lower, x)) continue
-            if (found != null) return null
-            found = x
+        candidates.addAll(learned)
+        candidates.addAll(VocabularyIndex.byFirstLetter(lower[0], 700))
+        val matches = candidates.filter { near(lower, it) }
+        if (matches.isEmpty()) return null
+
+        val best: String
+        if (matches.size == 1) {
+            best = matches[0]
+        } else {
+            // Without frequency data there is no safe way to choose between candidates.
+            if (!vocabReady) return null
+            val ranked = matches.map { it to candidateScore(learned, it) }.sortedByDescending { it.second }
+            if (ranked[0].second - ranked[1].second < 3.0) return null
+            best = ranked[0].first
         }
-        val f = found ?: return null
-        if (lower.length == 3 && lower.toCharArray().sorted() != f.toCharArray().sorted()) return null
-        return cased(f, w)
+        if (lower.length == 3 && lower.toCharArray().sorted() != best.toCharArray().sorted()) return null
+        return cased(best, w)
     }
 
-    fun suggest(c: Context, w: String): List<String> {
-        if (w.isEmpty()) return starters
+    fun suggest(c: Context, w: String): List<String> = suggestPool(c, w, 3)
+
+    /**
+     * Up to [limit] completions (or close spellings) of [w], best first. Candidates come from the
+     * user's learned words, the frequency-ranked lexicon and the curated list, and are scored on one
+     * common scale so a frequent word beats a rare alphabetical neighbour.
+     */
+    fun suggestPool(c: Context, w: String, limit: Int): List<String> {
+        if (limit <= 0) return emptyList()
+        if (w.isEmpty()) return starters.take(limit)
         val lower = w.lowercase()
-        val out = ArrayList<String>(3)
-        for (x in Prefs.learned(c)) {
-            if (out.size >= 3) break
-            if (x.startsWith(lower) && x != lower) { val cx = cased(x, w); if (cx !in out) out.add(cx) }
+        val scored = LinkedHashMap<String, Double>()
+
+        // Words the user has taught the keyboard rank above ordinary words of similar frequency.
+        Prefs.learned(c).forEachIndexed { index, x ->
+            if (x.startsWith(lower) && x != lower) scored[x] = 11.0 - minOf(index, 300) * 0.01
         }
-        val lexiconCandidates = VocabularyIndex.suggest(lower, 3)
-        for (x in lexiconCandidates) {
-            if (out.size >= 3) break
-            val cx = cased(x, w)
-            if (cx !in out) out.add(cx)
+        for (x in VocabularyIndex.suggest(lower, 12)) {
+            if (x !in scored) scored[x] = VocabularyIndex.rankScore(x) - 0.08 * (x.length - lower.length)
         }
+        // The curated list still answers while the lexicon is loading.
         val prefixCandidates = if (lower.length >= 2) byPrefix[lower.take(2)].orEmpty()
             else byFirst[lower.first()].orEmpty()
         for (x in prefixCandidates) {
-            if (out.size >= 3) break
-            if (x.startsWith(lower) && x != lower) { val cx = cased(x, w); if (cx !in out) out.add(cx) }
-        }
-        // Typo fallback is uncommon; retain the full lexicon here so first-letter mistakes still match.
-        // Avoid a full dictionary edit-distance scan on short prefixes; this path
-        // is only useful for longer, clearly mistyped words.
-        if (out.size < 3 && lower.length >= 4) {
-            for (x in dict) {
-                if (out.size >= 3) break
-                if (near(lower, x)) { val cx = cased(x, w); if (cx !in out) out.add(cx) }
+            if (x.startsWith(lower) && x != lower && x !in scored) {
+                scored[x] = VocabularyIndex.rankScore(x) - 0.08 * (x.length - lower.length)
             }
         }
+        // Typo fallback is uncommon and only useful for longer, clearly mistyped words.
+        if (scored.size < limit && lower.length >= 4) {
+            val typoPool = LinkedHashSet<String>(dict)
+            typoPool.addAll(VocabularyIndex.byFirstLetter(lower[0], 400))
+            for (x in typoPool) {
+                if (x !in scored && near(lower, x)) scored[x] = VocabularyIndex.rankScore(x) - 2.0
+            }
+        }
+        val out = scored.entries.sortedByDescending { it.value }.map { cased(it.key, w) }.distinct().take(limit)
         return if (out.isEmpty()) listOf(w) else out
     }
 }
