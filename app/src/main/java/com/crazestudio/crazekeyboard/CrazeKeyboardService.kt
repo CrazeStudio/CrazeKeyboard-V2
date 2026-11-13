@@ -468,7 +468,9 @@ class CrazeKeyboardService : InputMethodService() {
     private fun desiredTopState(): String = when {
         emojiSearchActive -> "emojiSearch"
         mode == "menu" -> "menu"
-        !suggestOn || incognito || !hasEditorText() -> "tools"
+        // Private fields still receive generic dictionary/model suggestions.
+        // Incognito only disables personalization and all persistent learning.
+        !suggestOn || !hasEditorText() -> "tools"
         else -> "suggestions"
     }
 
@@ -670,22 +672,22 @@ class CrazeKeyboardService : InputMethodService() {
                         }
                     }
 
-                    // Never run the neural model on the suggestion worker: even a
-                    // fast model must not delay context sync or the next keystroke.
-                    if (!incognito) {
-                        CrazeLmTflitePredictor.predictNextWordsAsync(applicationContext, snapshot, 3) { aiBase ->
-                            if (aiBase.isNotEmpty() && epoch == predictionEpoch) {
-                                val refined = if (personalized) {
-                                    val ranked = UserLanguageModel.rank(this, tokens, aiBase, 8).ifEmpty { aiBase }
-                                    TinyNeuralRanker.rank(this, tokens, ranked, 3)
-                                } else aiBase
-                                refinedPredictionEpoch = epoch
-                                hd.post {
-                                    if (epoch == predictionEpoch && ::top.isInitialized &&
-                                        desiredTopState() == "suggestions") {
-                                        for (i in 0..2) if (i < sugViews.size) {
-                                            sugViews[i].text = refined.getOrNull(i) ?: ""
-                                        }
+                    // Generic TFLite suggestions are safe in private fields: inference
+                    // does not write user text or update the model. Never consult personal
+                    // history/rankers while incognito is active.
+                    CrazeLmTflitePredictor.predictNextWordsAsync(applicationContext, snapshot, 3) { aiBase ->
+                        if (aiBase.isNotEmpty() && epoch == predictionEpoch) {
+                            val usePersonalization = personalized && !incognito
+                            val refined = if (usePersonalization) {
+                                val ranked = UserLanguageModel.rank(this, tokens, aiBase, 8).ifEmpty { aiBase }
+                                TinyNeuralRanker.rank(this, tokens, ranked, 3)
+                            } else aiBase
+                            refinedPredictionEpoch = epoch
+                            hd.post {
+                                if (epoch == predictionEpoch && ::top.isInitialized &&
+                                    desiredTopState() == "suggestions") {
+                                    for (i in 0..2) if (i < sugViews.size) {
+                                        sugViews[i].text = refined.getOrNull(i) ?: ""
                                     }
                                 }
                             }
@@ -1354,7 +1356,7 @@ class CrazeKeyboardService : InputMethodService() {
         val connection = targetInputConnection ?: currentInputConnection ?: return
         acceptPendingCorrection()
         connection.commitText(value, 1)
-        Prefs.addRecent(ctx, value)
+        if (!incognito) Prefs.addRecent(ctx, value)
         setLocalContext(cachedBeforeCursor + value)
         scheduleRefresh()
     }
