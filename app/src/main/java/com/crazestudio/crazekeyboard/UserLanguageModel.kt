@@ -128,6 +128,52 @@ internal object UserLanguageModel {
             .thenBy { baseOrder[it] ?: Int.MAX_VALUE }).take(limit)
     }
 
+    /** Context-aware completion ranking for the word currently being typed. */
+    @Synchronized
+    fun rankPrefix(
+        context: Context,
+        precedingWords: List<String>,
+        prefix: String,
+        baseCandidates: List<String>,
+        limit: Int = 3
+    ): List<String> {
+        val start = clean(prefix)
+        if (start.isEmpty() || limit <= 0) return baseCandidates.take(limit)
+        val previous = precedingWords.map(::clean).filter { it.isNotEmpty() }.takeLast(2)
+        val map = data(context)
+        val candidates = LinkedHashSet<String>()
+        baseCandidates.forEach { candidate ->
+            val token = clean(candidate)
+            if (token.startsWith(start) && token != start) candidates.add(token)
+        }
+        map.forEach { (key, _) ->
+            val candidate = when {
+                key.startsWith("u:$start") -> key.substring(2)
+                previous.isNotEmpty() && key.startsWith("b:${previous.last()}|") ->
+                    key.substringAfter('|').takeIf { it.startsWith(start) }
+                previous.size >= 2 && key.startsWith("t:${previous[0]}|${previous[1]}|") ->
+                    key.substringAfterLast('|').takeIf { it.startsWith(start) }
+                else -> null
+            }
+            if (candidate != null && candidate.length in start.length + 0..40 &&
+                candidate != start && candidate.all { it.isLetter() || it == '\'' }) {
+                candidates.add(candidate)
+            }
+        }
+        if (candidates.isEmpty()) return baseCandidates.take(limit)
+        val baseOrder = baseCandidates.withIndex().associate { clean(it.value) to it.index }
+        fun score(candidate: String): Double {
+            val unigram = map["u:$candidate"] ?: 0
+            val bigram = if (previous.isNotEmpty()) map["b:${previous.last()}|$candidate"] ?: 0 else 0
+            val trigram = if (previous.size >= 2) map["t:${previous[0]}|${previous[1]}|$candidate"] ?: 0 else 0
+            val base = baseOrder[candidate]?.let { 0.3 / (it + 1) } ?: 0.0
+            return ln(1.0 + unigram) * 0.2 + ln(1.0 + bigram) * 1.8 +
+                ln(1.0 + trigram) * 2.8 + base
+        }
+        return candidates.sortedWith(compareByDescending<String> { score(it) }
+            .thenBy { baseOrder[it] ?: Int.MAX_VALUE }).take(limit)
+    }
+
     @Synchronized
     fun clear(context: Context) {
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
