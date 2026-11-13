@@ -54,6 +54,7 @@ class CrazeKeyboardService : InputMethodService() {
     @Volatile private var cachedHasEditorText = false
     @Volatile private var contextEpoch = 0L
     @Volatile private var predictionEpoch = 0L
+    @Volatile private var refinedPredictionEpoch = -1L
     private var predictionTask: Runnable? = null
     private var waitingForPhraseModel = false
     private var waitingForVocabulary = false
@@ -669,16 +670,28 @@ class CrazeKeyboardService : InputMethodService() {
                         }
                     }
 
-                    // Refine in the background. The runtime now reuses tensors and
-                    // scans prevalidated word-start pieces instead of all 100k IDs.
-                    val aiBase = if (!incognito) {
-                        CrazeLmTflitePredictor.predictNextWords(applicationContext, snapshot, 3)
-                    } else emptyList()
-                    val base = aiBase.ifEmpty { phraseBase }
-                    if (base.isEmpty()) quickSuggestions else if (personalized) {
-                        val ranked = UserLanguageModel.rank(this, tokens, base, 8).ifEmpty { base }
-                        TinyNeuralRanker.rank(this, tokens, ranked, 3)
-                    } else base
+                    // Never run the neural model on the suggestion worker: even a
+                    // fast model must not delay context sync or the next keystroke.
+                    if (!incognito) {
+                        CrazeLmTflitePredictor.predictNextWordsAsync(applicationContext, snapshot, 3) { aiBase ->
+                            if (aiBase.isNotEmpty() && epoch == predictionEpoch) {
+                                val refined = if (personalized) {
+                                    val ranked = UserLanguageModel.rank(this, tokens, aiBase, 8).ifEmpty { aiBase }
+                                    TinyNeuralRanker.rank(this, tokens, ranked, 3)
+                                } else aiBase
+                                refinedPredictionEpoch = epoch
+                                hd.post {
+                                    if (epoch == predictionEpoch && ::top.isInitialized &&
+                                        desiredTopState() == "suggestions") {
+                                        for (i in 0..2) if (i < sugViews.size) {
+                                            sugViews[i].text = refined.getOrNull(i) ?: ""
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    quickSuggestions
                 }
                 else -> {
                     if (!VocabularyIndex.isLoaded() && !waitingForVocabulary) {
@@ -727,8 +740,10 @@ class CrazeKeyboardService : InputMethodService() {
 
             hd.post {
                 if (epoch != predictionEpoch || !::top.isInitialized || desiredTopState() != "suggestions") return@post
-                for (i in 0..2) {
-                    if (i < sugViews.size) sugViews[i].text = suggestions.getOrNull(i) ?: ""
+                if (refinedPredictionEpoch != epoch) {
+                    for (i in 0..2) {
+                        if (i < sugViews.size) sugViews[i].text = suggestions.getOrNull(i) ?: ""
+                    }
                 }
             }
         }
