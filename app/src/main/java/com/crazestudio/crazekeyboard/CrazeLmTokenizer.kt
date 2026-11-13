@@ -80,14 +80,14 @@ internal class CrazeLmTokenizer private constructor(
             val parsed = ArrayList<PieceRecord>(100_000)
             val reader = ProtoReader(data)
             while (!reader.done()) {
-                val key = reader.varint().toInt()
-                if (key ushr 3 == 1 && key and 7 == 2) {
+                val (field, wire) = reader.readTag()
+                if (field == 1 && wire == 2) {
                     val length = reader.varint().toInt()
                     val end = reader.position + length
                     require(length >= 0 && end <= data.size) { "Invalid SentencePiece record length." }
                     parsed.add(parsePiece(data, reader.position, end))
-                    reader.position = end
-                } else reader.skip(key and 7)
+                    reader.setPosition(end)
+                } else reader.skipField(field, wire)
             }
             require(parsed.size == 100_000) {
                 "Expected 100,000 tokenizer pieces, found ${parsed.size}."
@@ -122,9 +122,9 @@ internal class CrazeLmTokenizer private constructor(
             val reader = ProtoReader(data, start, end)
             var token = ""; var score = 0f; var type = 1
             while (!reader.done()) {
-                val key = reader.varint().toInt()
+                val (field, wire) = reader.readTag()
                 when {
-                    key ushr 3 == 1 && key and 7 == 2 -> {
+                    field == 1 && wire == 2 -> {
                         val len = reader.varint().toInt()
                         require(len >= 0 && reader.position + len <= end) { "Invalid piece string length." }
                         token = String(data, reader.position, len, Charsets.UTF_8)
