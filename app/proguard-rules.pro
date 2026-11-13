@@ -1,2 +1,2 @@
-# Keep LiteRT JNI bindings and native entry points in minified builds.
--keep class com.google.ai.edge.litert.** { *; }
+# Keep TensorFlow Lite Java and JNI runtime classes in minified builds.
+-keep class org.tensorflow.lite.** { *; }
