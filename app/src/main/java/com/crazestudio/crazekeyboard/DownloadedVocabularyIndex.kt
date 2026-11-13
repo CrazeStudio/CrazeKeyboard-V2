@@ -69,6 +69,14 @@ internal object DownloadedVocabularyIndex {
         return low
     }
 
+    fun contains(language: String, word: String): Boolean {
+        val code = language.lowercase().substringBefore('-')
+        val index = indexes[code] ?: return false
+        val value = word.lowercase()
+        val position = lowerBound(index, value)
+        return position < index.offsets.size && wordAt(index, position) == value
+    }
+
     fun suggest(language: String, prefix: String, limit: Int = 3): List<String> {
         if (prefix.isBlank() || limit <= 0) return emptyList()
         val code = language.lowercase().substringBefore('-')
