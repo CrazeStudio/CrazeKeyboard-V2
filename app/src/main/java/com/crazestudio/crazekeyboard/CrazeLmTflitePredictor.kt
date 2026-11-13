@@ -1,28 +1,47 @@
 package com.crazestudio.crazekeyboard
 
+import android.content.ComponentCallbacks2
 import android.content.Context
+import android.content.res.Configuration
+import android.os.SystemClock
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * On-device next-word prediction with one long-lived TensorFlow Lite Interpreter.
+ * On-device next-word prediction with one TensorFlow Lite Interpreter.
  * Model setup and inference run away from the keyboard's typing thread.
+ *
+ * Memory saver: the model, tokenizer and interpreter are released after [IDLE_UNLOAD_MS] without a
+ * prediction, and immediately when the system reports memory pressure. The next prediction request
+ * reloads them in the background (the fast n-gram suggestions cover the gap).
  */
 internal object CrazeLmTflitePredictor {
     private const val SEQUENCE_LENGTH = 48
     private const val VOCAB_SIZE = 100_000
     // A smaller heap means fewer temporary objects and less dictionary I/O per keystroke.
     private const val CANDIDATE_SCAN = 256
+    private const val IDLE_UNLOAD_MS = 120_000L
+    private const val IDLE_CHECK_SECONDS = 30L
+    private const val PRESSURE_COOLDOWN_MS = 300_000L
+    private const val READY_STATUS = "CrazeLM is ready · offline"
 
     @Volatile private var runtime: Runtime? = null
     @Volatile private var loading = false
+    @Volatile private var files: CrazeLmFiles? = null
+    @Volatile private var lastUsedAt = 0L
+    @Volatile private var unloadedForMemory = false
+    @Volatile private var reloadAllowedAt = 0L
+    private var idleTask: ScheduledFuture<*>? = null
+    private var trimCallbacks: ComponentCallbacks2? = null
     @Volatile var status: String = "CrazeLM is not downloaded"
         private set
     @Volatile private var observer: ((String) -> Unit)? = null
-    private val executor = Executors.newSingleThreadExecutor { task ->
+    private val executor = Executors.newSingleThreadScheduledExecutor { task ->
         Thread(task, "craze-lm-runtime").apply { isDaemon = true }
     }
     private val inferenceExecutor = Executors.newSingleThreadExecutor { task ->
@@ -45,7 +64,8 @@ internal object CrazeLmTflitePredictor {
     @Synchronized
     fun initializeAsync(context: Context) {
         if (runtime != null) {
-            publish("CrazeLM is ready · offline")
+            lastUsedAt = SystemClock.elapsedRealtime()
+            publish(READY_STATUS)
             return
         }
         if (loading) return
@@ -54,16 +74,23 @@ internal object CrazeLmTflitePredictor {
         val app = context.applicationContext
         executor.execute {
             try {
-                val files = CrazeLmAssets.ensureDownloaded(app) { message -> publish(message) }
+                // Reloads after an idle unload reuse the verified files instead of re-checking them.
+                val known = files?.takeIf { it.model.isFile && it.tokenizer.isFile }
+                val resolved = known ?: CrazeLmAssets.ensureDownloaded(app) { message -> publish(message) }
+                    .also { files = it }
                 publish("Loading SentencePiece tokenizer…")
-                val tokenizer = CrazeLmTokenizer.load(files.tokenizer)
+                val tokenizer = CrazeLmTokenizer.load(resolved.tokenizer)
                 require(tokenizer.vocabularySize == VOCAB_SIZE) {
                     "CrazeLM tokenizer vocabulary mismatch."
                 }
                 publish("Loading TensorFlow Lite model…")
-                val nextRuntime = Runtime(files.model, tokenizer)
+                val nextRuntime = Runtime(resolved.model, tokenizer)
+                lastUsedAt = SystemClock.elapsedRealtime()
+                unloadedForMemory = false
                 runtime = nextRuntime
-                publish("CrazeLM is ready · offline")
+                startIdleWatch()
+                registerTrimCallbacks(app)
+                publish(READY_STATUS)
             } catch (error: Throwable) {
                 publish("CrazeLM unavailable: " + (error.message ?: error.javaClass.simpleName))
             } finally {
@@ -72,14 +99,62 @@ internal object CrazeLmTflitePredictor {
         }
     }
 
+    @Synchronized
+    private fun startIdleWatch() {
+        idleTask?.cancel(false)
+        idleTask = executor.scheduleWithFixedDelay({
+            if (runtime != null && SystemClock.elapsedRealtime() - lastUsedAt >= IDLE_UNLOAD_MS) {
+                unload(0L)
+            }
+        }, IDLE_CHECK_SECONDS, IDLE_CHECK_SECONDS, TimeUnit.SECONDS)
+    }
+
+    /** Registered once; the system tells the process when memory is short. */
+    @Synchronized
+    private fun registerTrimCallbacks(app: Context) {
+        if (trimCallbacks != null) return
+        val callbacks = object : ComponentCallbacks2 {
+            // Levels: 10 = running low, 15 = running critical, 40+ = process is cached/background.
+            // 20 (UI hidden) is ignored: the keyboard is hidden between every typing burst.
+            override fun onTrimMemory(level: Int) {
+                if (level == 10 || level == 15 || level >= 40) unload(PRESSURE_COOLDOWN_MS)
+            }
+            override fun onConfigurationChanged(newConfig: Configuration) = Unit
+            override fun onLowMemory() { unload(PRESSURE_COOLDOWN_MS) }
+        }
+        app.registerComponentCallbacks(callbacks)
+        trimCallbacks = callbacks
+    }
+
+    /** Release the interpreter, tokenizer and candidate tables. [cooldownMs] delays any automatic reload. */
+    @Synchronized
+    private fun unload(cooldownMs: Long) {
+        val active = runtime ?: return
+        runtime = null
+        unloadedForMemory = true
+        reloadAllowedAt = SystemClock.elapsedRealtime() + cooldownMs
+        idleTask?.cancel(false)
+        idleTask = null
+        inferenceRequestId.incrementAndGet()
+        // close() waits for any inference in flight, so it runs on the runtime thread.
+        executor.execute { active.close() }
+        publish("$READY_STATUS (memory saver: loads on demand)")
+    }
+
     fun predictNextWordsAsync(
         context: Context,
         beforeCursor: String,
         limit: Int = 3,
         onResult: (List<String>) -> Unit
     ) {
-        if (limit <= 0 || beforeCursor.isBlank() || runtime == null) return
+        if (limit <= 0 || beforeCursor.isBlank()) return
         val app = context.applicationContext
+        if (runtime == null) {
+            // Released earlier to save memory: bring it back in the background for the next word.
+            if (unloadedForMemory && SystemClock.elapsedRealtime() >= reloadAllowedAt) initializeAsync(app)
+            return
+        }
+        lastUsedAt = SystemClock.elapsedRealtime()
         val requestId = inferenceRequestId.incrementAndGet()
         inferenceExecutor.execute {
             if (requestId != inferenceRequestId.get()) return@execute
@@ -93,6 +168,7 @@ internal object CrazeLmTflitePredictor {
     fun predictNextWords(context: Context, beforeCursor: String, limit: Int = 3): List<String> {
         if (limit <= 0 || beforeCursor.isBlank()) return emptyList()
         val active = runtime ?: return emptyList()
+        lastUsedAt = SystemClock.elapsedRealtime()
         return try {
             active.predict(beforeCursor, limit)
         } catch (error: Throwable) {
@@ -104,6 +180,7 @@ internal object CrazeLmTflitePredictor {
     private class Runtime(modelFile: File, private val tokenizer: CrazeLmTokenizer) {
         private val interpreter: Interpreter
         private val lock = Any()
+        private var closed = false
         // Compact primitive/string arrays avoid one CandidatePiece object per vocabulary entry.
         private val candidateIds: IntArray
         private val candidateWords: Array<String>
@@ -121,9 +198,11 @@ internal object CrazeLmTflitePredictor {
             require(modelFile.isFile && modelFile.length() > 0L) {
                 "TFLite model file is missing."
             }
-            // One CPU thread minimizes concurrent working memory on low-RAM phones.
+            // Few threads keep working memory low; a second one is only used on 6+ core phones, where it
+            // roughly halves the time to the first suggestion.
+            val threads = if (java.lang.Runtime.getRuntime().availableProcessors() >= 6) 2 else 1
             val options = Interpreter.Options()
-                .setNumThreads(1)
+                .setNumThreads(threads)
                 .setUseXNNPACK(true)
             interpreter = Interpreter(modelFile, options)
 
@@ -151,12 +230,11 @@ internal object CrazeLmTflitePredictor {
                     logitsOutput.dataType() + " " + logitsOutput.shape().contentToString()
             }
 
+            // Only the word-start pieces that can become suggestions are decoded into Strings.
             val ids = ArrayList<Int>(12_000)
             val words = ArrayList<String>(12_000)
             for (id in 0 until VOCAB_SIZE) {
-                val piece = tokenizer.piece(id)
-                if (!piece.startsWith("▁")) continue
-                val word = piece.substring(1)
+                val word = tokenizer.wordPiece(id) ?: continue
                 if (word.length !in 2..20 ||
                     !word.all { it.isLetter() || it == '\'' || it == '-' }) continue
                 ids.add(id)
@@ -166,69 +244,83 @@ internal object CrazeLmTflitePredictor {
             candidateWords = words.toTypedArray()
         }
 
+        fun close() {
+            synchronized(lock) {
+                if (closed) return
+                closed = true
+                resultCache.clear()
+                try { interpreter.close() } catch (_: Throwable) { }
+            }
+        }
+
         fun predict(text: String, limit: Int): List<String> {
             if (limit <= 0) return emptyList()
             val cacheKey = text.takeLast(180)
-            synchronized(lock) { resultCache[cacheKey]?.let { return it.take(limit) } }
+            synchronized(lock) {
+                if (closed) return emptyList()
+                resultCache[cacheKey]?.let { return it.take(limit) }
+            }
 
             val tokens = tokenizer.encode(cacheKey).takeLast(SEQUENCE_LENGTH)
             if (tokens.isEmpty()) return emptyList()
-            val padded = inputIds[0]
-            padded.fill(0)
-            tokens.forEachIndexed { index, id -> padded[index] = id }
-            inputLengths[0] = tokens.size
 
+            // The shared input/output buffers are only touched while holding the lock.
             synchronized(lock) {
+                if (closed) return emptyList()
+                val padded = inputIds[0]
+                padded.fill(0)
+                tokens.forEachIndexed { index, id -> padded[index] = id }
+                inputLengths[0] = tokens.size
                 interpreter.runForMultipleInputsOutputs(inputs, outputs)
-            }
-            val logits = logitsOutput[0]
+                val logits = logitsOutput[0]
 
-            // Primitive min-heap: avoids allocating hundreds of ScoredCandidate objects each call.
-            val heapIds = IntArray(CANDIDATE_SCAN)
-            val heapScores = FloatArray(CANDIDATE_SCAN)
-            var heapSize = 0
-            for (i in candidateIds.indices) {
-                val score = logits[candidateIds[i]]
-                if (!score.isFinite()) continue
-                if (heapSize < CANDIDATE_SCAN) {
-                    var child = heapSize++
-                    heapIds[child] = i
-                    heapScores[child] = score
-                    while (child > 0) {
-                        val parent = (child - 1) ushr 1
-                        if (heapScores[parent] <= heapScores[child]) break
-                        swap(heapIds, heapScores, parent, child)
-                        child = parent
-                    }
-                } else if (score > heapScores[0]) {
-                    heapIds[0] = i
-                    heapScores[0] = score
-                    var parent = 0
-                    while (true) {
-                        val left = parent * 2 + 1
-                        if (left >= heapSize) break
-                        val right = left + 1
-                        val child = if (right < heapSize && heapScores[right] < heapScores[left]) right else left
-                        if (heapScores[parent] <= heapScores[child]) break
-                        swap(heapIds, heapScores, parent, child)
-                        parent = child
+                // Primitive min-heap: avoids allocating hundreds of ScoredCandidate objects each call.
+                val heapIds = IntArray(CANDIDATE_SCAN)
+                val heapScores = FloatArray(CANDIDATE_SCAN)
+                var heapSize = 0
+                for (i in candidateIds.indices) {
+                    val score = logits[candidateIds[i]]
+                    if (!score.isFinite()) continue
+                    if (heapSize < CANDIDATE_SCAN) {
+                        var child = heapSize++
+                        heapIds[child] = i
+                        heapScores[child] = score
+                        while (child > 0) {
+                            val parent = (child - 1) ushr 1
+                            if (heapScores[parent] <= heapScores[child]) break
+                            swap(heapIds, heapScores, parent, child)
+                            child = parent
+                        }
+                    } else if (score > heapScores[0]) {
+                        heapIds[0] = i
+                        heapScores[0] = score
+                        var parent = 0
+                        while (true) {
+                            val left = parent * 2 + 1
+                            if (left >= heapSize) break
+                            val right = left + 1
+                            val child = if (right < heapSize && heapScores[right] < heapScores[left]) right else left
+                            if (heapScores[parent] <= heapScores[child]) break
+                            swap(heapIds, heapScores, parent, child)
+                            parent = child
+                        }
                     }
                 }
-            }
 
-            val order = (0 until heapSize).sortedByDescending { heapScores[it] }
-            val seen = HashSet<String>(limit * 2)
-            val capitalize = text.lastOrNull()?.let { it == '.' || it == '!' || it == '?' } == true
-            val result = ArrayList<String>(limit)
-            for (slot in order) {
-                val word = candidateWords[heapIds[slot]]
-                if (!Words.known(word) || !seen.add(word.lowercase())) continue
-                result.add(if (capitalize) word.replaceFirstChar { it.uppercase() } else word)
-                if (result.size >= limit) break
+                val order = (0 until heapSize).sortedByDescending { heapScores[it] }
+                val seen = HashSet<String>(limit * 2)
+                val capitalize = text.lastOrNull()?.let { it == '.' || it == '!' || it == '?' } == true
+                val result = ArrayList<String>(limit)
+                for (slot in order) {
+                    val word = candidateWords[heapIds[slot]]
+                    if (!Words.known(word) || !seen.add(word.lowercase())) continue
+                    result.add(if (capitalize) word.replaceFirstChar { it.uppercase() } else word)
+                    if (result.size >= limit) break
+                }
+                val finalResult = result.toList()
+                resultCache[cacheKey] = finalResult
+                return finalResult
             }
-            val finalResult = result.toList()
-            synchronized(lock) { resultCache[cacheKey] = finalResult }
-            return finalResult
         }
 
         private fun swap(ids: IntArray, scores: FloatArray, a: Int, b: Int) {
