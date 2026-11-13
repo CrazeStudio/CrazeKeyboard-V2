@@ -85,7 +85,7 @@ internal object CrazeLmTflitePredictor {
         private val inputLengths = intArrayOf(0)
         private val logitsOutput = Array(1) { FloatArray(VOCAB_SIZE) }
         private val inputs: Array<Any> = arrayOf(inputIds, inputLengths)
-        private val outputs: Map<Int, Any> = hashMapOf(0 to logitsOutput)
+        private val outputs = hashMapOf<Int, Any>(0 to logitsOutput)
         private val resultCache = object : LinkedHashMap<String, List<String>>(48, 0.75f, true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<String>>?): Boolean =
                 size > 48
