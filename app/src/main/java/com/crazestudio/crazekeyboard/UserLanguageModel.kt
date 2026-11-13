@@ -9,7 +9,8 @@ import kotlin.math.ln
  */
 internal object UserLanguageModel {
     private const val PREFS = "craze_personal_language"
-    private const val MAX_KEYS = 2400
+    private const val MAX_KEYS = 4000
+    private const val EVICT_SLACK = 400
     private const val MAX_COUNT = 500
 
     @Volatile private var counts: MutableMap<String, Int>? = null
@@ -26,6 +27,14 @@ internal object UserLanguageModel {
 
     private fun clean(value: String): String =
         value.lowercase().filter { it.isLetter() || it == '\'' }.take(40)
+
+    /** Display form of a stored (lowercase) word: pronoun "I" fixed, sentence-start capitalisation optional. */
+    private fun display(word: String, capitalize: Boolean): String = when {
+        word == "i" -> "I"
+        word.startsWith("i'") -> "I" + word.substring(1)
+        capitalize -> word.replaceFirstChar { it.uppercase() }
+        else -> word
+    }
 
     /** Learn one completed token and its preceding one-/two-token context. */
     @Synchronized
@@ -46,15 +55,34 @@ internal object UserLanguageModel {
             map[key] = next
             edit.putInt(key, next)
         }
-        if (map.size > MAX_KEYS) {
-            val remove = map.entries.sortedBy { it.value }.take(map.size - MAX_KEYS + 200)
-            remove.forEach { entry ->
-                map.remove(entry.key)
-                edit.remove(entry.key)
-            }
-        }
+        if (map.size > MAX_KEYS) evict(map, edit)
         edit.apply()
         return map["u:$token"] ?: 0
+    }
+
+    /**
+     * Make room by dropping the oldest entries that were seen only once or twice. The previous policy
+     * dropped the lowest counts globally, which are always the entries that were just added, so a
+     * full model could never learn anything new.
+     */
+    private fun evict(map: MutableMap<String, Int>, edit: android.content.SharedPreferences.Editor) {
+        var toRemove = map.size - (MAX_KEYS - EVICT_SLACK)
+        val rare = map.entries.iterator()
+        while (rare.hasNext() && toRemove > 0) {
+            val entry = rare.next()
+            if (entry.value <= 2) {
+                edit.remove(entry.key)
+                rare.remove()
+                toRemove--
+            }
+        }
+        val oldest = map.entries.iterator()
+        while (oldest.hasNext() && toRemove > 0) {
+            val entry = oldest.next()
+            edit.remove(entry.key)
+            oldest.remove()
+            toRemove--
+        }
     }
 
     fun frequency(context: Context, word: String): Int =
@@ -87,7 +115,8 @@ internal object UserLanguageModel {
 
     /**
      * Blend user history into base-model suggestions. Personal bigram/trigram candidates
-     * can enter the list even when the generic model did not rank them.
+     * can enter the list even when the generic model did not rank them. Candidates are de-duplicated
+     * case-insensitively, and personal words copy the base list's sentence-start capitalisation.
      */
     @Synchronized
     fun rank(
@@ -99,37 +128,54 @@ internal object UserLanguageModel {
         if (limit <= 0) return emptyList()
         val previous = precedingWords.map(::clean).filter { it.isNotEmpty() }.takeLast(2)
         val map = data(context)
-        val candidates = LinkedHashSet<String>()
-        baseCandidates.filter { it.isNotBlank() }.forEach(candidates::add)
+        val base = baseCandidates.filter { it.isNotBlank() }
+        val capitalize = base.isNotEmpty() && base.all { it.first().isUpperCase() }
+        // normalised token -> form shown to the user
+        val candidates = LinkedHashMap<String, String>()
+        base.forEach { candidates.putIfAbsent(clean(it).ifEmpty { it.lowercase() }, it) }
         if (previous.isNotEmpty()) {
             val bigramPrefix = "b:${previous.last()}|"
             map.forEach { (key, _) ->
-                if (key.startsWith(bigramPrefix)) candidates.add(key.substring(bigramPrefix.length))
+                if (key.startsWith(bigramPrefix)) {
+                    val word = key.substring(bigramPrefix.length)
+                    candidates.putIfAbsent(word, display(word, capitalize))
+                }
             }
         }
         if (previous.size >= 2) {
             val trigramPrefix = "t:${previous[0]}|${previous[1]}|"
             map.forEach { (key, _) ->
-                if (key.startsWith(trigramPrefix)) candidates.add(key.substring(trigramPrefix.length))
+                if (key.startsWith(trigramPrefix)) {
+                    val word = key.substring(trigramPrefix.length)
+                    candidates.putIfAbsent(word, display(word, capitalize))
+                }
             }
         }
         if (candidates.isEmpty()) return emptyList()
 
-        val baseOrder = baseCandidates.withIndex().associate { it.value to it.index }
-        fun score(candidate: String): Double {
-            val token = clean(candidate)
+        val baseOrder = base.withIndex().associate { clean(it.value).ifEmpty { it.value.lowercase() } to it.index }
+        fun score(token: String): Double {
             val unigram = map["u:$token"] ?: 0
             val bigram = if (previous.isNotEmpty()) map["b:${previous.last()}|$token"] ?: 0 else 0
             val trigram = if (previous.size >= 2) map["t:${previous[0]}|${previous[1]}|$token"] ?: 0 else 0
             return ln(1.0 + unigram) * 0.15 + ln(1.0 + bigram) * 1.7 +
-                ln(1.0 + trigram) * 2.6 + (baseOrder[candidate]?.let { 0.4 / (it + 1) } ?: 0.0)
+                ln(1.0 + trigram) * 2.6 + (baseOrder[token]?.let { 0.4 / (it + 1) } ?: 0.0)
         }
-        return candidates.sortedWith(compareByDescending<String> { score(it) }
-            .thenBy { baseOrder[it] ?: Int.MAX_VALUE }).take(limit)
+        return candidates.entries
+            .sortedWith(compareByDescending<Map.Entry<String, String>> { score(it.key) }
+                .thenBy { baseOrder[it.key] ?: Int.MAX_VALUE })
+            .take(limit)
+            .map { it.value }
     }
 
-    /** Context-aware completion ranking for the word currently being typed. */
-    @Synchronized
+    /**
+     * Context-aware completion ranking for the word currently being typed.
+     *
+     * The candidate pool is widened beyond the few base suggestions: it also takes the
+     * frequency-ranked lexicon completions, the completions the n-gram model expects after the
+     * previous words, and the user's own words. Each is then scored on lexicon frequency, the
+     * n-gram context and the user's history together.
+     */
     fun rankPrefix(
         context: Context,
         precedingWords: List<String>,
@@ -140,44 +186,60 @@ internal object UserLanguageModel {
         val start = clean(prefix)
         if (start.isEmpty() || limit <= 0) return baseCandidates.take(limit)
         val previous = precedingWords.map(::clean).filter { it.isNotEmpty() }.takeLast(2)
-        val map = data(context)
-        val candidates = LinkedHashSet<String>()
-        baseCandidates.forEach { candidate ->
-            val token = clean(candidate)
-            if (token.startsWith(start) && token != start) candidates.add(token)
-        }
-        map.forEach { (key, _) ->
-            val candidate = when {
-                key.startsWith("u:$start") -> key.substring(2)
-                previous.isNotEmpty() && key.startsWith("b:${previous.last()}|") ->
-                    key.substringAfter('|').takeIf { it.startsWith(start) }
-                previous.size >= 2 && key.startsWith("t:${previous[0]}|${previous[1]}|") ->
-                    key.substringAfterLast('|').takeIf { it.startsWith(start) }
-                else -> null
+
+        // Lexicon and n-gram lookups can take a moment the first time a prefix is seen, so they run
+        // before the model lock is taken; typing (which learns under that lock) is never held up by them.
+        if (!NextWordPredictor.isLoaded()) NextWordPredictor.loadAsync(context.applicationContext)
+        val lexicon = Words.suggestPool(context, start, 12).map(::clean)
+        val contextual = NextWordPredictor.predictForPrefix(previous, start, 8).map(::clean)
+
+        return synchronized(this) {
+            val map = data(context)
+            val candidates = LinkedHashSet<String>()
+            fun offer(candidate: String) {
+                if (candidate.length >= start.length && candidate.length <= 40 && candidate.startsWith(start) &&
+                    candidate != start && candidate.all { it.isLetter() || it == '\'' }) {
+                    candidates.add(candidate)
+                }
             }
-            if (candidate != null && candidate.length >= start.length && candidate.length <= 40 &&
-                candidate != start && candidate.all { it.isLetter() || it == '\'' }) {
-                candidates.add(candidate)
+            baseCandidates.forEach { offer(clean(it)) }
+            lexicon.forEach(::offer)
+            contextual.forEach(::offer)
+            map.forEach { (key, _) ->
+                when {
+                    key.startsWith("u:$start") -> offer(key.substring(2))
+                    previous.isNotEmpty() && key.startsWith("b:${previous.last()}|") ->
+                        offer(key.substringAfter('|'))
+                    previous.size >= 2 && key.startsWith("t:${previous[0]}|${previous[1]}|") ->
+                        offer(key.substringAfterLast('|'))
+                }
             }
-        }
-        if (candidates.isEmpty()) return baseCandidates.take(limit)
-        val baseOrder = baseCandidates.withIndex().associate { clean(it.value) to it.index }
-        fun score(candidate: String): Double {
-            val unigram = map["u:$candidate"] ?: 0
-            val bigram = if (previous.isNotEmpty()) map["b:${previous.last()}|$candidate"] ?: 0 else 0
-            val trigram = if (previous.size >= 2) map["t:${previous[0]}|${previous[1]}|$candidate"] ?: 0 else 0
-            val base = baseOrder[candidate]?.let { 0.3 / (it + 1) } ?: 0.0
-            return ln(1.0 + unigram) * 0.2 + ln(1.0 + bigram) * 1.8 +
-                ln(1.0 + trigram) * 2.8 + base
-        }
-        return candidates.sortedWith(compareByDescending<String> { score(it) }
-            .thenBy { baseOrder[it] ?: Int.MAX_VALUE }).take(limit).map { candidate ->
-            when {
-                prefix.length > 1 && prefix.all { it.isUpperCase() } -> candidate.uppercase()
-                prefix.firstOrNull()?.isUpperCase() == true ->
-                    candidate.replaceFirstChar { it.uppercase() }
-                else -> candidate
+            if (candidates.isEmpty()) return@synchronized baseCandidates.take(limit)
+
+            val baseOrder = baseCandidates.withIndex().associate { clean(it.value) to it.index }
+            val contextOrder = contextual.withIndex().associate { it.value to it.index }
+            fun score(candidate: String): Double {
+                val unigram = map["u:$candidate"] ?: 0
+                val bigram = if (previous.isNotEmpty()) map["b:${previous.last()}|$candidate"] ?: 0 else 0
+                val trigram = if (previous.size >= 2) map["t:${previous[0]}|${previous[1]}|$candidate"] ?: 0 else 0
+                val base = baseOrder[candidate]?.let { 0.3 / (it + 1) } ?: 0.0
+                val modelContext = contextOrder[candidate]?.let { 0.8 + 2.2 / (it + 1) } ?: 0.0
+                val lexiconPrior = 0.22 * VocabularyIndex.rankScore(candidate) -
+                    0.05 * (candidate.length - start.length)
+                return ln(1.0 + unigram) * 0.2 + ln(1.0 + bigram) * 1.8 +
+                    ln(1.0 + trigram) * 2.8 + base + modelContext + lexiconPrior
             }
+            val scored = candidates.map { it to score(it) }
+            scored.sortedWith(compareByDescending<Pair<String, Double>> { it.second }
+                .thenBy { baseOrder[it.first] ?: Int.MAX_VALUE })
+                .take(limit).map { (candidate, _) ->
+                    when {
+                        prefix.length > 1 && prefix.all { it.isUpperCase() } -> candidate.uppercase()
+                        prefix.firstOrNull()?.isUpperCase() == true ->
+                            candidate.replaceFirstChar { it.uppercase() }
+                        else -> candidate
+                    }
+                }
         }
     }
 
