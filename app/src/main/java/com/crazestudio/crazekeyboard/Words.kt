@@ -131,7 +131,9 @@ object Words {
             if (x.startsWith(lower) && x != lower) { val cx = cased(x, w); if (cx !in out) out.add(cx) }
         }
         // Typo fallback is uncommon; retain the full lexicon here so first-letter mistakes still match.
-        if (out.size < 3 && lower.length >= 2) {
+        // Avoid a full dictionary edit-distance scan on short prefixes; this path
+        // is only useful for longer, clearly mistyped words.
+        if (out.size < 3 && lower.length >= 4) {
             for (x in dict) {
                 if (out.size >= 3) break
                 if (near(lower, x)) { val cx = cased(x, w); if (cx !in out) out.add(cx) }
