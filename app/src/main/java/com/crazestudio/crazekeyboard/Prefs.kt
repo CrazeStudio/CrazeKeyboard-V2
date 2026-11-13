@@ -32,6 +32,8 @@ object Prefs {
     fun setB(c: Context, k: String, v: Boolean) = sp(c).edit().putBoolean(k, v).apply()
     fun i(c: Context, k: String, d: Int) = sp(c).getInt(k, d)
     fun setI(c: Context, k: String, v: Int) = sp(c).edit().putInt(k, v).apply()
+    fun string(c: Context, k: String, d: String = "") = sp(c).getString(k, d) ?: d
+    fun setString(c: Context, k: String, v: String) = sp(c).edit().putString(k, v).apply()
     private fun isNightMode(c: Context): Boolean =
         (c.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
 

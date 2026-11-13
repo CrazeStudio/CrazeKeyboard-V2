@@ -2,6 +2,7 @@ package com.crazestudio.crazekeyboard
 
 import android.content.Context
 import android.util.JsonReader
+import org.json.JSONArray
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
@@ -12,11 +13,51 @@ import java.security.MessageDigest
 import java.util.TreeSet
 import java.util.zip.GZIPInputStream
 
+internal data class LanguageInfo(
+    val code: String,
+    val name: String,
+    val script: String,
+    val direction: String,
+    val vocabularyAvailable: Boolean,
+    val suggestionsEnabled: Boolean,
+    val modelAvailable: Boolean
+)
+
 /** Downloads verified .cpack vocabulary archives and creates compact local prefix indexes. */
 internal object LanguagePackManager {
     const val API_BASE_URL = "https://crazepredictionapi.onrender.com"
     private const val CONNECT_TIMEOUT = 15_000
     private const val READ_TIMEOUT = 120_000
+
+    fun fetchLanguages(context: Context, callback: (Boolean, List<LanguageInfo>, String) -> Unit) {
+        val app = context.applicationContext
+        Thread({
+            var connection: HttpURLConnection? = null
+            try {
+                connection = (URL("$API_BASE_URL/v1/languages").openConnection() as HttpURLConnection).apply {
+                    connectTimeout = CONNECT_TIMEOUT
+                    readTimeout = READ_TIMEOUT
+                    requestMethod = "GET"
+                }
+                if (connection.responseCode !in 200..299) error("Language catalog HTTP " + connection.responseCode)
+                val array = JSONArray(connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
+                val languages = ArrayList<LanguageInfo>(array.length())
+                for (i in 0 until array.length()) {
+                    val item = array.getJSONObject(i)
+                    val code = item.optString("code")
+                    if (!code.matches(Regex("[a-z]{2,3}"))) continue
+                    languages.add(LanguageInfo(
+                        code, item.optString("name", code), item.optString("script", ""),
+                        item.optString("direction", "ltr"), item.optBoolean("vocabulary_available", false),
+                        item.optBoolean("suggestions_enabled", false), item.optBoolean("model_available", false)
+                    ))
+                }
+                callback(true, languages, "")
+            } catch (error: Exception) {
+                callback(false, emptyList(), error.message ?: "Could not load language catalog")
+            } finally { connection?.disconnect() }
+        }, "craze-language-catalog").apply { isDaemon = true; start() }
+    }
 
     fun isInstalled(context: Context, language: String): Boolean =
         wordsFile(context, language).let { it.isFile && it.length() > 0L }
@@ -31,7 +72,7 @@ internal object LanguagePackManager {
         File(directory(context), "$language.words")
 
     fun download(context: Context, language: String, callback: (Boolean, String) -> Unit) {
-        require(language in setOf("en", "bn", "hi"))
+        require(language.matches(Regex("[a-z]{2,3}"))) { "Invalid language code" }
         val app = context.applicationContext
         Thread({
             var connection: HttpURLConnection? = null
@@ -118,6 +159,9 @@ internal object LanguagePackManager {
                     }
                 }
                 if (uniqueWords.isEmpty()) throw IllegalStateException("Downloaded pack contains no valid words")
+                if (expectedCount > 0 && uniqueWords.size != expectedCount) {
+                    throw IllegalStateException("Pack word count mismatch: expected $expectedCount, found ${uniqueWords.size}")
+                }
                 wordsTemp.bufferedWriter(Charsets.UTF_8).use { writer ->
                     uniqueWords.forEach { writer.append(it).append('\n') }
                 }

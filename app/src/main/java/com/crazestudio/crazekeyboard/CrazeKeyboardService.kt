@@ -94,6 +94,7 @@ class CrazeKeyboardService : InputMethodService() {
     private var shift = 0
     private var autoShift = false
     private var mode = "letters"
+    private var menuCategory = "All"
     private var floating = false
     private var suggestOn = true
     private var incognito = false
@@ -117,19 +118,58 @@ class CrazeKeyboardService : InputMethodService() {
     private var clipListener: ClipboardManager.OnPrimaryClipChangedListener? = null
     private val noPersonalizedLearning = 0x1000000   // EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING (API 26) without the API-level gate
 
-    private val emojiCats = linkedMapOf(
-        "🕘" to "",
-        "😀" to "😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😝 😜 🤪 🤨 🧐 🤓 😎 🤩 🥳 😏 😒 😞 😔 😟 😕 🙁 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🤗 🤔 🤭 🤫 🤥 😶 😐 😑 😬 🙄 😯 😦 😧 😮 😲 🥱 😴 🤤 😪 😵 🤐 🥴 🤢 🤮 🤧 😷",
-        "👍" to "👍 👎 👌 🤞 🤟 🤘 🤙 👈 👉 👆 👇 ✋ 🤚 🖐 🖖 👋 🤝 🙏 💪 👏 🙌 👐 🤲 🤳 💅 👀 👅 👄 🧠 👶 👦 👧 👨 👩 🧑 👴 👵",
-        "🐶" to "🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🐔 🐧 🐦 🐤 🦆 🦅 🦉 🦇 🐺 🐗 🐴 🦄 🐝 🐛 🦋 🐌 🐞 🐜 🐢 🐍 🦎 🐙 🦑 🦐 🦀 🐡 🐠 🐟 🐬 🐳 🐋 🦈 🐊 🐘 🦒 🌵 🌲 🌳 🌴 🌱 🌿 🍀 🍁 🍂 🌺 🌻 🌹 🌷 🌼 🌸",
-        "🍔" to "🍏 🍎 🍐 🍊 🍋 🍌 🍉 🍇 🍓 🍒 🍑 🥭 🍍 🥥 🥝 🍅 🥑 🥦 🥕 🌽 🥔 🍞 🧀 🍗 🍖 🍔 🍟 🍕 🌭 🥪 🌮 🌯 🍝 🍜 🍣 🍤 🍦 🍩 🍪 🎂 🍰 🍫 🍬 🍭 ☕ 🍵 🍺 🍷 🥤",
-        "⚽" to "⚽ 🏀 🏈 ⚾ 🎾 🏐 🏉 🎱 🏓 🏸 🥊 🎯 🎮 🎲 🎧 🎤 🎸 🎹 🎺 🎻 🥁 🎬 🎨 🏆 🥇 🥈 🥉 🚗 🚕 🚌 🚓 🚑 🚒 🚲 🚀 🚁 🚢 🏠 🌍 🌙 ⭐ 🌈 🔥 💧 ⚡",
-        "💡" to "📱 💻 📷 📺 ⌚ 🔋 💡 🔦 📚 📖 📝 📎 🔑 🔒 🔔 💰 💳 🎁 🎈 🎉 ❤ 🧡 💛 💚 💙 💜 🖤 💔 💕 💞 💯 ✅ ❌ ⭕ ❗ ❓ ⚠ 💤 💬 💭"
-    )
-    private val emojiLists: Map<String, List<String>> by lazy {
-        emojiCats.mapValues { (_, v) -> v.split(" ").filter { it.isNotEmpty() } }
+    private data class EmojiGroup(val key: String, val name: String, val terms: String, val emojis: List<String>)
+    private val emojiGroups: List<EmojiGroup> by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        val metadata = mapOf(
+            "smile" to Triple("😀", "Smileys and emotion", "smile happy face laugh sad emotion"),
+            "people" to Triple("👋", "People and body", "people person body hand gesture family"),
+            "nature" to Triple("🐶", "Animals and nature", "animal pet plant flower nature"),
+            "food" to Triple("🍔", "Food and drink", "food drink fruit vegetable meal"),
+            "activity" to Triple("⚽", "Activity", "sport game music art celebration"),
+            "travel" to Triple("🚗", "Travel and places", "travel place transport vehicle building weather"),
+            "objects" to Triple("📱", "Objects", "object technology tool household"),
+            "symbols" to Triple("✅", "Symbols", "symbol sign warning heart arrow number"),
+            "flags" to Triple("🇺🇳", "Flags", "flag country region")
+        )
+        val parsed = LinkedHashMap<String, MutableList<String>>()
+        var current = ""
+        assets.open("emoji_catalog.txt").bufferedReader(Charsets.UTF_8).useLines { lines ->
+            lines.forEach { line ->
+                val trimmed = line.trim()
+                if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+                    current = trimmed.removePrefix("[").removeSuffix("]")
+                    parsed.getOrPut(current) { ArrayList() }
+                } else if (current.isNotEmpty() && trimmed.isNotEmpty()) {
+                    parsed.getOrPut(current) { ArrayList() }.addAll(trimmed.split(" ").filter { it.isNotBlank() })
+                }
+            }
+        }
+        parsed.mapNotNull { (id, values) ->
+            val meta = metadata[id] ?: return@mapNotNull null
+            EmojiGroup(meta.first, meta.second, meta.third, values.distinct())
+        }
     }
-
+    private val emojiCats: Map<String, String> by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        linkedMapOf<String, String>().apply {
+            put("🕘", "")
+            emojiGroups.forEach { put(it.key, it.emojis.joinToString(" ")) }
+        }
+    }
+    private val emojiLists: Map<String, List<String>> by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        emojiCats.mapValues { (_, value) -> value.split(" ").filter { it.isNotEmpty() } }
+    }
+    private val emojiNames: Map<String, Pair<String, String>> by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        HashMap<String, Pair<String, String>>().apply {
+            assets.open("emoji_names.tsv").bufferedReader(Charsets.UTF_8).useLines { lines ->
+                lines.forEach { line ->
+                    val parts = line.split('\t')
+                    if (parts.size >= 3) put(parts[0], parts[1] to parts.drop(2).joinToString(" "))
+                }
+            }
+        }
+    }
+    private fun emojiInfo(value: String): Pair<String, String> =
+        emojiNames[value] ?: emojiNames[value.replace("\uFE0F", "")] ?: ("Emoji" to "")
     // ---------- sizing helpers ----------
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private fun lp(w: Int, h: Int, wt: Float = 0f) = LinearLayout.LayoutParams(w, h, wt)
@@ -666,6 +706,22 @@ class CrazeKeyboardService : InputMethodService() {
         // Keep the previous completed row visible during inference. Clearing it here caused
         // the suggestion strip to flash empty on every cursor/text update.
         val task = Runnable {
+            val activeLanguage = Prefs.string(ctx, "activeLanguage", "en")
+            if (activeLanguage != "en") {
+                val prefix = wordAtCursor(snapshot)
+                val local = if (activeLanguage == "bn" || activeLanguage == "hi") {
+                    DownloadedVocabularyIndex.suggest(activeLanguage, prefix, 3)
+                } else emptyList()
+                hd.post {
+                    if (epoch != predictionEpoch || !::top.isInitialized ||
+                        desiredTopState() != "suggestions") return@post
+                    for (i in 0..2) {
+                        lastSuggestions[i] = local.getOrNull(i).orEmpty()
+                        if (i < sugViews.size) sugViews[i].text = lastSuggestions[i]
+                    }
+                }
+                return@Runnable
+            }
             CrazeLmTflitePredictor.predictNextWordsAsync(applicationContext, snapshot, 3) { modelWords ->
                 if (epoch != predictionEpoch) return@predictNextWordsAsync
                 val clean = modelWords.asSequence()
@@ -987,32 +1043,85 @@ class CrazeKeyboardService : InputMethodService() {
     private fun hidePreview() { prevTv?.visibility = View.INVISIBLE }
 
     // fast = type on finger-down (plain keys). Keys with a long-press type on release, unless the long-press fired.
+    private fun nearestLetterAt(rawX: Float, rawY: Float): String? {
+        var best = dp(52) * dp(52).toFloat()
+        var selected: String? = null
+        val location = IntArray(2)
+        letterKeys.forEach { (view, value) ->
+            if (view.visibility != View.VISIBLE || view.width == 0 || view.height == 0) return@forEach
+            view.getLocationOnScreen(location)
+            val dx = rawX - (location[0] + view.width / 2f)
+            val dy = rawY - (location[1] + view.height / 2f)
+            val distance = dx * dx + dy * dy
+            if (distance < best) { best = distance; selected = value.lowercase() }
+        }
+        return selected
+    }
+
+    private fun commitSwipe(sequence: String): Boolean {
+        if (sequence.length < 3) return false
+        val word = Words.swipeCandidates(this, sequence, 3).firstOrNull() ?: return false
+        val connection = currentInputConnection ?: targetInputConnection ?: return false
+        return try {
+            acceptPendingCorrection()
+            connection.commitText("$word ", 1)
+            setLocalContext(cachedBeforeCursor + "$word ")
+            if (!incognito && Prefs.b(this, "personalized", true)) {
+                val previous = tokensBeforeCursor(cachedBeforeCursor).takeLast(2)
+                UserLanguageModel.observe(this, previous, word)
+                if (!Words.known(word)) Words.learn(this, word)
+            }
+            scheduleRefresh()
+            true
+        } catch (_: Exception) { false }
+    }
+
     private fun attach(k: K, repeat: Boolean = false, showPrev: Boolean = false, fast: Boolean = false, onLong: (() -> Unit)? = null, tap: () -> Unit) {
-        var fired = false
+        var fired = false; var swiped = false; var swipeMoved = false; var swipeTracking = false
+        var swipeLastKey = ""
+        val swipePath = StringBuilder()
+        val letterKey = letterKeys.any { it.first === k.tv }
         val longR = Runnable { fired = true; hidePreview(); onLong?.invoke() }
         val repR = object : Runnable { override fun run() { tap(); hd.postDelayed(this, 45) } }
         k.cell.setOnTouchListener { _, e ->
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    fired = false; k.tv.alpha = 0.65f
+                    fired = false; swiped = false; swipeMoved = false
+                    swipeTracking = letterKey && Prefs.b(ctx, "swipeTyping", false) && Prefs.string(ctx, "activeLanguage", "en") == "en"
+                    swipePath.setLength(0)
+                    swipeLastKey = if (swipeTracking) nearestLetterAt(e.rawX, e.rawY).orEmpty() else ""
+                    if (swipeLastKey.isNotEmpty()) swipePath.append(swipeLastKey)
+                    k.tv.alpha = 0.65f
                     if (hapticsOn) k.cell.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     if (keySoundOn) {
-                        try {
-                            (getSystemService(Context.AUDIO_SERVICE) as AudioManager)
-                                .playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD, 0.45f)
-                        } catch (_: Exception) { }
+                        try { (getSystemService(Context.AUDIO_SERVICE) as AudioManager).playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD, 0.45f) }
+                        catch (_: Exception) { }
                     }
                     if (showPrev) showPreview(k)
                     if (repeat) { tap(); hd.postDelayed(repR, 380) }
                     else if (fast) tap()
-                    else if (onLong != null) hd.postDelayed(longR, 350)
+                    else if (onLong != null && !swipeTracking) hd.postDelayed(longR, 350)
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (swipeTracking && e.pointerCount == 1) {
+                        val nearest = nearestLetterAt(e.rawX, e.rawY)
+                        if (!nearest.isNullOrEmpty() && nearest != swipeLastKey) {
+                            swipePath.append(nearest); swipeLastKey = nearest
+                            swipeMoved = true; fired = true
+                            hd.removeCallbacks(longR); hidePreview()
+                        }
+                    }
                 }
                 MotionEvent.ACTION_UP -> {
                     k.tv.alpha = 1f; hd.removeCallbacks(longR); hd.removeCallbacks(repR); hidePreview()
+                    if (swipeTracking && swipeMoved) swiped = commitSwipe(swipePath.toString())
+                    swipeTracking = false
                     if (!repeat && !fast && !fired) tap()
+                    if (swipeMoved && !swiped && !repeat && !fast) tap()
                 }
                 MotionEvent.ACTION_CANCEL -> {
                     k.tv.alpha = 1f; hd.removeCallbacks(longR); hd.removeCallbacks(repR); hidePreview()
+                    swipeTracking = false
                 }
             }
             true
@@ -1278,19 +1387,52 @@ class CrazeKeyboardService : InputMethodService() {
     }
 
     private fun buildMenu(): View {
-        val col = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(3), dp(4), dp(3), dp(2))
+        val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(4), dp(4), dp(2)) }
+        val available = (Prefs.toolbarTools(ctx) + "settings").distinct().take(12)
+        val categories = listOf("All", "Typing", "Editing", "Layout")
+        val tabs = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
+        val tabViews = LinkedHashMap<String, TextView>()
+        val grid = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        fun updateTabs() {
+            tabViews.forEach { (name, view) ->
+                val active = name == menuCategory
+                view.background = rounded(if (active) t.special else t.bg, 10)
+                view.alpha = if (active) 1f else 0.62f
+            }
         }
-        val tools = (Prefs.toolbarTools(ctx) + "settings").distinct().take(12)
-        val rows = tools.chunked(4).toMutableList()
-        while (rows.size < 3) rows.add(emptyList())
-        rows.take(3).forEach { ids ->
-            val row = LinearLayout(ctx)
-            ids.forEach { id -> row.addView(tile(toolIcon(id), toolLabel(id)) { runTool(id) }) }
-            repeat(4 - ids.size) { row.addView(View(ctx), lp(0, 1, 1f)) }
-            col.addView(row, lp(MATCH, 0, 1f))
+        fun renderTools() {
+            grid.removeAllViews()
+            val grouped = when (menuCategory) {
+                "Typing" -> listOf("keyboard", "emoji", "voice", "theme")
+                "Editing" -> listOf("editor", "clipboard", "settings")
+                "Layout" -> listOf("onehand", "floating", "resize", "hide", "settings")
+                else -> available
+            }.filter { it in available }.distinct()
+            val rows = grouped.chunked(4)
+            val rowCount = maxOf(3, rows.size)
+            repeat(rowCount) { rowIndex ->
+                val ids = rows.getOrNull(rowIndex).orEmpty()
+                val row = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
+                ids.forEach { id -> row.addView(tile(toolIcon(id), toolLabel(id)) { runTool(id) }) }
+                repeat(4 - ids.size) { row.addView(View(ctx), lp(0, 1, 1f)) }
+                grid.addView(row, lp(MATCH, 0, 1f))
+            }
         }
+        categories.forEach { label ->
+            val tab = TextView(ctx).apply {
+                text = label; textSize = 11f
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                gravity = Gravity.CENTER; setTextColor(t.text)
+                setPadding(dp(5), 0, dp(5), 0); minHeight = dp(32)
+                isClickable = true; isFocusable = true
+                setOnClickListener { menuCategory = label; updateTabs(); renderTools() }
+            }
+            tabViews[label] = tab
+            tabs.addView(tab, lp(0, dp(34), 1f).apply { if (label != "All") leftMargin = dp(4) })
+        }
+        col.addView(tabs, lp(MATCH, dp(38)))
+        col.addView(grid, lp(MATCH, 0, 1f))
+        updateTabs(); renderTools()
         return col
     }
 
@@ -1349,7 +1491,7 @@ class CrazeKeyboardService : InputMethodService() {
                     gravity = Gravity.CENTER
                     setPadding(0, dp(8), 0, dp(8))
                     minHeight = dp(48)
-                    contentDescription = emojiAliases[emoji] ?: "Emoji $emoji"
+                    contentDescription = emojiInfo(emoji).first.ifBlank { emojiAliases[emoji] ?: "Emoji" }
                     setOnClickListener { insertEmoji(emoji) }
                 }, lp(0, dp(48), 1f))
             }
@@ -1369,40 +1511,28 @@ class CrazeKeyboardService : InputMethodService() {
     private fun emojiSearchMatches(query: String): List<String> {
         val q = query.trim().lowercase()
         if (q.isEmpty()) return emptyList()
+        val terms = q.split(" ").filter { it.isNotBlank() }
         val matches = LinkedHashSet<String>()
-        emojiCats.keys.filter { it != "🕘" }.forEach { key ->
-            val terms = emojiCategoryTerms(key)
-            emojiLists[key].orEmpty().forEach { emoji ->
-                val searchable = "${emojiAliases[emoji].orEmpty()} $terms $emoji".lowercase()
-                if (searchable.contains(q)) matches.add(emoji)
+        emojiGroups.forEach { group ->
+            group.emojis.forEach { emoji ->
+                val info = emojiInfo(emoji)
+                val searchable = (info.first + " " + info.second + " " + emojiAliases[emoji].orEmpty() + " " + group.name + " " + group.terms + " " + emoji).lowercase()
+                if (terms.all { searchable.contains(it) }) matches.add(emoji)
             }
         }
         Prefs.recents(ctx).forEach { emoji ->
-            if (emojiAliases[emoji].orEmpty().contains(q) || emoji.contains(q)) matches.add(emoji)
+            val info = emojiInfo(emoji)
+            val searchable = (info.first + " " + info.second + " " + emojiAliases[emoji].orEmpty() + " " + emoji).lowercase()
+            if (terms.all { searchable.contains(it) }) matches.add(emoji)
         }
-        return matches.take(48)
+        return matches.take(96)
     }
 
-    private fun emojiCategoryName(key: String): String = when (key) {
-        "🕘" -> "Recent"
-        "😀" -> "Smileys and emotions"
-        "👍" -> "People and gestures"
-        "🐶" -> "Animals and nature"
-        "🍔" -> "Food and drink"
-        "⚽" -> "Travel, activity and games"
-        "💡" -> "Objects and symbols"
-        else -> "Emoji"
-    }
+    private fun emojiCategoryName(key: String): String =
+        if (key == "🕘") "Recent" else emojiGroups.firstOrNull { it.key == key }?.name ?: "Emoji"
 
-    private fun emojiCategoryTerms(key: String): String = when (key) {
-        "😀" -> "face smile happy sad laugh cry emotion"
-        "👍" -> "people person hand gesture body"
-        "🐶" -> "animal nature pet dog cat plant"
-        "🍔" -> "food drink fruit vegetable meal"
-        "⚽" -> "sport game travel transport music"
-        "💡" -> "object technology heart symbol idea"
-        else -> ""
-    }
+    private fun emojiCategoryTerms(key: String): String =
+        emojiGroups.firstOrNull { it.key == key }?.terms.orEmpty()
 
     private fun buildEmoji(): View {
         val col = LinearLayout(ctx).apply {
@@ -1787,14 +1917,18 @@ class CrazeKeyboardService : InputMethodService() {
             contentDescription = "Drag to resize keyboard height"
         }
         var lastY = 0f
+        var heightValue = Prefs.keyH(ctx)
+        val persistHeight = Runnable { Prefs.setI(ctx, "keyh", heightValue) }
         handle.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> { lastY = event.rawY; true }
                 MotionEvent.ACTION_MOVE -> {
                     val delta = ((lastY - event.rawY) / resources.displayMetrics.density).toInt()
                     if (delta != 0) {
-                        val next = (Prefs.keyH(ctx) + delta).coerceIn(34, 64)
-                        Prefs.setI(ctx, "keyh", next)
+                        val next = (heightValue + delta).coerceIn(34, 64)
+                        heightValue = next
+                        hd.removeCallbacks(persistHeight)
+                        hd.postDelayed(persistHeight, 180L)
                         kh = next
                         cellH = baseCellH()
                         value.text = "Keyboard height  ·  $next dp"
@@ -1808,13 +1942,19 @@ class CrazeKeyboardService : InputMethodService() {
                     }
                     true
                 }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> true
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    hd.removeCallbacks(persistHeight)
+                    Prefs.setI(ctx, "keyh", heightValue)
+                    true
+                }
                 else -> true
             }
         }
         col.addView(handle, LinearLayout.LayoutParams(MATCH, 0, 1f).apply { topMargin = dp(8); bottomMargin = dp(8) })
         val row = hrow()
         val reset = mk("Standard", 1f, t.special, t.text, 12f); attach(reset) {
+            hd.removeCallbacks(persistHeight)
+            heightValue = 46
             Prefs.setI(ctx, "keyh", 46)
             Prefs.setI(ctx, "kbdwidth", 100)
             Prefs.setI(ctx, "onehand", 0)

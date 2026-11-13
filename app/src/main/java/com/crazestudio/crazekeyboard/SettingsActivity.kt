@@ -15,6 +15,8 @@ import android.os.Looper
 import android.os.Handler
 import android.provider.Settings
 import android.text.InputType
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.inputmethod.EditorInfo
@@ -25,6 +27,8 @@ class SettingsActivity : Activity() {
     private val voicePermissionRequest = 701
     private val mainHandler = Handler(Looper.getMainLooper())
     private var crazeLmStatus: TextView? = null
+    private var settingsScroll: ScrollView? = null
+    private val settingsCategoryViews = LinkedHashMap<String, TextView>()
 
     private fun startCrazeLmDownload() {
         CrazeLmTflitePredictor.observe { message ->
@@ -116,6 +120,9 @@ class SettingsActivity : Activity() {
         typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         setTextColor(muted)
         setPadding(dp(4), dp(7), dp(4), dp(8))
+        tag = "settings_category"
+        contentDescription = label
+        settingsCategoryViews[label] = this
     }
 
     private fun section(title: String, hint: String? = null): LinearLayout =
@@ -123,6 +130,8 @@ class SettingsActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             background = shape(card, 20)
             setPadding(dp(16), dp(15), dp(16), dp(15))
+            tag = "settings_section"
+            contentDescription = "settings_section:" + title + " " + hint.orEmpty()
             addView(text(title, 16f, ink, true))
             if (hint != null) addView(text(hint, 12f, muted).apply {
                 setPadding(0, dp(4), 0, dp(10))
@@ -304,43 +313,72 @@ class SettingsActivity : Activity() {
 
         val packsSection = section(
             "Language packs",
-            "Download compressed vocabulary packs once. They are verified and stored on this device for offline suggestions."
+            "Download verified offline vocabulary. New languages stay vocabulary-only until a compatible model and keyboard layout are validated."
         )
-        fun addPackRow(code: String, label: String) {
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, dp(7), 0, dp(7))
-            }
+        val packsRows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        packsSection.addView(packsRows)
+        fun addPackRow(info: LanguageInfo) {
+            val installed = LanguagePackManager.isInstalled(this, info.code)
+            val selected = Prefs.string(this, "activeLanguage", "en") == info.code
+            val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(8), 0, dp(8)) }
             val details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            details.addView(text(label, 14f, ink, true))
-            val info = text(
-                if (LanguagePackManager.isInstalled(this, code)) "Installed · offline ready" else "Not downloaded",
-                11f, muted
-            )
-            details.addView(info)
-            row.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
-            row.addView(action(
-                if (LanguagePackManager.isInstalled(this, code)) "Update" else "Download",
-                true
-            ) {
-                info.text = "Downloading and verifying…"
-                LanguagePackManager.download(this, code) { success, message ->
-                    runOnUiThread {
-                        info.text = if (success) "$message · offline ready" else "Failed: $message"
+            details.addView(text(info.name, 14f, ink, true))
+            val statusText = when {
+                installed && selected && info.modelAvailable -> "Selected · offline vocabulary · model available"
+                installed && selected && info.suggestionsEnabled -> "Selected · offline prefix suggestions"
+                installed && selected -> "Selected · vocabulary only · suggestions disabled"
+                installed && info.modelAvailable -> "Installed · CrazeLM supported"
+                installed && info.suggestionsEnabled -> "Installed · local prefix suggestions"
+                installed -> "Installed · suggestions disabled"
+                info.vocabularyAvailable -> "Available to download · " + info.script + " script"
+                else -> "Pack not published yet · " + info.script + " script"
+            }
+            val statusView = text(statusText, 11f, muted)
+            details.addView(statusView)
+            details.addView(text(if (info.modelAvailable) "Model: CrazeLM" else if (info.suggestionsEnabled) "Model: dictionary ranking only" else "Model: not available", 10f, muted))
+            row.addView(details)
+            val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(7), 0, 0) }
+            if (info.vocabularyAvailable || installed) {
+                actions.addView(action(if (installed) "Update pack" else "Download", true) {
+                    statusView.text = "Downloading and verifying SHA-256…"
+                    LanguagePackManager.download(this@SettingsActivity, info.code) { success, message ->
+                        runOnUiThread { statusView.text = if (success) "$message · offline ready" else "Failed: $message" }
                     }
+                }, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(6) })
+            }
+            actions.addView(action(if (selected) "Selected" else "Use dictionary") {
+                Prefs.setString(this@SettingsActivity, "activeLanguage", info.code)
+                statusView.text = when {
+                    info.modelAvailable -> "Selected · next-word model available"
+                    info.suggestionsEnabled -> "Selected · local prefix suggestions"
+                    else -> "Selected · vocabulary only; suggestions remain disabled"
                 }
-            })
-            packsSection.addView(row)
+                Toast.makeText(this@SettingsActivity, info.name + " selected as the active dictionary", Toast.LENGTH_SHORT).show()
+                recreate()
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            row.addView(actions)
+            packsRows.addView(row)
+            packsRows.addView(divider())
         }
-        addPackRow("en", "English")
-        packsSection.addView(divider())
-        addPackRow("bn", "Bengali")
-        packsSection.addView(divider())
-        addPackRow("hi", "Hindi")
-        packsSection.addView(divider())
+        val fallbackLanguages = listOf(
+            LanguageInfo("en", "English", "latin", "ltr", true, true, true),
+            LanguageInfo("bn", "Bengali", "bengali", "ltr", true, true, false),
+            LanguageInfo("hi", "Hindi", "devanagari", "ltr", true, true, false)
+        )
+        fallbackLanguages.forEach(::addPackRow)
         content.addView(category("Languages & downloads"))
         content.addView(packsSection, margin())
+        LanguagePackManager.fetchLanguages(this) { success, catalog, error ->
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (success && catalog.isNotEmpty()) {
+                    packsRows.removeAllViews()
+                    catalog.forEach(::addPackRow)
+                } else {
+                    packsRows.addView(text("Language catalog refresh failed: " + error, 11f, muted))
+                }
+            }
+        }
 
         val status = section("Keyboard status", "Complete both steps to use CrazeKeyboard in other apps.")
         status.addView(LinearLayout(this).apply {
@@ -434,6 +472,8 @@ class SettingsActivity : Activity() {
         prefs.addView(settingSwitch("Next-word suggestions", "Suggest likely words after a space.", "nextWord", true))
         prefs.addView(divider())
         prefs.addView(settingSwitch("Personalized predictions", "Learn confirmed word patterns locally to improve suggestions.", "personalized", true))
+        prefs.addView(divider())
+        prefs.addView(settingSwitch("Swipe typing · experimental", "Trace across letter keys; a local dictionary heuristic ranks the likely word.", "swipeTyping", false))
         prefs.addView(divider())
         prefs.addView(settingSwitch("Double-space period", "Turn two quick spaces into a full stop.", "doubleSpacePeriod", true))
         prefs.addView(divider())
@@ -829,6 +869,69 @@ class SettingsActivity : Activity() {
             gravity = Gravity.CENTER
             setPadding(0, dp(8), 0, dp(10))
         })
+
+        val settingsSearch = EditText(this).apply {
+            hint = "Search settings"; setSingleLine(true); textSize = 14f
+            setTextColor(ink); setHintTextColor(muted)
+            setPadding(dp(15), dp(11), dp(15), dp(11))
+            background = shape(fieldBg, 14)
+            inputType = InputType.TYPE_CLASS_TEXT
+            tag = "settings_search"; contentDescription = "Search all settings"
+        }
+        content.addView(settingsSearch, 1, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+        val categoryScroller = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false; overScrollMode = View.OVER_SCROLL_NEVER
+            tag = "settings_category_nav"
+        }
+        val categoryStrip = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val categoryLabels = listOf(
+            "Languages & downloads", "Setup", "AI & voice", "Typing & suggestions",
+            "Toolbar & shortcuts", "Privacy & data", "Appearance",
+            "Keyboard size & layout", "Keyboard behaviour"
+        )
+        categoryLabels.forEach { label ->
+            val chip = TextView(this).apply {
+                text = label; textSize = 11f; typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                setTextColor(ink); gravity = Gravity.CENTER; setPadding(dp(12), dp(9), dp(12), dp(9))
+                background = shape(actionBg, 18); isClickable = true; isFocusable = true
+                setOnClickListener { settingsCategoryViews[label]?.let { target -> scroll.smoothScrollTo(0, target.top) } }
+            }
+            categoryStrip.addView(chip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = dp(6) })
+        }
+        categoryScroller.addView(categoryStrip)
+        content.addView(categoryScroller, 2, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) })
+        settingsSearch.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                val query = s?.toString()?.trim()?.lowercase().orEmpty()
+                for (i in 0 until content.childCount) {
+                    val child = content.getChildAt(i)
+                    when (child.tag as? String) {
+                        "settings_search", "settings_category_nav" -> child.visibility = View.VISIBLE
+                        "settings_section" -> {
+                            val terms = child.contentDescription?.toString().orEmpty().lowercase()
+                            child.visibility = if (query.isEmpty() || terms.contains(query)) View.VISIBLE else View.GONE
+                        }
+                        "settings_category" -> {
+                            val label = child.contentDescription?.toString().orEmpty().lowercase()
+                            var match = query.isEmpty() || label.contains(query)
+                            var j = i + 1
+                            while (!match && j < content.childCount && content.getChildAt(j).tag != "settings_category") {
+                                val candidate = content.getChildAt(j)
+                                if (candidate.tag == "settings_section") {
+                                    match = candidate.contentDescription?.toString().orEmpty().lowercase().contains(query)
+                                }
+                                j++
+                            }
+                            child.visibility = if (match) View.VISIBLE else View.GONE
+                        }
+                        else -> child.visibility = if (query.isEmpty()) View.VISIBLE else View.GONE
+                    }
+                }
+            }
+            override fun afterTextChanged(s: Editable?) = Unit
+        })
+        settingsScroll = scroll
 
         setContentView(root)
         content.alpha = 0f
