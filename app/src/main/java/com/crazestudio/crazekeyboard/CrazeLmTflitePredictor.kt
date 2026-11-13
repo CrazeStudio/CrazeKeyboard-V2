@@ -6,6 +6,7 @@ import org.tensorflow.lite.Interpreter
 import java.io.File
 import java.util.PriorityQueue
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * On-device next-word prediction with one long-lived TensorFlow Lite Interpreter.
@@ -27,6 +28,7 @@ internal object CrazeLmTflitePredictor {
     private val inferenceExecutor = Executors.newSingleThreadExecutor { task ->
         Thread(task, "craze-lm-inference").apply { isDaemon = true }
     }
+    private val inferenceRequestId = AtomicLong()
 
     fun observe(callback: ((String) -> Unit)?) {
         observer = callback
@@ -78,9 +80,13 @@ internal object CrazeLmTflitePredictor {
     ) {
         if (limit <= 0 || beforeCursor.isBlank() || runtime == null) return
         val app = context.applicationContext
+        val requestId = inferenceRequestId.incrementAndGet()
         inferenceExecutor.execute {
+            if (requestId != inferenceRequestId.get()) return@execute
             val result = predictNextWords(app, beforeCursor, limit)
-            try { onResult(result) } catch (_: Exception) { }
+            if (requestId == inferenceRequestId.get()) {
+                try { onResult(result) } catch (_: Exception) { }
+            }
         }
     }
 
