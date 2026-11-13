@@ -642,12 +642,20 @@ class CrazeKeyboardService : InputMethodService() {
         val state = desiredTopState()
         if (state != lastTopState) buildTop()
         if (state != "suggestions" || sugViews.isEmpty()) {
-            if (state != "suggestions") lastSuggestions.fill("")
+            if (state != "suggestions") {
+                ++predictionEpoch
+                predictionTask?.let(suggestionWorker::removeCallbacks)
+                predictionTask = null
+                lastSuggestions.fill("")
+            }
             return
         }
 
         val snapshot = cachedBeforeCursor
         if (snapshot.isBlank()) {
+            ++predictionEpoch
+            predictionTask?.let(suggestionWorker::removeCallbacks)
+            predictionTask = null
             lastSuggestions.fill("")
             sugViews.forEach { it.text = "" }
             return
