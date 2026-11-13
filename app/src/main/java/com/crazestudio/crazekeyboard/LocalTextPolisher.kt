@@ -10,8 +10,8 @@ internal object LocalTextPolisher {
         var value = source
             .replace('\u00A0', ' ')
             .replace(Regex("[\\t ]+"), " ")
-            .replace(Regex("[ ]+([,.;:!?])"), "\\$1")
-            .replace(Regex("([,;:!?])(?=\\S)"), "\\$1 ")
+            .replace(Regex("[ ]+([,.;:!?])")) { it.groupValues[1] }
+            .replace(Regex("([,;:!?])(?=\\S)")) { it.value + " " }
             .replace(Regex("\\.{4,}"), "...")
             .trim()
 
