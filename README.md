@@ -28,7 +28,7 @@ CrazeKeyboard is an offline-first Android IME by CrazeStudio.
 
 ## Privacy and offline behaviour
 
-The keyboard uses Internet access only to download the CrazeLM model and its matching tokenizer on first use. Both are saved in app-private storage and verified before activation. After installation, AI prediction, dictionary lookup, spelling alternatives, and learned words run locally; typed text is not sent to a prediction server. Clipboard history is opt-in and remains on-device. Voice typing is different: it uses the Android-selected speech recognition service, which may send audio to its provider for recognition. Microphone access is permission-gated and voice input is suppressed in password and restricted fields.
+By default, text prediction is local. The CrazeLM model and matching tokenizer are downloaded on first use, verified, and saved in app-private storage. After installation, next-word prediction, dictionary lookup, spelling alternatives, and learned words run locally. Optional online prefix suggestions are disabled by default; when explicitly enabled, only the current word prefix and language are sent, never the surrounding sentence. Clipboard history is opt-in and remains on-device. Voice typing is different: it uses the Android-selected speech recognition service, which may send audio to its provider for recognition. Microphone access is permission-gated and voice input is suppressed in password and restricted fields.
 
 ## Build and install
 
