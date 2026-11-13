@@ -11,6 +11,13 @@ import java.util.concurrent.ConcurrentHashMap
 internal object DownloadedVocabularyIndex {
     private data class Index(val buffer: ByteBuffer, val offsets: IntArray)
     private val indexes = ConcurrentHashMap<String, Index>()
+    private const val MAX_SCAN = 6000
+    private const val POOL = 16
+    private const val CACHE_SIZE = 256
+    private val suggestCache = object : LinkedHashMap<String, List<String>>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<String>>?): Boolean =
+            size > CACHE_SIZE
+    }
 
     private fun file(context: Context, language: String) =
         File(File(context.filesDir, "language_packs"), "$language.words")
@@ -24,6 +31,7 @@ internal object DownloadedVocabularyIndex {
 
     fun reload(context: Context, language: String) {
         indexes.remove(language)
+        synchronized(suggestCache) { suggestCache.clear() }
         open(context.applicationContext, language)
     }
 
@@ -50,12 +58,11 @@ internal object DownloadedVocabularyIndex {
     private fun wordAt(index: Index, position: Int): String {
         val start = index.offsets[position]
         var end = start
-        while (end < index.buffer.limit() && index.buffer.get(end) != 10.toByte()) end++
+        val limit = index.buffer.limit()
+        while (end < limit && index.buffer.get(end) != 10.toByte()) end++
         if (end <= start) return ""
         val bytes = ByteArray(end - start)
-        val view = index.buffer.duplicate()
-        view.position(start)
-        view.get(bytes)
+        for (k in bytes.indices) bytes[k] = index.buffer.get(start + k)
         return String(bytes, Charsets.UTF_8)
     }
 
@@ -77,18 +84,44 @@ internal object DownloadedVocabularyIndex {
         return position < index.offsets.size && wordAt(index, position) == value
     }
 
+    /**
+     * Completions of [prefix]. The packs are plain word lists, so alphabetical order would offer
+     * the rarest words first. English packs are ranked with the frequency data of [VocabularyIndex];
+     * other languages prefer the shortest completions, which are on average the most common.
+     */
     fun suggest(language: String, prefix: String, limit: Int = 3): List<String> {
         if (prefix.isBlank() || limit <= 0) return emptyList()
         val code = language.lowercase().substringBefore('-')
         val index = indexes[code] ?: return emptyList()
         val needle = prefix.lowercase()
-        var position = lowerBound(index, needle)
-        val result = ArrayList<String>(limit)
-        while (position < index.offsets.size && result.size < limit) {
-            val word = wordAt(index, position++)
-            if (!word.startsWith(needle)) break
-            if (word != needle) result.add(word)
+        val english = code == "en"
+        // English ranking depends on the frequency lexicon, so it is only cached once that is loaded.
+        val cacheable = !english || VocabularyIndex.isLoaded()
+        val cacheKey = "$code|$needle"
+        if (cacheable) {
+            synchronized(suggestCache) { suggestCache[cacheKey] }?.let { return it.take(limit) }
         }
-        return result
+
+        var position = lowerBound(index, needle)
+        val matches = ArrayList<String>(64)
+        var scanned = 0
+        while (position < index.offsets.size && scanned < MAX_SCAN) {
+            val word = wordAt(index, position++)
+            scanned++
+            if (!word.startsWith(needle)) break
+            if (word != needle) matches.add(word)
+        }
+        if (matches.isEmpty()) return emptyList()
+
+        val ranked: List<String> = if (english && VocabularyIndex.isLoaded()) {
+            matches.map { it to VocabularyIndex.rankScore(it) - 0.08 * (it.length - needle.length) }
+                .sortedByDescending { it.second }
+                .map { it.first }
+        } else {
+            matches.sortedWith(compareBy<String>({ it.length }, { it }))
+        }
+        val pool = ranked.take(POOL)
+        if (cacheable) synchronized(suggestCache) { suggestCache[cacheKey] = pool }
+        return pool.take(limit)
     }
 }

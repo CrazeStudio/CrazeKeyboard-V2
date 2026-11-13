@@ -9,19 +9,29 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.math.ln
 
 /**
- * Lazily builds a sorted 30K prefix lexicon from the existing CWP phrase pack.
- * Phrase keys and candidate tokens contain 29,971 distinct words; the 29 entries
- * absent from phrase data are added below. The resulting text file is memory-mapped,
- * and only the matching prefix range is decoded for each lookup.
+ * Lazily builds a sorted ~30K prefix lexicon from the existing CWP phrase pack and keeps a
+ * usage-frequency score for every word (summed from the phrase model's stored candidate
+ * frequencies). The text file ("word<TAB>score" per line, sorted by word) is memory-mapped and
+ * only the matching prefix range is decoded per lookup.
+ *
+ * v2: completions are ranked by frequency instead of alphabetically, so typing "th" offers
+ * "the / that / this" instead of the alphabetically-first rare words.
  */
 internal object VocabularyIndex {
     private const val MAGIC = 0x31505743
     private const val HEADER_SIZE = 12
     private const val INDEX_ENTRY_SIZE = 8
-    private const val MODEL_NAME = "en-US.cwp"
-    private const val VOCAB_NAME = "en-US.vocab"
+    private const val VOCAB_NAME = "en-US.v2.vocab"
+    private const val LEGACY_VOCAB_NAME = "en-US.vocab"
+    private const val MAX_SCAN = 6000      // wider than the largest single-letter range of the 30K lexicon
+    private const val POOL = 16            // ranked completions kept per prefix
+    private const val FIRST_LETTER_POOL = 700
+    private const val CACHE_SIZE = 512
+    private const val TAB: Byte = 9
+    private const val NL: Byte = 10
 
     private val supplementalWords = listOf(
         "annalie", "ante", "aux", "bayer", "christoph", "césar", "elie", "guiry",
@@ -30,6 +40,8 @@ internal object VocabularyIndex {
         "ul", "zu", "zuzanna", "الله", "حصن"
     )
 
+    private val tokenSplit = Regex("[^\\p{L}']+")
+
     @Volatile private var mapped: ByteBuffer? = null
     @Volatile private var offsets: IntArray = IntArray(0)
     @Volatile private var loading = false
@@ -37,23 +49,31 @@ internal object VocabularyIndex {
     private val main = Handler(Looper.getMainLooper())
     private val callbacks = CopyOnWriteArrayList<() -> Unit>()
     private val firstLetterCache = java.util.concurrent.ConcurrentHashMap<Char, List<String>>()
+    private val prefixCache = object : LinkedHashMap<String, List<String>>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<String>>?): Boolean =
+            size > CACHE_SIZE
+    }
 
     fun isLoaded(): Boolean = mapped != null
 
-    private fun addTokens(target: MutableSet<String>, phrase: String) {
-        phrase.lowercase().split(Regex("[^\\p{L}']+")).forEach { word ->
-            if (word.isNotEmpty() && word.length <= 40 && word.any { it.isLetter() }) target.add(word)
+    private fun addTokens(target: HashMap<String, Long>, phrase: String, weight: Long) {
+        phrase.lowercase().split(tokenSplit).forEach { word ->
+            if (word.isNotEmpty() && word.length <= 40 && word.any { it.isLetter() }) {
+                target[word] = (target[word] ?: 0L) + weight
+            }
         }
     }
 
     private fun buildFromModel(context: Context): File? {
         val model = NextWordPredictor.ensureModelFile(context) ?: return null
         val directory = model.parentFile ?: return null
+        // The v1 file had no frequencies; drop it so it is not left behind as dead weight.
+        try { File(directory, LEGACY_VOCAB_NAME).delete() } catch (_: Exception) { }
         val destination = File(directory, VOCAB_NAME)
         if (destination.isFile && destination.length() > 0L) return destination
         val temporary = File(directory, "$VOCAB_NAME.tmp")
         return try {
-            val words = HashSet<String>(32_000)
+            val words = HashMap<String, Long>(40_000)
             RandomAccessFile(model, "r").use { raf ->
                 val source = raf.channel.map(FileChannel.MapMode.READ_ONLY, 0, raf.length())
                     .order(ByteOrder.LITTLE_ENDIAN)
@@ -69,31 +89,30 @@ internal object VocabularyIndex {
                     val keyLength = source.getShort(offset).toInt() and 0xffff
                     if (keyLength < 1 || offset + 2 + keyLength + 1 > source.capacity()) continue
                     val keyBytes = ByteArray(keyLength)
-                    val keyView = source.duplicate()
-                    keyView.position(offset + 2)
-                    keyView.get(keyBytes)
-                    addTokens(words, String(keyBytes, Charsets.UTF_8))
+                    for (k in 0 until keyLength) keyBytes[k] = source.get(offset + 2 + k)
+                    addTokens(words, String(keyBytes, Charsets.UTF_8), 1L)
 
                     var position = offset + 2 + keyLength
                     val candidates = source.get(position++).toInt() and 0xff
-                    var valid = true
                     for (candidate in 0 until candidates) {
-                        if (position >= source.capacity()) { valid = false; break }
+                        if (position >= source.capacity()) break
                         val length = source.get(position++).toInt() and 0xff
-                        if (length < 1 || position + length + 2 > source.capacity()) { valid = false; break }
+                        if (length < 1 || position + length + 2 > source.capacity()) break
                         val candidateBytes = ByteArray(length)
-                        val candidateView = source.duplicate()
-                        candidateView.position(position)
-                        candidateView.get(candidateBytes)
-                        addTokens(words, String(candidateBytes, Charsets.UTF_8))
+                        for (k in 0 until length) candidateBytes[k] = source.get(position + k)
+                        val frequency = source.getShort(position + length).toInt() and 0xffff
+                        addTokens(words, String(candidateBytes, Charsets.UTF_8), 1L + frequency)
                         position += length + 2
                     }
-                    if (!valid) continue
                 }
             }
-            words.addAll(supplementalWords)
+            supplementalWords.forEach { word -> if (word !in words) words[word] = 1L }
             temporary.bufferedWriter(Charsets.UTF_8).use { writer ->
-                words.sorted().forEach { writer.append(it).append('\n') }
+                words.keys.sorted().forEach { word ->
+                    writer.append(word).append('\t')
+                        .append((words[word] ?: 1L).coerceAtMost(2_000_000_000L).toString())
+                        .append('\n')
+                }
             }
             if (!temporary.isFile || temporary.length() == 0L) {
                 temporary.delete()
@@ -121,10 +140,10 @@ internal object VocabularyIndex {
             val buffer = RandomAccessFile(file, "r").use { raf ->
                 raf.channel.map(FileChannel.MapMode.READ_ONLY, 0, raf.length()).asReadOnlyBuffer()
             }
-            val found = ArrayList<Int>(30_000)
+            val found = ArrayList<Int>(40_000)
             found.add(0)
             for (i in 0 until buffer.limit()) {
-                if (buffer.get(i) == 10.toByte() && i + 1 < buffer.limit()) found.add(i + 1)
+                if (buffer.get(i) == NL && i + 1 < buffer.limit()) found.add(i + 1)
             }
             if (found.isEmpty()) return false
             offsets = found.toIntArray()
@@ -160,16 +179,41 @@ internal object VocabularyIndex {
         }, "craze-vocabulary-index").apply { isDaemon = true; start() }
     }
 
+    /** The word on line [index] (the text before the tab). */
     private fun wordAt(source: ByteBuffer, index: Int): String {
         val start = offsets[index]
         var end = start
-        while (end < source.limit() && source.get(end) != 10.toByte()) end++
+        val limit = source.limit()
+        while (end < limit) {
+            val b = source.get(end)
+            if (b == TAB || b == NL) break
+            end++
+        }
         if (end <= start) return ""
         val bytes = ByteArray(end - start)
-        val view = source.duplicate()
-        view.position(start)
-        view.get(bytes)
+        for (k in bytes.indices) bytes[k] = source.get(start + k)
         return String(bytes, Charsets.UTF_8)
+    }
+
+    /** The usage score on line [index] (the digits after the tab); 0 when absent. */
+    private fun freqAt(source: ByteBuffer, index: Int): Long {
+        var p = offsets[index]
+        val limit = source.limit()
+        while (p < limit) {
+            val b = source.get(p)
+            if (b == NL) return 0L
+            if (b == TAB) break
+            p++
+        }
+        p++
+        var value = 0L
+        while (p < limit) {
+            val digit = source.get(p).toInt() - 48
+            if (digit < 0 || digit > 9) break
+            value = value * 10 + digit
+            p++
+        }
+        return value
     }
 
     private fun lowerBound(source: ByteBuffer, value: String): Int {
@@ -182,18 +226,50 @@ internal object VocabularyIndex {
         return low
     }
 
+    /**
+     * Ranking score for a lexicon word: log usage frequency, plus a bonus for the curated
+     * frequency-ordered list in [Words]. Words outside both score only their dictionary bonus.
+     */
+    fun rankScore(word: String): Double {
+        val value = word.lowercase()
+        val source = mapped
+        var score = 0.0
+        if (source != null) {
+            val index = lowerBound(source, value)
+            if (index < offsets.size && wordAt(source, index) == value) score = ln(1.0 + freqAt(source, index))
+        }
+        return score + Words.dictBonus(value)
+    }
+
+    private fun scanRange(source: ByteBuffer, value: String, keep: Int): List<String> {
+        var index = lowerBound(source, value)
+        val scored = ArrayList<Pair<String, Double>>()
+        var scanned = 0
+        while (index < offsets.size && scanned < MAX_SCAN) {
+            val word = wordAt(source, index)
+            if (!word.startsWith(value)) break
+            if (word != value) {
+                val score = ln(1.0 + freqAt(source, index)) + Words.dictBonus(word) -
+                    0.08 * (word.length - value.length)
+                scored.add(word to score)
+            }
+            index++
+            scanned++
+        }
+        scored.sortByDescending { it.second }
+        return scored.take(keep).map { it.first }
+    }
+
+    /** Up to [limit] completions of [prefix], most frequent first. */
     fun suggest(prefix: String, limit: Int = 3): List<String> {
         val value = prefix.lowercase()
         if (value.isEmpty() || limit <= 0) return emptyList()
         val source = mapped ?: return emptyList()
-        var index = lowerBound(source, value)
-        val out = ArrayList<String>(limit)
-        while (index < offsets.size && out.size < limit) {
-            val word = wordAt(source, index++)
-            if (!word.startsWith(value)) break
-            if (word != value) out.add(word)
+        val cached = synchronized(prefixCache) { prefixCache[value] }
+        val pool = cached ?: scanRange(source, value, POOL).also { computed ->
+            synchronized(prefixCache) { prefixCache[value] = computed }
         }
-        return out
+        return pool.take(limit)
     }
 
     fun contains(word: String): Boolean {
@@ -203,10 +279,11 @@ internal object VocabularyIndex {
         return index < offsets.size && wordAt(source, index) == value
     }
 
+    /** The most frequent words starting with [first]; used as the pool for typo correction. */
     fun byFirstLetter(first: Char, limit: Int = 256): List<String> {
-        if (!isLoaded()) return emptyList()
+        val source = mapped ?: return emptyList()
         val key = first.lowercaseChar()
-        val cached = firstLetterCache.computeIfAbsent(key) { suggest(it.toString(), 256) }
+        val cached = firstLetterCache.computeIfAbsent(key) { scanRange(source, it.toString(), FIRST_LETTER_POOL) }
         return cached.take(limit)
     }
 }
