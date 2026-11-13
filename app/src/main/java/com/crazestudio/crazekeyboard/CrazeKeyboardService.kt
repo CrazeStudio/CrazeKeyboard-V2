@@ -706,6 +706,22 @@ class CrazeKeyboardService : InputMethodService() {
         // Keep the previous completed row visible during inference. Clearing it here caused
         // the suggestion strip to flash empty on every cursor/text update.
         val task = Runnable {
+            val activeLanguage = Prefs.string(ctx, "activeLanguage", "en")
+            if (activeLanguage != "en") {
+                val prefix = wordAtCursor(snapshot)
+                val local = if (activeLanguage == "bn" || activeLanguage == "hi") {
+                    DownloadedVocabularyIndex.suggest(activeLanguage, prefix, 3)
+                } else emptyList()
+                hd.post {
+                    if (epoch != predictionEpoch || !::top.isInitialized ||
+                        desiredTopState() != "suggestions") return@post
+                    for (i in 0..2) {
+                        lastSuggestions[i] = local.getOrNull(i).orEmpty()
+                        if (i < sugViews.size) sugViews[i].text = lastSuggestions[i]
+                    }
+                }
+                return@Runnable
+            }
             CrazeLmTflitePredictor.predictNextWordsAsync(applicationContext, snapshot, 3) { modelWords ->
                 if (epoch != predictionEpoch) return@predictNextWordsAsync
                 val clean = modelWords.asSequence()
@@ -1071,7 +1087,7 @@ class CrazeKeyboardService : InputMethodService() {
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     fired = false; swiped = false; swipeMoved = false
-                    swipeTracking = letterKey && Prefs.b(ctx, "swipeTyping", false)
+                    swipeTracking = letterKey && Prefs.b(ctx, "swipeTyping", false) && Prefs.string(ctx, "activeLanguage", "en") == "en"
                     swipePath.setLength(0)
                     swipeLastKey = if (swipeTracking) nearestLetterAt(e.rawX, e.rawY).orEmpty() else ""
                     if (swipeLastKey.isNotEmpty()) swipePath.append(swipeLastKey)
