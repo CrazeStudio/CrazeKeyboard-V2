@@ -1651,12 +1651,6 @@ class CrazeKeyboardService : InputMethodService() {
         })
         updateCount(editorDraft)
 
-        fun keyButton(text: String, weight: Float = 1f, strong: Boolean = false, click: () -> Unit) {
-            val key = mk(text, weight, if (strong) t.accent else t.special,
-                if (strong) t.accentText else t.text, 12f)
-            attach(key) { click() }
-            key.cell.contentDescription = text
-        }
         fun restore(value: String) {
             restoringEditor = true
             field.setText(value)
@@ -1699,11 +1693,6 @@ class CrazeKeyboardService : InputMethodService() {
         val nav = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-        }
-        keyButton("←", 1f) {
-            val a = minOf(field.selectionStart, field.selectionEnd)
-            val b = maxOf(field.selectionStart, field.selectionEnd)
-            cursorTo(if (a != b) a else a - 1)
         }
         // Build the navigation keys in their own equal-width cells.
         val left = mk("←", 1f, t.special, t.text, 18f)
