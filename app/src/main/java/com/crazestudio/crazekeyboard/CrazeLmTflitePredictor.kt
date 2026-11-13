@@ -8,35 +8,29 @@ import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import java.io.File
 import java.util.concurrent.Executors
-import java.util.concurrent.ScheduledFuture
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 /**
  * On-device next-word prediction with one TensorFlow Lite Interpreter.
  * Model setup and inference run away from the keyboard's typing thread.
  *
- * Memory saver: the model, tokenizer and interpreter are released after [IDLE_UNLOAD_MS] without a
- * prediction, and immediately when the system reports memory pressure. The next prediction request
- * reloads them in the background (the fast n-gram suggestions cover the gap).
+ * Warm-runtime policy: keep the interpreter and tokenizer resident between keyboard sessions so
+ * reopening the keyboard does not pay model initialization cost. Release them only under genuine
+ * memory pressure; Android may still reclaim the process, in which case startup is necessarily cold.
  */
 internal object CrazeLmTflitePredictor {
     private const val SEQUENCE_LENGTH = 48
     private const val VOCAB_SIZE = 100_000
     // A smaller heap means fewer temporary objects and less dictionary I/O per keystroke.
     private const val CANDIDATE_SCAN = 256
-    private const val IDLE_UNLOAD_MS = 120_000L
-    private const val IDLE_CHECK_SECONDS = 30L
     private const val PRESSURE_COOLDOWN_MS = 300_000L
     private const val READY_STATUS = "CrazeLM is ready · offline"
 
     @Volatile private var runtime: Runtime? = null
     @Volatile private var loading = false
     @Volatile private var files: CrazeLmFiles? = null
-    @Volatile private var lastUsedAt = 0L
     @Volatile private var unloadedForMemory = false
     @Volatile private var reloadAllowedAt = 0L
-    private var idleTask: ScheduledFuture<*>? = null
     private var trimCallbacks: ComponentCallbacks2? = null
     @Volatile var status: String = "CrazeLM is not downloaded"
         private set
@@ -64,7 +58,6 @@ internal object CrazeLmTflitePredictor {
     @Synchronized
     fun initializeAsync(context: Context) {
         if (runtime != null) {
-            lastUsedAt = SystemClock.elapsedRealtime()
             publish(READY_STATUS)
             return
         }
@@ -74,7 +67,7 @@ internal object CrazeLmTflitePredictor {
         val app = context.applicationContext
         executor.execute {
             try {
-                // Reloads after an idle unload reuse the verified files instead of re-checking them.
+                // Rebuilds after memory-pressure unload reuse verified files instead of re-checking them.
                 val known = files?.takeIf { it.model.isFile && it.tokenizer.isFile }
                 val resolved = known ?: CrazeLmAssets.ensureDownloaded(app) { message -> publish(message) }
                     .also { files = it }
@@ -85,10 +78,8 @@ internal object CrazeLmTflitePredictor {
                 }
                 publish("Loading TensorFlow Lite model…")
                 val nextRuntime = Runtime(resolved.model, tokenizer)
-                lastUsedAt = SystemClock.elapsedRealtime()
                 unloadedForMemory = false
                 runtime = nextRuntime
-                startIdleWatch()
                 registerTrimCallbacks(app)
                 publish(READY_STATUS)
             } catch (error: Throwable) {
@@ -99,25 +90,15 @@ internal object CrazeLmTflitePredictor {
         }
     }
 
-    @Synchronized
-    private fun startIdleWatch() {
-        idleTask?.cancel(false)
-        idleTask = executor.scheduleWithFixedDelay({
-            if (runtime != null && SystemClock.elapsedRealtime() - lastUsedAt >= IDLE_UNLOAD_MS) {
-                unload(0L)
-            }
-        }, IDLE_CHECK_SECONDS, IDLE_CHECK_SECONDS, TimeUnit.SECONDS)
-    }
-
     /** Registered once; the system tells the process when memory is short. */
     @Synchronized
     private fun registerTrimCallbacks(app: Context) {
         if (trimCallbacks != null) return
         val callbacks = object : ComponentCallbacks2 {
-            // Levels: 10 = running low, 15 = running critical, 40+ = process is cached/background.
-            // 20 (UI hidden) is ignored: the keyboard is hidden between every typing burst.
+            // Unloading merely because the IME process is cached makes the next keyboard open slow.
+            // Keep the model warm for cached/background states; unload only on real memory pressure.
             override fun onTrimMemory(level: Int) {
-                if (level == 10 || level == 15 || level >= 40) unload(PRESSURE_COOLDOWN_MS)
+                if (level == 10 || level == 15) unload(PRESSURE_COOLDOWN_MS)
             }
             override fun onConfigurationChanged(newConfig: Configuration) = Unit
             override fun onLowMemory() { unload(PRESSURE_COOLDOWN_MS) }
@@ -126,15 +107,13 @@ internal object CrazeLmTflitePredictor {
         trimCallbacks = callbacks
     }
 
-    /** Release the interpreter, tokenizer and candidate tables. [cooldownMs] delays any automatic reload. */
+    /** Release the interpreter, tokenizer and candidate tables under actual memory pressure. */
     @Synchronized
     private fun unload(cooldownMs: Long) {
         val active = runtime ?: return
         runtime = null
         unloadedForMemory = true
         reloadAllowedAt = SystemClock.elapsedRealtime() + cooldownMs
-        idleTask?.cancel(false)
-        idleTask = null
         inferenceRequestId.incrementAndGet()
         // close() waits for any inference in flight, so it runs on the runtime thread.
         executor.execute { active.close() }
@@ -150,11 +129,10 @@ internal object CrazeLmTflitePredictor {
         if (limit <= 0 || beforeCursor.isBlank()) return
         val app = context.applicationContext
         if (runtime == null) {
-            // Released earlier to save memory: bring it back in the background for the next word.
+            // The OS may have reclaimed the runtime; rebuild it off the typing thread.
             if (unloadedForMemory && SystemClock.elapsedRealtime() >= reloadAllowedAt) initializeAsync(app)
             return
         }
-        lastUsedAt = SystemClock.elapsedRealtime()
         val requestId = inferenceRequestId.incrementAndGet()
         inferenceExecutor.execute {
             if (requestId != inferenceRequestId.get()) return@execute
