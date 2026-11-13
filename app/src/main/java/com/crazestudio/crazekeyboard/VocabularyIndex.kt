@@ -204,6 +204,7 @@ internal object VocabularyIndex {
     }
 
     fun byFirstLetter(first: Char, limit: Int = 256): List<String> {
+        if (!isLoaded()) return emptyList()
         val key = first.lowercaseChar()
         val cached = firstLetterCache.computeIfAbsent(key) { suggest(it.toString(), 256) }
         return cached.take(limit)
