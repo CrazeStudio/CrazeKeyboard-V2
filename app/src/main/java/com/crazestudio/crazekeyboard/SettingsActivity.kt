@@ -559,6 +559,7 @@ class SettingsActivity : Activity() {
             UserLanguageModel.clear(this)
             Toast.makeText(this, "Learned words and typing patterns cleared", Toast.LENGTH_SHORT).show()
         })
+        content.addView(category("Privacy & data"))
         content.addView(privacy, margin())
 
         val appearance = section("Appearance", "Select the colour style used by your keyboard.")
