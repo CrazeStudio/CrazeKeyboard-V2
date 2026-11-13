@@ -109,6 +109,15 @@ class SettingsActivity : Activity() {
             setOnClickListener { click() }
         }
 
+    private fun category(label: String) = TextView(this).apply {
+        text = label.uppercase()
+        textSize = 10f
+        letterSpacing = 0.10f
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        setTextColor(muted)
+        setPadding(dp(4), dp(7), dp(4), dp(8))
+    }
+
     private fun section(title: String, hint: String? = null): LinearLayout =
         LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -330,12 +339,7 @@ class SettingsActivity : Activity() {
         packsSection.addView(divider())
         addPackRow("hi", "Hindi")
         packsSection.addView(divider())
-        packsSection.addView(settingSwitch(
-            "Online prefix suggestions",
-            "Send only the current word prefix and language to CrazePredictionAPI. Never sends the sentence.",
-            "onlinepred",
-            false
-        ))
+        content.addView(category("Languages & downloads"))
         content.addView(packsSection, margin())
 
         val status = section("Keyboard status", "Complete both steps to use CrazeKeyboard in other apps.")
@@ -359,6 +363,7 @@ class SettingsActivity : Activity() {
         }
         setupAction = setupButton
         status.addView(setupButton)
+        content.addView(category("Setup"))
         content.addView(status, margin())
 
         val test = section("Try your keyboard", "Tap the field below to test typing, suggestions, cursor control and voice input.")
@@ -387,6 +392,7 @@ class SettingsActivity : Activity() {
         crazeLm.addView(action("Download / Repair AI model", true) {
             startCrazeLmDownload()
         }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+        content.addView(category("AI & voice"))
         content.addView(crazeLm, margin())
 
         val setup = section("Setup shortcuts", "Android controls which keyboard is enabled and selected.")
@@ -434,6 +440,7 @@ class SettingsActivity : Activity() {
         prefs.addView(settingSwitch("Haptic feedback", "A light vibration on key press.", "haptics", true))
         prefs.addView(divider())
         prefs.addView(settingSwitch("Key sounds", "Play a soft system key-click while typing.", "keysound", false))
+        content.addView(category("Typing & suggestions"))
         content.addView(prefs, margin())
 
 
@@ -527,6 +534,7 @@ class SettingsActivity : Activity() {
         }
         renderToolbarRows()
         toolbarSection.addView(toolbarRows)
+        content.addView(category("Toolbar & shortcuts"))
         content.addView(toolbarSection, margin())
 
         val privacy = section(
@@ -545,6 +553,7 @@ class SettingsActivity : Activity() {
             UserLanguageModel.clear(this)
             Toast.makeText(this, "Learned words and typing patterns cleared", Toast.LENGTH_SHORT).show()
         })
+        content.addView(category("Privacy & data"))
         content.addView(privacy, margin())
 
         val appearance = section("Appearance", "Select the colour style used by your keyboard.")
@@ -561,11 +570,12 @@ class SettingsActivity : Activity() {
             themeGrid.addView(themeRow)
         }
         appearance.addView(themeGrid)
+        content.addView(category("Appearance"))
         content.addView(appearance, margin())
 
         val resizeSection = section(
             "Keyboard studio",
-            "Resize visually. Width controls floating and one-handed layouts; height changes every keyboard key."
+            "Adjust floating width, one-handed width, and key height independently."
         )
         val previewFrame = FrameLayout(this).apply {
             background = shape(fieldBg, 16)
@@ -605,7 +615,7 @@ class SettingsActivity : Activity() {
 
         val widthHeader = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
-            addView(text("Keyboard width", 14f, ink, true), LinearLayout.LayoutParams(0, -2, 1f))
+            addView(text("Floating keyboard width", 14f, ink, true), LinearLayout.LayoutParams(0, -2, 1f))
         }
         val widthValue = text("${Prefs.keyWidth(this)}%", 13f, accent, true)
         widthHeader.addView(widthValue)
@@ -617,7 +627,25 @@ class SettingsActivity : Activity() {
             thumbTintList = ColorStateList.valueOf(accent)
         }
         resizeSection.addView(widthSeek, LinearLayout.LayoutParams(-1, -2))
-        resizeSection.addView(text("55% — 100%  ·  Compact to full width", 11f, muted).apply {
+        resizeSection.addView(text("55% — 100%  ·  Applies in floating mode", 11f, muted).apply {
+            setPadding(0, dp(1), 0, dp(10))
+        })
+
+        val oneHandWidthHeader = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            addView(text("One-handed width", 14f, ink, true), LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        val oneHandWidthValue = text("${Prefs.oneHandWidth(this)}%", 13f, accent, true)
+        oneHandWidthHeader.addView(oneHandWidthValue)
+        resizeSection.addView(oneHandWidthHeader)
+        val oneHandWidthSeek = SeekBar(this).apply {
+            max = 30
+            progress = Prefs.oneHandWidth(this@SettingsActivity) - 60
+            progressTintList = ColorStateList.valueOf(accent)
+            thumbTintList = ColorStateList.valueOf(accent)
+        }
+        resizeSection.addView(oneHandWidthSeek, LinearLayout.LayoutParams(-1, -2))
+        resizeSection.addView(text("60% — 90%  ·  Independent of floating width", 11f, muted).apply {
             setPadding(0, dp(1), 0, dp(10))
         })
 
@@ -639,10 +667,11 @@ class SettingsActivity : Activity() {
             setPadding(0, dp(1), 0, dp(10))
         })
 
-        fun updateKeyboardPreview() {
-            val width = Prefs.keyWidth(this)
+        fun updateKeyboardPreview(useOneHandWidth: Boolean = Prefs.i(this, "onehand", 0) != 0) {
+            val width = if (useOneHandWidth) Prefs.oneHandWidth(this) else Prefs.keyWidth(this)
             val height = Prefs.keyH(this)
-            widthValue.text = "${width}%"
+            widthValue.text = "${Prefs.keyWidth(this)}%"
+            oneHandWidthValue.text = "${Prefs.oneHandWidth(this)}%"
             heightValue.text = "${height} dp"
             val availableWidth = (previewFrame.width - dp(12)).coerceAtLeast(dp(190))
             val previewWidth = (availableWidth * width / 100f).toInt().coerceIn(dp(180), availableWidth)
@@ -666,7 +695,15 @@ class SettingsActivity : Activity() {
         widthSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 Prefs.setI(this@SettingsActivity, "kbdwidth", progress + 55)
-                updateKeyboardPreview()
+                updateKeyboardPreview(false)
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+            override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
+        })
+        oneHandWidthSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                Prefs.setI(this@SettingsActivity, "onehandWidth", progress + 60)
+                updateKeyboardPreview(true)
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
             override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
@@ -698,8 +735,13 @@ class SettingsActivity : Activity() {
                             val start = (view.tag as? Float) ?: (if (horizontal) event.rawX else event.rawY)
                             val now = if (horizontal) event.rawX else event.rawY
                             val delta = ((now - start) / resources.displayMetrics.density * direction).toInt()
-                            if (horizontal) widthSeek.progress = (widthSeek.progress + delta).coerceIn(0, 45)
-                            else heightSeek.progress = (heightSeek.progress + delta).coerceIn(0, 30)
+                            if (horizontal) {
+                                if (Prefs.i(this@SettingsActivity, "onehand", 0) != 0) {
+                                    oneHandWidthSeek.progress = (oneHandWidthSeek.progress + delta).coerceIn(0, 30)
+                                } else {
+                                    widthSeek.progress = (widthSeek.progress + delta).coerceIn(0, 45)
+                                }
+                            } else heightSeek.progress = (heightSeek.progress + delta).coerceIn(0, 30)
                             view.tag = now
                             true
                         }
@@ -716,6 +758,7 @@ class SettingsActivity : Activity() {
         val resizeActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         resizeActions.addView(action("Reset", false) {
             widthSeek.progress = 45
+            oneHandWidthSeek.progress = 18
             heightSeek.progress = 12
             Prefs.setI(this@SettingsActivity, "onehand", 0)
             Prefs.setB(this@SettingsActivity, "float", false)
@@ -747,6 +790,7 @@ class SettingsActivity : Activity() {
             })
         }
         resizeSection.addView(heightPresets)
+        content.addView(category("Keyboard size & layout"))
         content.addView(resizeSection, margin())
         previewFrame.post { updateKeyboardPreview() }
         val layout = section("Keyboard modes", "Choose how the keyboard sits above the app.")
@@ -769,6 +813,7 @@ class SettingsActivity : Activity() {
             val button = action(label, Prefs.i(this, "onehand", 0) == value) {
                 Prefs.setI(this@SettingsActivity, "onehand", value)
                 refreshHandButtons()
+                updateKeyboardPreview(value != 0)
             }
             handButtons.add(value to button)
             handRow.addView(button, LinearLayout.LayoutParams(0, -2, 1f).apply {
@@ -777,6 +822,7 @@ class SettingsActivity : Activity() {
         }
         layout.addView(handRow)
         refreshHandButtons()
+        content.addView(category("Keyboard behaviour"))
         content.addView(layout, margin())
 
         content.addView(text("CrazeStudio  •  Offline-first", 11f, muted).apply {
@@ -785,6 +831,12 @@ class SettingsActivity : Activity() {
         })
 
         setContentView(root)
+        content.alpha = 0f
+        content.translationY = dp(8).toFloat()
+        content.post {
+            content.animate().alpha(1f).translationY(0f).setDuration(220L)
+                .setInterpolator(android.view.animation.DecelerateInterpolator()).start()
+        }
         refreshKeyboardStatus()
         if (intent.getBooleanExtra("open_resizer", false)) {
             scroll.post { scroll.smoothScrollTo(0, resizeSection.top) }
