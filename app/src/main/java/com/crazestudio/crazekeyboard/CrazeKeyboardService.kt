@@ -1245,24 +1245,30 @@ class CrazeKeyboardService : InputMethodService() {
         val box = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            background = keyBg(t.key, 14)
-            setPadding(dp(3), dp(4), dp(3), dp(4))
+            background = keyBg(t.key, 16)
+            setPadding(dp(4), dp(5), dp(4), dp(5))
             isClickable = true
             isFocusable = true
             contentDescription = label
             setOnClickListener { a() }
         }
-        box.addView(ImageView(ctx).apply {
-            setImageResource(icon)
-            setColorFilter(t.text)
-            contentDescription = label
-        }, lp(dp(26), dp(26)))
+        box.addView(FrameLayout(ctx).apply {
+            background = rounded(t.special, 13)
+            addView(ImageView(ctx).apply {
+                setImageResource(icon)
+                setColorFilter(t.text)
+                contentDescription = label
+                scaleType = ImageView.ScaleType.CENTER_INSIDE
+                setPadding(dp(7), dp(7), dp(7), dp(7))
+            }, FrameLayout.LayoutParams(dp(40), dp(40), Gravity.CENTER))
+        }, lp(dp(48), dp(48)))
         box.addView(TextView(ctx).apply {
             text = label
             textSize = 11f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setTextColor(t.text)
             gravity = Gravity.CENTER
-            setPadding(0, dp(4), 0, 0)
+            setPadding(0, dp(5), 0, 0)
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
         })
@@ -1738,20 +1744,114 @@ class CrazeKeyboardService : InputMethodService() {
     }
 
     private fun buildClip(): View {
-        val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(3), dp(2), dp(3), 0) }
+        val col = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(5), dp(2), dp(5), 0)
+        }
         val head = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
-        head.addView(TextView(ctx).apply { text = "  Clipboard"; textSize = 15f; setTextColor(t.text); gravity = Gravity.CENTER_VERTICAL }, lp(0, dp(40), 1f))
-        head.addView(iconImg(R.drawable.ic_trash) { Prefs.clearClips(ctx); showPanel("clip") }, lp(dp(48), dp(40)))
-        col.addView(head, lp(MATCH, dp(40)))
-        val body = ScrollView(ctx)
+        head.addView(LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(TextView(ctx).apply {
+                text = "Clipboard"
+                textSize = 15f
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                setTextColor(t.text)
+            })
+            addView(TextView(ctx).apply {
+                text = "${Prefs.clips(ctx).size} saved snippets · stored on this device"
+                textSize = 10f
+                setTextColor(darken(t.text, 0.62f))
+            })
+        }, lp(0, dp(40), 1f))
+        head.addView(iconImg(R.drawable.ic_trash) {
+            Prefs.clearClips(ctx)
+            showPanel("clip")
+        }.apply { contentDescription = "Clear clipboard history" }, lp(dp(42), dp(40)))
+        col.addView(head, lp(MATCH, dp(42)))
+
+        val body = ScrollView(ctx).apply {
+            isFillViewport = true
+            overScrollMode = View.OVER_SCROLL_NEVER
+        }
         val list = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         val clips = Prefs.clips(this)
-        if (clips.isEmpty()) list.addView(TextView(ctx).apply { text = "Copied text will show up here"; setTextColor(t.text); setPadding(dp(12), dp(12), dp(12), dp(12)) })
-        clips.forEach { c ->
+        val pinned = Prefs.pinnedClips(this)
+        fun section(label: String) {
             list.addView(TextView(ctx).apply {
-                text = c; maxLines = 2; ellipsize = TextUtils.TruncateAt.END; setTextColor(t.text); background = keyBg(t.key)
-                setPadding(dp(12), dp(8), dp(12), dp(10)); setOnClickListener { currentInputConnection?.commitText(c, 1); showPanel("letters") }
-            }, lp(MATCH, WRAP).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) })
+                text = label
+                textSize = 10f
+                typeface = Typeface.DEFAULT_BOLD
+                letterSpacing = 0.08f
+                setTextColor(darken(t.text, 0.62f))
+                setPadding(dp(7), dp(7), 0, dp(5))
+            })
+        }
+        fun clipRow(value: String, isPinned: Boolean) {
+            val row = LinearLayout(ctx).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                background = keyBg(t.key, 13)
+                setPadding(dp(10), dp(3), dp(4), dp(3))
+            }
+            val preview = TextView(ctx).apply {
+                text = value
+                textSize = 12f
+                setTextColor(t.text)
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.END
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(3), dp(5), dp(5), dp(5))
+                contentDescription = "Paste clipboard item"
+                setOnClickListener {
+                    currentInputConnection?.commitText(value, 1)
+                    setLocalContext(cachedBeforeCursor + value)
+                    showPanel("letters")
+                }
+            }
+            row.addView(preview, lp(0, WRAP, 1f))
+            row.addView(TextView(ctx).apply {
+                text = if (isPinned) "📌" else "☆"
+                textSize = 17f
+                gravity = Gravity.CENTER
+                setTextColor(t.text)
+                contentDescription = if (isPinned) "Unpin item" else "Pin item"
+                setOnClickListener {
+                    Prefs.togglePinnedClip(ctx, value)
+                    showPanel("clip")
+                }
+            }, lp(dp(34), dp(38)))
+            row.addView(TextView(ctx).apply {
+                text = "×"
+                textSize = 21f
+                gravity = Gravity.CENTER
+                setTextColor(darken(t.text, 0.65f))
+                contentDescription = "Remove clipboard item"
+                setOnClickListener {
+                    Prefs.removeClip(ctx, value)
+                    showPanel("clip")
+                }
+            }, lp(dp(30), dp(38)))
+            list.addView(row, lp(MATCH, WRAP).apply {
+                setMargins(dp(2), dp(2), dp(2), dp(4))
+            })
+        }
+
+        if (pinned.isNotEmpty()) {
+            section("PINNED")
+            pinned.forEach { clipRow(it, true) }
+        }
+        val recent = clips.filterNot { it in pinned }
+        if (recent.isNotEmpty()) {
+            section("RECENT")
+            recent.forEach { clipRow(it, false) }
+        }
+        if (clips.isEmpty()) {
+            list.addView(TextView(ctx).apply {
+                text = "Your copied text appears here. Tap an item to paste it."
+                textSize = 12f
+                setTextColor(darken(t.text, 0.62f))
+                setPadding(dp(12), dp(16), dp(12), dp(12))
+            })
         }
         body.addView(list)
         col.addView(body, lp(MATCH, bodyHeight()))
