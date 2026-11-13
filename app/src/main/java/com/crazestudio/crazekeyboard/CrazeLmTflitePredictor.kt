@@ -4,7 +4,6 @@ import android.content.Context
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import java.io.File
-import java.util.PriorityQueue
 import java.util.concurrent.Executors
 
 /**
@@ -14,7 +13,6 @@ import java.util.concurrent.Executors
 internal object CrazeLmTflitePredictor {
     private const val SEQUENCE_LENGTH = 48
     private const val VOCAB_SIZE = 100_000
-    private const val CANDIDATE_SCAN = 192
 
     @Volatile private var runtime: Runtime? = null
     @Volatile private var loading = false
@@ -79,8 +77,19 @@ internal object CrazeLmTflitePredictor {
     }
 
     private class Runtime(modelFile: File, private val tokenizer: CrazeLmTokenizer) {
+        private data class CandidatePiece(val id: Int, val word: String)
         private val interpreter: Interpreter
         private val lock = Any()
+        private val candidatePieces: List<CandidatePiece>
+        private val inputIds = Array(1) { IntArray(SEQUENCE_LENGTH) }
+        private val inputLengths = intArrayOf(0)
+        private val logitsOutput = Array(1) { FloatArray(VOCAB_SIZE) }
+        private val inputs: Array<Any> = arrayOf(inputIds, inputLengths)
+        private val outputs: Map<Int, Any> = hashMapOf(0 to logitsOutput)
+        private val resultCache = object : LinkedHashMap<String, List<String>>(48, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<String>>?): Boolean =
+                size > 48
+        }
 
         init {
             require(modelFile.isFile && modelFile.length() > 0L) {
@@ -114,51 +123,63 @@ internal object CrazeLmTflitePredictor {
                 "Unexpected logits tensor type or shape: " +
                     logitsOutput.dataType() + " " + logitsOutput.shape().contentToString()
             }
+
+            // Resolve token strings once instead of allocating 100,000 strings per prediction.
+            candidatePieces = (0 until VOCAB_SIZE).mapNotNull { id ->
+                val piece = tokenizer.piece(id)
+                if (!piece.startsWith("▁")) return@mapNotNull null
+                val word = piece.substring(1)
+                if (word.length !in 2..20 ||
+                    !word.all { it.isLetter() || it == '\'' || it == '-' }) null
+                else CandidatePiece(id, word)
+            }
         }
 
         fun predict(text: String, limit: Int): List<String> {
-            val tokens = tokenizer.encode(text).takeLast(SEQUENCE_LENGTH)
+            if (limit <= 0) return emptyList()
+            val cacheKey = text.takeLast(220)
+            synchronized(lock) { resultCache[cacheKey]?.let { return it.take(limit) } }
+
+            val tokens = tokenizer.encode(cacheKey).takeLast(SEQUENCE_LENGTH)
             if (tokens.isEmpty()) return emptyList()
-            val padded = IntArray(SEQUENCE_LENGTH)
+            val padded = inputIds[0]
+            padded.fill(0)
             tokens.forEachIndexed { index, id -> padded[index] = id }
-            val lengths = intArrayOf(tokens.size)
-            val logitsOutput = Array(1) { FloatArray(VOCAB_SIZE) }
-            val inputs = arrayOf<Any>(arrayOf(padded), lengths)
-            val outputs = hashMapOf<Int, Any>(0 to logitsOutput)
+            inputLengths[0] = tokens.size
 
             synchronized(lock) {
                 interpreter.runForMultipleInputsOutputs(inputs, outputs)
             }
             val logits = logitsOutput[0]
+            val bestWords = arrayOfNulls<String>(3)
+            val bestScores = FloatArray(3) { Float.NEGATIVE_INFINITY }
+            val bestKeys = HashSet<String>(3)
 
-            data class Candidate(val word: String, val score: Float)
-            val best = PriorityQueue<Candidate>(CANDIDATE_SCAN, compareBy { it.score })
-            for (id in logits.indices) {
-                val score = logits[id]
-                if (!score.isFinite()) continue
-                val piece = tokenizer.piece(id)
-                if (!piece.startsWith("▁")) continue
-                val word = piece.substring(1)
-                if (word.length !in 2..20 ||
-                    !word.all { it.isLetter() || it == '\'' || it == '-' }) continue
-                if (!Words.known(word)) continue
-                val candidate = Candidate(word, score)
-                if (best.size < CANDIDATE_SCAN) best.add(candidate)
-                else if (score > best.peek().score) {
-                    best.poll()
-                    best.add(candidate)
+            for (candidate in candidatePieces) {
+                val score = logits[candidate.id]
+                if (!score.isFinite() || !Words.known(candidate.word)) continue
+                val normalized = candidate.word.lowercase()
+                if (normalized in bestKeys) continue
+                var insertAt = -1
+                for (i in 0 until 3) {
+                    if (score > bestScores[i]) { insertAt = i; break }
                 }
+                if (insertAt < 0) continue
+                for (i in 2 downTo insertAt + 1) {
+                    bestScores[i] = bestScores[i - 1]
+                    bestWords[i] = bestWords[i - 1]
+                }
+                bestScores[insertAt] = score
+                bestWords[insertAt] = candidate.word
+                bestKeys.clear()
+                bestWords.filterNotNull().forEach { bestKeys.add(it.lowercase()) }
             }
-            val seen = HashSet<String>()
-            return best.toList().sortedByDescending { it.score }
-                .map { it.word }
-                .filter { seen.add(it.lowercase()) }
-                .take(limit)
-                .map { candidate ->
-                    if (text.lastOrNull()?.let { it == '.' || it == '!' || it == '?' } == true) {
-                        candidate.replaceFirstChar { it.uppercase() }
-                    } else candidate
-                }
+            val capitalize = text.lastOrNull()?.let { it == '.' || it == '!' || it == '?' } == true
+            val result = bestWords.filterNotNull().map { word ->
+                if (capitalize) word.replaceFirstChar { it.uppercase() } else word
+            }
+            synchronized(lock) { resultCache[cacheKey] = result }
+            return result.take(limit)
         }
     }
 }
