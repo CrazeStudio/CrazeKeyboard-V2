@@ -4,18 +4,18 @@ import android.content.Context
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import java.io.File
-import java.util.PriorityQueue
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
 
 /**
  * On-device next-word prediction with one long-lived TensorFlow Lite Interpreter.
- * Download and initialization are asynchronous; keyboard typing never waits for setup.
+ * Model setup and inference run away from the keyboard's typing thread.
  */
 internal object CrazeLmTflitePredictor {
     private const val SEQUENCE_LENGTH = 48
     private const val VOCAB_SIZE = 100_000
-    private const val CANDIDATE_SCAN = 384
+    // A smaller heap means fewer temporary objects and less dictionary I/O per keystroke.
+    private const val CANDIDATE_SCAN = 128
 
     @Volatile private var runtime: Runtime? = null
     @Volatile private var loading = false
@@ -102,27 +102,28 @@ internal object CrazeLmTflitePredictor {
     }
 
     private class Runtime(modelFile: File, private val tokenizer: CrazeLmTokenizer) {
-        private data class CandidatePiece(val id: Int, val word: String)
-        private data class ScoredCandidate(val word: String, val score: Float)
         private val interpreter: Interpreter
         private val lock = Any()
-        private val candidatePieces: List<CandidatePiece>
+        // Compact primitive/string arrays avoid one CandidatePiece object per vocabulary entry.
+        private val candidateIds: IntArray
+        private val candidateWords: Array<String>
         private val inputIds = Array(1) { IntArray(SEQUENCE_LENGTH) }
         private val inputLengths = intArrayOf(0)
         private val logitsOutput = Array(1) { FloatArray(VOCAB_SIZE) }
         private val inputs: Array<Any> = arrayOf(inputIds, inputLengths)
         private val outputs = hashMapOf<Int, Any>(0 to logitsOutput)
-        private val resultCache = object : LinkedHashMap<String, List<String>>(48, 0.75f, true) {
+        private val resultCache = object : LinkedHashMap<String, List<String>>(24, 0.75f, true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<String>>?): Boolean =
-                size > 48
+                size > 24
         }
 
         init {
             require(modelFile.isFile && modelFile.length() > 0L) {
                 "TFLite model file is missing."
             }
+            // One CPU thread minimizes concurrent working memory on low-RAM phones.
             val options = Interpreter.Options()
-                .setNumThreads(2)
+                .setNumThreads(1)
                 .setUseXNNPACK(true)
             interpreter = Interpreter(modelFile, options)
 
@@ -142,7 +143,7 @@ internal object CrazeLmTflitePredictor {
             }
             require(lengthsInput.dataType() == DataType.INT32 &&
                 lengthsInput.shape().contentEquals(intArrayOf(1))) {
-                "Unexpected lengths tensor type or shape."
+                "Unexpected lengths input tensor."
             }
             require(logitsOutput.dataType() == DataType.FLOAT32 &&
                 logitsOutput.shape().contentEquals(intArrayOf(1, VOCAB_SIZE))) {
@@ -150,20 +151,24 @@ internal object CrazeLmTflitePredictor {
                     logitsOutput.dataType() + " " + logitsOutput.shape().contentToString()
             }
 
-            // Resolve token strings once instead of allocating 100,000 strings per prediction.
-            candidatePieces = (0 until VOCAB_SIZE).mapNotNull { id ->
+            val ids = ArrayList<Int>(12_000)
+            val words = ArrayList<String>(12_000)
+            for (id in 0 until VOCAB_SIZE) {
                 val piece = tokenizer.piece(id)
-                if (!piece.startsWith("▁")) return@mapNotNull null
+                if (!piece.startsWith("▁")) continue
                 val word = piece.substring(1)
                 if (word.length !in 2..20 ||
-                    !word.all { it.isLetter() || it == '\'' || it == '-' }) null
-                else CandidatePiece(id, word)
+                    !word.all { it.isLetter() || it == '\'' || it == '-' }) continue
+                ids.add(id)
+                words.add(word)
             }
+            candidateIds = ids.toIntArray()
+            candidateWords = words.toTypedArray()
         }
 
         fun predict(text: String, limit: Int): List<String> {
             if (limit <= 0) return emptyList()
-            val cacheKey = text.takeLast(220)
+            val cacheKey = text.takeLast(180)
             synchronized(lock) { resultCache[cacheKey]?.let { return it.take(limit) } }
 
             val tokens = tokenizer.encode(cacheKey).takeLast(SEQUENCE_LENGTH)
@@ -177,30 +182,62 @@ internal object CrazeLmTflitePredictor {
                 interpreter.runForMultipleInputsOutputs(inputs, outputs)
             }
             val logits = logitsOutput[0]
-            // Rank a bounded shortlist first; dictionary validation can perform mapped-file
-            // lookups, so do it only for the highest-scoring candidates, not every token.
-            val best = PriorityQueue<ScoredCandidate>(CANDIDATE_SCAN, compareBy { it.score })
-            for (candidate in candidatePieces) {
-                val score = logits[candidate.id]
+
+            // Primitive min-heap: avoids allocating hundreds of ScoredCandidate objects each call.
+            val heapIds = IntArray(CANDIDATE_SCAN)
+            val heapScores = FloatArray(CANDIDATE_SCAN)
+            var heapSize = 0
+            for (i in candidateIds.indices) {
+                val score = logits[candidateIds[i]]
                 if (!score.isFinite()) continue
-                if (best.size < CANDIDATE_SCAN) best.add(ScoredCandidate(candidate.word, score))
-                else if (score > best.peek().score) {
-                    best.poll()
-                    best.add(ScoredCandidate(candidate.word, score))
+                if (heapSize < CANDIDATE_SCAN) {
+                    var child = heapSize++
+                    heapIds[child] = i
+                    heapScores[child] = score
+                    while (child > 0) {
+                        val parent = (child - 1) ushr 1
+                        if (heapScores[parent] <= heapScores[child]) break
+                        swap(heapIds, heapScores, parent, child)
+                        child = parent
+                    }
+                } else if (score > heapScores[0]) {
+                    heapIds[0] = i
+                    heapScores[0] = score
+                    var parent = 0
+                    while (true) {
+                        val left = parent * 2 + 1
+                        if (left >= heapSize) break
+                        val right = left + 1
+                        val child = if (right < heapSize && heapScores[right] < heapScores[left]) right else left
+                        if (heapScores[parent] <= heapScores[child]) break
+                        swap(heapIds, heapScores, parent, child)
+                        parent = child
+                    }
                 }
             }
-            val seen = HashSet<String>(limit)
+
+            val order = (0 until heapSize).sortedByDescending { heapScores[it] }
+            val seen = HashSet<String>(limit * 2)
             val capitalize = text.lastOrNull()?.let { it == '.' || it == '!' || it == '?' } == true
-            val result = best.toList().sortedByDescending { it.score }
-                .asSequence()
-                .map { it.word }
-                .filter { Words.known(it) && seen.add(it.lowercase()) }
-                .take(limit)
-                .map { word ->
-                    if (capitalize) word.replaceFirstChar { it.uppercase() } else word
-                }.toList()
-            synchronized(lock) { resultCache[cacheKey] = result }
-            return result.take(limit)
+            val result = ArrayList<String>(limit)
+            for (slot in order) {
+                val word = candidateWords[heapIds[slot]]
+                if (!Words.known(word) || !seen.add(word.lowercase())) continue
+                result.add(if (capitalize) word.replaceFirstChar { it.uppercase() } else word)
+                if (result.size >= limit) break
+            }
+            val finalResult = result.toList()
+            synchronized(lock) { resultCache[cacheKey] = finalResult }
+            return finalResult
+        }
+
+        private fun swap(ids: IntArray, scores: FloatArray, a: Int, b: Int) {
+            val id = ids[a]
+            ids[a] = ids[b]
+            ids[b] = id
+            val score = scores[a]
+            scores[a] = scores[b]
+            scores[b] = score
         }
     }
 }
