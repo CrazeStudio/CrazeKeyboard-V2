@@ -9,8 +9,12 @@ android {
         applicationId = "com.crazestudio.crazekeyboard"
         minSdk = 24
         targetSdk = 34
-        versionCode = 6
-        versionName = "1.5"
+        versionCode = 7
+        versionName = "1.6"
+        ndk {
+            // Keep the runtime binaries for Android ARM devices; omit desktop emulator ABIs.
+            abiFilters += setOf("armeabi-v7a", "arm64-v8a")
+        }
     }
     buildTypes {
         release {
@@ -20,8 +24,7 @@ android {
         }
     }
     androidResources {
-        // The tokenizer model is already gzip-compressed. Avoid compressing it a second time in the APK.
-        // The app expands it once into private storage and memory-maps the resulting binary index.
+        // Keep the compressed English dictionary asset unchanged inside the APK.
         noCompress += "gz"
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
