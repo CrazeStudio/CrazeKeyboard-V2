@@ -22,7 +22,7 @@ internal object CrazeLmTflitePredictor {
     private const val SEQUENCE_LENGTH = 48
     private const val VOCAB_SIZE = 100_000
     // A smaller heap means fewer temporary objects and less dictionary I/O per keystroke.
-    private const val CANDIDATE_SCAN = 256
+    private const val CANDIDATE_SCAN = 128
     private const val PRESSURE_COOLDOWN_MS = 300_000L
     private const val READY_STATUS = "CrazeLM is ready · offline"
 
@@ -166,20 +166,18 @@ internal object CrazeLmTflitePredictor {
         private val logitsOutput = Array(1) { FloatArray(VOCAB_SIZE) }
         private val inputs: Array<Any> = arrayOf(inputIds, inputLengths)
         private val outputs = hashMapOf<Int, Any>(0 to logitsOutput)
-        private val resultCache = object : LinkedHashMap<String, List<String>>(24, 0.75f, true) {
+        private val resultCache = object : LinkedHashMap<String, List<String>>(8, 0.75f, true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<String>>?): Boolean =
-                size > 24
+                size > 8
         }
 
         init {
             require(modelFile.isFile && modelFile.length() > 0L) {
                 "TFLite model file is missing."
             }
-            // Few threads keep working memory low; a second one is only used on 6+ core phones, where it
-            // roughly halves the time to the first suggestion.
-            val threads = if (java.lang.Runtime.getRuntime().availableProcessors() >= 6) 2 else 1
+            // One inference thread keeps the IME's peak scratch memory predictable on phones.
             val options = Interpreter.Options()
-                .setNumThreads(threads)
+                .setNumThreads(1)
                 .setUseXNNPACK(true)
             interpreter = Interpreter(modelFile, options)
 

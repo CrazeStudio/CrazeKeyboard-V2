@@ -3,9 +3,14 @@ package com.crazestudio.crazekeyboard
 import android.content.Context
 
 object Alts {
+    val numberHints = mapOf(
+        "q" to "1", "w" to "2", "e" to "3", "r" to "4", "t" to "5",
+        "y" to "6", "u" to "7", "i" to "8", "o" to "9", "p" to "0"
+    )
     val map = mapOf(
-        "a" to "àáâäæãåā", "e" to "èéêëēėę", "i" to "îïíīįì", "o" to "ôöòóœøōõ", "u" to "ûüùúū",
-        "c" to "çćč", "n" to "ñń", "s" to "ßśš", "y" to "ý", "z" to "žźż", "l" to "ł", "d" to "ð",
+        "a" to "@àáâäæãåā", "e" to "èéêëēėę", "i" to "îïíīįì", "o" to "ôöòóœøōõ", "u" to "ûüùúū",
+        "c" to "çćč", "n" to "ñń", "s" to "#ßśš", "y" to "ý", "z" to "žźż", "l" to ")ł", "d" to "\$ð",
+        "f" to "%", "g" to "&", "h" to "-", "j" to "+", "k" to "(",
         "." to ",?!;:-…", "," to "'\"", "-" to "–—_",
         "*" to "•×·", "\"" to "“”„", "'" to "‘’", ":" to "؛∶",
         ";" to "؛", "!" to "¡", "?" to "¿", "@" to "©®",
