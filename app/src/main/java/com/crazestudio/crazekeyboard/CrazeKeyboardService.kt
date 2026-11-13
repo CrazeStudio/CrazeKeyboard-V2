@@ -25,6 +25,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.DecelerateInterpolator
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
@@ -680,7 +681,14 @@ class CrazeKeyboardService : InputMethodService() {
                     if (clean.isNotEmpty()) {
                         for (i in 0..2) lastSuggestions[i] = clean.getOrNull(i).orEmpty()
                         for (i in 0..2) if (i < sugViews.size) {
-                            sugViews[i].text = lastSuggestions[i]
+                            val view = sugViews[i]
+                            if (view.text?.toString() != lastSuggestions[i]) {
+                                view.animate().cancel()
+                                view.animate().alpha(0.62f).setDuration(55L).withEndAction {
+                                    view.text = lastSuggestions[i]
+                                    view.animate().alpha(1f).setDuration(95L).start()
+                                }.start()
+                            }
                         }
                     }
                 }
@@ -1657,6 +1665,51 @@ class CrazeKeyboardService : InputMethodService() {
                 status.text = "Paste unavailable"
             }
         }
+        fun quickPolish() {
+            if (incognito) {
+                status.text = "Text improvements are disabled in private fields"
+                return
+            }
+            val ic = connection() ?: return
+            try {
+                val selected = ic.getSelectedText(0)?.toString().orEmpty()
+                if (selected.isNotEmpty()) {
+                    val polished = LocalTextPolisher.polish(selected)
+                    if (polished == selected) {
+                        status.text = "No changes needed"
+                    } else {
+                        ic.commitText(polished, 1)
+                        status.text = "Selected text polished on-device"
+                        syncContextAsync()
+                    }
+                    return
+                }
+                val extracted = ic.getExtractedText(android.view.inputmethod.ExtractedTextRequest(), 0)
+                val original = extracted?.text?.toString()
+                if (original.isNullOrEmpty() || extracted.partialStartOffset >= 0) {
+                    status.text = "Select text first; this app does not expose the full field"
+                    return
+                }
+                val polished = LocalTextPolisher.polish(original)
+                if (polished == original) {
+                    status.text = "No changes needed"
+                    return
+                }
+                ic.beginBatchEdit()
+                try {
+                    ic.setSelection(0, original.length)
+                    ic.commitText(polished, 1)
+                    val cursor = polished.length
+                    ic.setSelection(cursor, cursor)
+                } finally {
+                    ic.endBatchEdit()
+                }
+                status.text = "Text polished on-device"
+                syncContextAsync()
+            } catch (_: Exception) {
+                status.text = "Polish unavailable in this text field"
+            }
+        }
         fun addCursorKey(row: LinearLayout, label: String, keyCode: Int, description: String) {
             val key = mk(label, 1f, t.special, t.text, 15f)
             key.cell.contentDescription = description
@@ -1699,15 +1752,10 @@ class CrazeKeyboardService : InputMethodService() {
         col.addView(actions, lp(MATCH, dp(38)))
 
         val footer = hrow()
-        val ai = mk("AI polish · experimental", 1.4f, t.accent, t.accentText, 10f)
-        attach(ai) {
-            android.app.AlertDialog.Builder(ctx)
-                .setTitle("Experimental AI polish")
-                .setMessage("CrazeLM predicts the next word; it cannot rewrite full text. A separate rewrite-capable on-device model is required. Your text stays on this device and has not been changed.")
-                .setPositiveButton("OK", null)
-                .show()
-        }
-        footer.addView(ai.cell)
+        val polish = mk("Quick polish", 1.4f, t.accent, t.accentText, 10f)
+        polish.cell.contentDescription = "Apply on-device punctuation, spacing and sentence-capitalization fixes"
+        attach(polish) { quickPolish() }
+        footer.addView(polish.cell)
         col.addView(footer, lp(MATCH, dp(32)))
         col.addView(status, lp(MATCH, dp(16)))
         return col
@@ -1919,9 +1967,8 @@ class CrazeKeyboardService : InputMethodService() {
             "editor" -> dp(38)
             else -> ((panelH() - dp(4)) / rowCountFor(m)).coerceAtLeast(dp(28))
         }
-        // Page dimensions depend on the active row count; never reuse views measured for another mode.
-        pageCache.clear()
-        emojiGrids.clear()
+        // Reuse the already-built page and emoji category grids. Clearing these on every
+        // switch defeated the cache and rebuilt dozens of views during ordinary typing.
         val page = pageFor(m)
         (page.parent as? ViewGroup)?.removeView(page)
         panel.removeAllViews()
@@ -1931,7 +1978,16 @@ class CrazeKeyboardService : InputMethodService() {
             else -> panelH()
         }
         panel.layoutParams = panel.layoutParams.apply { height = targetPanelHeight }
+        page.alpha = 0f
+        page.translationY = dp(5).toFloat()
         panel.addView(page, FrameLayout.LayoutParams(MATCH, targetPanelHeight))
+        page.animate().cancel()
+        page.animate()
+            .alpha(1f)
+            .translationY(0f)
+            .setDuration(145L)
+            .setInterpolator(DecelerateInterpolator())
+            .start()
         if (m == "letters") updateCase()
         if (m != "editor") editorSelecting = false
         refreshEnter()
