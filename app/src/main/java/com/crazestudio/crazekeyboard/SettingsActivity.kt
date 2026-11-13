@@ -580,7 +580,7 @@ class SettingsActivity : Activity() {
 
         val resizeSection = section(
             "Keyboard studio",
-            "Resize visually. Width controls floating and one-handed layouts; height changes every keyboard key."
+            "Adjust floating width, one-handed width, and key height independently."
         )
         val previewFrame = FrameLayout(this).apply {
             background = shape(fieldBg, 16)
@@ -700,7 +700,7 @@ class SettingsActivity : Activity() {
         widthSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 Prefs.setI(this@SettingsActivity, "kbdwidth", progress + 55)
-                updateKeyboardPreview()
+                updateKeyboardPreview(false)
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
             override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
