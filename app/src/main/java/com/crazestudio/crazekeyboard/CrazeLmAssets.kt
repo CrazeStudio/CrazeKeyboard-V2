@@ -29,8 +29,17 @@ internal object CrazeLmAssets {
         require(manifest.optString("format") == "LiteRT/TFLite") {
             "The published CrazeLM asset is not a TFLite model."
         }
-        require(manifest.optInt("vocabulary_size") == 100_000) {
-            "CrazeLM model has an unexpected vocabulary size."
+        require(manifest.optInt("vocabulary_size") == 100_000 &&
+            manifest.optInt("context_length") == 48) {
+            "CrazeLM model has an unexpected vocabulary or context size."
+        }
+        val outputSpec = manifest.getJSONObject("output")
+        val outputShape = outputSpec.getJSONArray("shape")
+        require(outputSpec.optString("dtype") == "float32" &&
+            outputShape.length() == 2 &&
+            outputShape.optInt(0) == 1 &&
+            outputShape.optInt(1) == 100_000) {
+            "CrazeLM TFLite output specification is not supported by this app version."
         }
         val modelBytes = manifest.getLong("size_bytes")
         val modelSha = manifest.getString("sha256").lowercase()
@@ -76,6 +85,7 @@ internal object CrazeLmAssets {
             }
             val digest = MessageDigest.getInstance("SHA-256")
             var copied = 0L
+            var lastProgressPercent = -1
             BufferedInputStream(connection.inputStream).use { input ->
                 FileOutputStream(temporary).use { output ->
                     val buffer = ByteArray(64 * 1024)
@@ -87,7 +97,10 @@ internal object CrazeLmAssets {
                         digest.update(buffer, 0, count)
                         output.write(buffer, 0, count)
                         val pct = ((copied * 100L) / expectedBytes).toInt().coerceIn(0, 100)
-                        progress("Downloading $label… $pct%")
+                        if (pct != lastProgressPercent) {
+                            lastProgressPercent = pct
+                            progress("Downloading $label… $pct%")
+                        }
                     }
                     output.fd.sync()
                 }
