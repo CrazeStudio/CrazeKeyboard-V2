@@ -155,7 +155,7 @@ internal object UserLanguageModel {
                     key.substringAfterLast('|').takeIf { it.startsWith(start) }
                 else -> null
             }
-            if (candidate != null && candidate.length in start.length + 0..40 &&
+            if (candidate != null && candidate.length >= start.length && candidate.length <= 40 &&
                 candidate != start && candidate.all { it.isLetter() || it == '\'' }) {
                 candidates.add(candidate)
             }
