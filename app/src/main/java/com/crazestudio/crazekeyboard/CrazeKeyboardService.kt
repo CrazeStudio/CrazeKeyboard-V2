@@ -177,6 +177,7 @@ class CrazeKeyboardService : InputMethodService() {
 
     override fun onCreate() {
         super.onCreate()
+        CrazeLmTflitePredictor.initializeAsync(applicationContext)
         DownloadedVocabularyIndex.loadInstalledAsync(applicationContext)
         val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         clipListener = ClipboardManager.OnPrimaryClipChangedListener {
@@ -642,8 +643,13 @@ class CrazeKeyboardService : InputMethodService() {
             val suggestions = when {
                 word.isEmpty() && !nextWordOn -> emptyList()
                 word.isEmpty() -> {
-                    val base = NextWordPredictor.predict(this, snapshot)
-                    if (snapshot.isNotBlank() && base.isEmpty() && !waitingForPhraseModel) {
+                    // CrazeLM is the primary next-word predictor once its local LiteRT
+                    // runtime is ready. Keep the compact phrase model as a non-blocking fallback.
+                    val aiBase = if (!incognito) {
+                        CrazeLmTflitePredictor.predictNextWords(applicationContext, snapshot, 3)
+                    } else emptyList()
+                    val base = aiBase.ifEmpty { NextWordPredictor.predict(this, snapshot) }
+                    if (snapshot.isNotBlank() && base.isEmpty() && aiBase.isEmpty() && !waitingForPhraseModel) {
                         waitingForPhraseModel = true
                         NextWordPredictor.loadAsync(applicationContext) {
                             waitingForPhraseModel = false
