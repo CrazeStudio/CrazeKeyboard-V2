@@ -1,0 +1,163 @@
+package com.crazestudio.crazekeyboard
+
+import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.text.Normalizer
+
+/** Pure-Kotlin reader/encoder for CrazeLM's exact SentencePiece BPE model. */
+internal class CrazeLmTokenizer private constructor(
+    private val pieces: Array<String>, private val scores: FloatArray,
+    private val normalIds: Map<String, Int>, private val byteIds: IntArray
+) {
+    val vocabularySize: Int get() = pieces.size
+    fun piece(id: Int): String = pieces.getOrElse(id) { "<unk>" }
+
+    fun encode(raw: String): IntArray {
+        val normalized = collapseWhitespace(Normalizer.normalize(raw, Normalizer.Form.NFKC))
+        if (normalized.isEmpty()) return IntArray(0)
+        val prepared = buildString(normalized.length + 8) {
+            append('▁')
+            normalized.forEach { ch -> if (ch == ' ') append('▁') else append(ch) }
+        }
+        val segments = ArrayList<String>(prepared.length)
+        var offset = 0
+        while (offset < prepared.length) {
+            val cp = prepared.codePointAt(offset)
+            segments.add(String(Character.toChars(cp)))
+            offset += Character.charCount(cp)
+        }
+        while (true) {
+            var bestIndex = -1
+            var bestScore = Float.NEGATIVE_INFINITY
+            var bestPiece = ""
+            for (i in 0 until segments.size - 1) {
+                val joined = segments[i] + segments[i + 1]
+                val id = normalIds[joined] ?: continue
+                val score = scores[id]
+                if (score > bestScore) {
+                    bestScore = score; bestIndex = i; bestPiece = joined
+                }
+            }
+            if (bestIndex < 0) break
+            segments[bestIndex] = bestPiece
+            segments.removeAt(bestIndex + 1)
+        }
+        val result = ArrayList<Int>(segments.size)
+        for (segment in segments) {
+            val id = normalIds[segment]
+            if (id != null) result.add(id)
+            else for (byte in segment.toByteArray(Charsets.UTF_8)) {
+                val byteId = byteIds[byte.toInt() and 0xff]
+                if (byteId < 0) result.add(1) else result.add(byteId)
+            }
+        }
+        return result.toIntArray()
+    }
+
+    private fun collapseWhitespace(value: String): String {
+        val out = StringBuilder(value.length)
+        var pendingSpace = false
+        for (ch in value) {
+            if (Character.isWhitespace(ch) || Character.isSpaceChar(ch)) {
+                if (out.isNotEmpty()) pendingSpace = true
+            } else {
+                if (pendingSpace) out.append(' ')
+                pendingSpace = false
+                out.append(ch)
+            }
+        }
+        return out.toString().trim()
+    }
+
+    companion object {
+        private val BYTE_PIECE = Regex("<0x([0-9A-Fa-f]{2})>")
+        private data class PieceRecord(val token: String, val score: Float, val type: Int)
+
+        fun load(file: File): CrazeLmTokenizer {
+            require(file.isFile && file.length() > 0L) { "CrazeLM tokenizer file is missing." }
+            val data = file.readBytes()
+            val parsed = ArrayList<PieceRecord>(100_000)
+            val reader = ProtoReader(data)
+            while (!reader.done()) {
+                val key = reader.varint().toInt()
+                if (key ushr 3 == 1 && key and 7 == 2) {
+                    val length = reader.varint().toInt()
+                    val end = reader.position + length
+                    require(length >= 0 && end <= data.size) { "Invalid SentencePiece record length." }
+                    parsed.add(parsePiece(data, reader.position, end))
+                    reader.position = end
+                } else reader.skip(key and 7)
+            }
+            require(parsed.size == 100_000) {
+                "Expected 100,000 tokenizer pieces, found ${parsed.size}."
+            }
+            val pieces = Array(parsed.size) { parsed[it].token }
+            val scores = FloatArray(parsed.size) { parsed[it].score }
+            val normalIds = HashMap<String, Int>(parsed.size)
+            val byteIds = IntArray(256) { -1 }
+            parsed.forEachIndexed { id, record ->
+                if (record.type == 1) normalIds[record.token] = id
+                val match = BYTE_PIECE.matchEntire(record.token)
+                if (match != null) {
+                    val byte = match.groupValues[1].toIntOrNull(16)
+                    if (byte != null) byteIds[byte] = id
+                }
+            }
+            require(normalIds.isNotEmpty()) { "Tokenizer contains no normal BPE pieces." }
+            require(byteIds.all { it >= 0 }) { "Tokenizer is missing UTF-8 byte fallback pieces." }
+            return CrazeLmTokenizer(pieces, scores, normalIds, byteIds)
+        }
+
+        private fun parsePiece(data: ByteArray, start: Int, end: Int): PieceRecord {
+            val reader = ProtoReader(data, start, end)
+            var token = ""; var score = 0f; var type = 1
+            while (!reader.done()) {
+                val key = reader.varint().toInt()
+                when {
+                    key ushr 3 == 1 && key and 7 == 2 -> {
+                        val len = reader.varint().toInt()
+                        require(len >= 0 && reader.position + len <= end) { "Invalid piece string length." }
+                        token = String(data, reader.position, len, Charsets.UTF_8)
+                        reader.position += len
+                    }
+                    key ushr 3 == 2 && key and 7 == 5 -> {
+                        require(reader.position + 4 <= end) { "Truncated SentencePiece score." }
+                        score = ByteBuffer.wrap(data, reader.position, 4)
+                            .order(ByteOrder.LITTLE_ENDIAN).float
+                        reader.position += 4
+                    }
+                    key ushr 3 == 3 && key and 7 == 0 -> type = reader.varint().toInt()
+                    else -> reader.skip(key and 7)
+                }
+            }
+            require(token.isNotEmpty()) { "SentencePiece entry has no token string." }
+            return PieceRecord(token, score, type)
+        }
+    }
+
+    private class ProtoReader(
+        private val bytes: ByteArray, start: Int = 0, private val limit: Int = bytes.size
+    ) {
+        var position: Int = start
+        fun done(): Boolean = position >= limit
+        fun varint(): Long {
+            var result = 0L; var shift = 0
+            while (shift < 64) {
+                require(position < limit) { "Truncated protobuf varint." }
+                val b = bytes[position++].toInt() and 0xff
+                result = result or ((b and 0x7f).toLong() shl shift)
+                if ((b and 0x80) == 0) return result
+                shift += 7
+            }
+            throw IllegalArgumentException("Invalid protobuf varint.")
+        }
+        fun skip(wire: Int) {
+            when (wire) {
+                0 -> varint(); 1 -> position += 8; 2 -> position += varint().toInt(); 5 -> position += 4
+                else -> throw IllegalArgumentException("Unsupported protobuf wire type $wire.")
+            }
+            require(position <= limit) { "Truncated SentencePiece protobuf." }
+        }
+    }
+}
