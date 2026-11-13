@@ -109,6 +109,15 @@ class SettingsActivity : Activity() {
             setOnClickListener { click() }
         }
 
+    private fun category(label: String) = TextView(this).apply {
+        text = label.uppercase()
+        textSize = 10f
+        letterSpacing = 0.10f
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        setTextColor(muted)
+        setPadding(dp(4), dp(7), dp(4), dp(8))
+    }
+
     private fun section(title: String, hint: String? = null): LinearLayout =
         LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -336,6 +345,7 @@ class SettingsActivity : Activity() {
             "onlinepred",
             false
         ))
+        content.addView(category("Languages & downloads"))
         content.addView(packsSection, margin())
 
         val status = section("Keyboard status", "Complete both steps to use CrazeKeyboard in other apps.")
@@ -359,6 +369,7 @@ class SettingsActivity : Activity() {
         }
         setupAction = setupButton
         status.addView(setupButton)
+        content.addView(category("Setup"))
         content.addView(status, margin())
 
         val test = section("Try your keyboard", "Tap the field below to test typing, suggestions, cursor control and voice input.")
@@ -387,6 +398,7 @@ class SettingsActivity : Activity() {
         crazeLm.addView(action("Download / Repair AI model", true) {
             startCrazeLmDownload()
         }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+        content.addView(category("AI & voice"))
         content.addView(crazeLm, margin())
 
         val setup = section("Setup shortcuts", "Android controls which keyboard is enabled and selected.")
@@ -434,6 +446,7 @@ class SettingsActivity : Activity() {
         prefs.addView(settingSwitch("Haptic feedback", "A light vibration on key press.", "haptics", true))
         prefs.addView(divider())
         prefs.addView(settingSwitch("Key sounds", "Play a soft system key-click while typing.", "keysound", false))
+        content.addView(category("Typing & suggestions"))
         content.addView(prefs, margin())
 
 
@@ -527,6 +540,7 @@ class SettingsActivity : Activity() {
         }
         renderToolbarRows()
         toolbarSection.addView(toolbarRows)
+        content.addView(category("Toolbar & shortcuts"))
         content.addView(toolbarSection, margin())
 
         val privacy = section(
@@ -561,6 +575,7 @@ class SettingsActivity : Activity() {
             themeGrid.addView(themeRow)
         }
         appearance.addView(themeGrid)
+        content.addView(category("Appearance"))
         content.addView(appearance, margin())
 
         val resizeSection = section(
@@ -747,6 +762,7 @@ class SettingsActivity : Activity() {
             })
         }
         resizeSection.addView(heightPresets)
+        content.addView(category("Keyboard size & layout"))
         content.addView(resizeSection, margin())
         previewFrame.post { updateKeyboardPreview() }
         val layout = section("Keyboard modes", "Choose how the keyboard sits above the app.")
@@ -777,6 +793,7 @@ class SettingsActivity : Activity() {
         }
         layout.addView(handRow)
         refreshHandButtons()
+        content.addView(category("Keyboard behaviour"))
         content.addView(layout, margin())
 
         content.addView(text("CrazeStudio  •  Offline-first", 11f, muted).apply {
@@ -785,6 +802,12 @@ class SettingsActivity : Activity() {
         })
 
         setContentView(root)
+        content.alpha = 0f
+        content.translationY = dp(8).toFloat()
+        content.post {
+            content.animate().alpha(1f).translationY(0f).setDuration(220L)
+                .setInterpolator(android.view.animation.DecelerateInterpolator()).start()
+        }
         refreshKeyboardStatus()
         if (intent.getBooleanExtra("open_resizer", false)) {
             scroll.post { scroll.smoothScrollTo(0, resizeSection.top) }
