@@ -60,6 +60,31 @@ internal object UserLanguageModel {
     fun frequency(context: Context, word: String): Int =
         data(context)[ "u:${clean(word)}" ] ?: 0
 
+    /** Numeric, privacy-safe signals for the tiny local suggestion ranker. */
+    @Synchronized
+    fun rankingFeatures(
+        context: Context,
+        precedingWords: List<String>,
+        candidate: String,
+        baseRank: Int,
+        candidateCount: Int
+    ): FloatArray {
+        val previous = precedingWords.map(::clean).filter { it.isNotEmpty() }.takeLast(2)
+        val token = clean(candidate)
+        val map = data(context)
+        val unigram = map["u:$token"] ?: 0
+        val bigram = if (previous.isNotEmpty()) map["b:${previous.last()}|$token"] ?: 0 else 0
+        val trigram = if (previous.size >= 2) map["t:${previous[0]}|${previous[1]}|$token"] ?: 0 else 0
+        return floatArrayOf(
+            if (candidateCount <= 1) 1f else 1f - baseRank.toFloat() / (candidateCount - 1).coerceAtLeast(1),
+            (kotlin.math.ln(1.0 + unigram) / kotlin.math.ln(501.0)).toFloat(),
+            (kotlin.math.ln(1.0 + bigram) / kotlin.math.ln(501.0)).toFloat(),
+            (kotlin.math.ln(1.0 + trigram) / kotlin.math.ln(501.0)).toFloat(),
+            (token.length.coerceIn(1, 20) / 20f),
+            if (Words.known(candidate)) 1f else 0f
+        )
+    }
+
     /**
      * Blend user history into base-model suggestions. Personal bigram/trigram candidates
      * can enter the list even when the generic model did not rank them.
@@ -107,5 +132,6 @@ internal object UserLanguageModel {
     fun clear(context: Context) {
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
         counts = LinkedHashMap()
+        TinyNeuralRanker.clear(context)
     }
 }
