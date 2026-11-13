@@ -334,7 +334,7 @@ class SettingsActivity : Activity() {
             "Online prefix suggestions",
             "Send only the current word prefix and language to CrazePredictionAPI. Never sends the sentence.",
             "onlinepred",
-            true
+            false
         ))
         content.addView(packsSection, margin())
 
