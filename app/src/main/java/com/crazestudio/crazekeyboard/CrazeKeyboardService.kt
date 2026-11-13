@@ -695,8 +695,15 @@ class CrazeKeyboardService : InputMethodService() {
                         word.any { it in 'a'..'z' || it in 'A'..'Z' } -> "en"
                         else -> java.util.Locale.getDefault().language
                     }
-                    DownloadedVocabularyIndex.suggest(packLanguage, word, 3)
+                    val prefixBase = DownloadedVocabularyIndex.suggest(packLanguage, word, 3)
                         .ifEmpty { Words.suggest(this, word) }
+                    if (!incognito && Prefs.b(this, "personalized", true)) {
+                        val contextWords = tokensBeforeCursor(snapshot).let { tokens ->
+                            if (tokens.lastOrNull() == word.lowercase()) tokens.dropLast(1).takeLast(2)
+                            else tokens.takeLast(2)
+                        }
+                        UserLanguageModel.rankPrefix(this, contextWords, word, prefixBase, 3)
+                    } else prefixBase
                 }
             }.ifEmpty { Words.suggest(this, if (word.isEmpty()) "" else word) }
 
