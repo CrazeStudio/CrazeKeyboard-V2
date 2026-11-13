@@ -163,7 +163,22 @@ internal class CrazeLmTokenizer private constructor(
         }
         fun skip(wire: Int) {
             when (wire) {
-                0 -> varint(); 1 -> position += 8; 2 -> position += varint().toInt(); 5 -> position += 4
+                0 -> varint()
+                1 -> position += 8
+                2 -> position += varint().toInt()
+                3 -> {
+                    // Deprecated protobuf groups: consume nested fields through END_GROUP.
+                    // SentencePiece ModelProto may contain unknown grouped extension fields.
+                    while (true) {
+                        require(position < limit) { "Truncated protobuf group." }
+                        val key = varint().toInt()
+                        val nestedWire = key and 7
+                        if (nestedWire == 4) break
+                        skip(nestedWire)
+                    }
+                }
+                4 -> Unit // END_GROUP is consumed by the enclosing START_GROUP handler.
+                5 -> position += 4
                 else -> throw IllegalArgumentException("Unsupported protobuf wire type $wire.")
             }
             require(position <= limit) { "Truncated SentencePiece protobuf." }
