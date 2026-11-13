@@ -682,7 +682,7 @@ class CrazeKeyboardService : InputMethodService() {
                 }
             }.ifEmpty { Words.suggest(this, if (word.isEmpty()) "" else word) }
 
-            if (word.isNotEmpty() && Prefs.b(this, "onlinepred", true)) {
+            if (word.isNotEmpty() && Prefs.b(this, "onlinepred", false)) {
                 val remoteLanguage = when {
                     word.any { it in '\u0980'..'\u09FF' } -> "bn"
                     word.any { it in '\u0900'..'\u097F' } -> "hi"
