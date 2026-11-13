@@ -620,7 +620,7 @@ class SettingsActivity : Activity() {
 
         val widthHeader = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
-            addView(text("Keyboard width", 14f, ink, true), LinearLayout.LayoutParams(0, -2, 1f))
+            addView(text("Floating keyboard width", 14f, ink, true), LinearLayout.LayoutParams(0, -2, 1f))
         }
         val widthValue = text("${Prefs.keyWidth(this)}%", 13f, accent, true)
         widthHeader.addView(widthValue)
@@ -632,7 +632,25 @@ class SettingsActivity : Activity() {
             thumbTintList = ColorStateList.valueOf(accent)
         }
         resizeSection.addView(widthSeek, LinearLayout.LayoutParams(-1, -2))
-        resizeSection.addView(text("55% — 100%  ·  Compact to full width", 11f, muted).apply {
+        resizeSection.addView(text("55% — 100%  ·  Applies in floating mode", 11f, muted).apply {
+            setPadding(0, dp(1), 0, dp(10))
+        })
+
+        val oneHandWidthHeader = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            addView(text("One-handed width", 14f, ink, true), LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        val oneHandWidthValue = text("${Prefs.oneHandWidth(this)}%", 13f, accent, true)
+        oneHandWidthHeader.addView(oneHandWidthValue)
+        resizeSection.addView(oneHandWidthHeader)
+        val oneHandWidthSeek = SeekBar(this).apply {
+            max = 30
+            progress = Prefs.oneHandWidth(this@SettingsActivity) - 60
+            progressTintList = ColorStateList.valueOf(accent)
+            thumbTintList = ColorStateList.valueOf(accent)
+        }
+        resizeSection.addView(oneHandWidthSeek, LinearLayout.LayoutParams(-1, -2))
+        resizeSection.addView(text("60% — 90%  ·  Independent of floating width", 11f, muted).apply {
             setPadding(0, dp(1), 0, dp(10))
         })
 
@@ -654,10 +672,11 @@ class SettingsActivity : Activity() {
             setPadding(0, dp(1), 0, dp(10))
         })
 
-        fun updateKeyboardPreview() {
-            val width = Prefs.keyWidth(this)
+        fun updateKeyboardPreview(useOneHandWidth: Boolean = Prefs.i(this, "onehand", 0) != 0) {
+            val width = if (useOneHandWidth) Prefs.oneHandWidth(this) else Prefs.keyWidth(this)
             val height = Prefs.keyH(this)
-            widthValue.text = "${width}%"
+            widthValue.text = "${Prefs.keyWidth(this)}%"
+            oneHandWidthValue.text = "${Prefs.oneHandWidth(this)}%"
             heightValue.text = "${height} dp"
             val availableWidth = (previewFrame.width - dp(12)).coerceAtLeast(dp(190))
             val previewWidth = (availableWidth * width / 100f).toInt().coerceIn(dp(180), availableWidth)
@@ -682,6 +701,14 @@ class SettingsActivity : Activity() {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 Prefs.setI(this@SettingsActivity, "kbdwidth", progress + 55)
                 updateKeyboardPreview()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+            override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
+        })
+        oneHandWidthSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                Prefs.setI(this@SettingsActivity, "onehandWidth", progress + 60)
+                updateKeyboardPreview(true)
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
             override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
@@ -713,8 +740,13 @@ class SettingsActivity : Activity() {
                             val start = (view.tag as? Float) ?: (if (horizontal) event.rawX else event.rawY)
                             val now = if (horizontal) event.rawX else event.rawY
                             val delta = ((now - start) / resources.displayMetrics.density * direction).toInt()
-                            if (horizontal) widthSeek.progress = (widthSeek.progress + delta).coerceIn(0, 45)
-                            else heightSeek.progress = (heightSeek.progress + delta).coerceIn(0, 30)
+                            if (horizontal) {
+                                if (Prefs.i(this@SettingsActivity, "onehand", 0) != 0) {
+                                    oneHandWidthSeek.progress = (oneHandWidthSeek.progress + delta).coerceIn(0, 30)
+                                } else {
+                                    widthSeek.progress = (widthSeek.progress + delta).coerceIn(0, 45)
+                                }
+                            } else heightSeek.progress = (heightSeek.progress + delta).coerceIn(0, 30)
                             view.tag = now
                             true
                         }
@@ -731,6 +763,7 @@ class SettingsActivity : Activity() {
         val resizeActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         resizeActions.addView(action("Reset", false) {
             widthSeek.progress = 45
+            oneHandWidthSeek.progress = 18
             heightSeek.progress = 12
             Prefs.setI(this@SettingsActivity, "onehand", 0)
             Prefs.setB(this@SettingsActivity, "float", false)
@@ -785,6 +818,7 @@ class SettingsActivity : Activity() {
             val button = action(label, Prefs.i(this, "onehand", 0) == value) {
                 Prefs.setI(this@SettingsActivity, "onehand", value)
                 refreshHandButtons()
+                updateKeyboardPreview(value != 0)
             }
             handButtons.add(value to button)
             handRow.addView(button, LinearLayout.LayoutParams(0, -2, 1f).apply {
