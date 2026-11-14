@@ -209,23 +209,36 @@ class SettingsActivity : Activity() {
 
     private fun hero() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(20), dp(20), dp(20), dp(18))
-        background = GradientDrawable(
-            GradientDrawable.Orientation.TL_BR,
-            intArrayOf(Color.rgb(31, 28, 61), Color.rgb(93, 72, 193), Color.rgb(126, 79, 191))
-        ).apply { cornerRadius = dp(26).toFloat() }
-        addView(text("CRAZESTUDIO  /  INPUT STUDIO", 10f, Color.rgb(222, 216, 255), true))
-        addView(text("CrazeKeyboard", 29f, Color.WHITE, true).apply {
-            setPadding(0, dp(6), 0, dp(2))
+        setPadding(dp(18), dp(17), dp(18), dp(16))
+        background = GradientDrawable().apply {
+            cornerRadius = dp(22).toFloat()
+            setColor(card)
+            setStroke(dp(1), dividerColor)
+        }
+        val heading = LinearLayout(this@SettingsActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val icon = TextView(this@SettingsActivity).apply {
+            text = "⌨"
+            textSize = 24f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            background = shape(accent, 15)
+        }
+        heading.addView(icon, LinearLayout.LayoutParams(dp(48), dp(48)).apply { rightMargin = dp(13) })
+        val titles = LinearLayout(this@SettingsActivity).apply { orientation = LinearLayout.VERTICAL }
+        titles.addView(text("CrazeKeyboard", 21f, ink, true))
+        titles.addView(text("Keyboard preferences", 12f, muted))
+        heading.addView(titles, LinearLayout.LayoutParams(0, -2, 1f))
+        addView(heading)
+        addView(text("Personalise typing, languages, privacy and tools.", 13f, muted).apply {
+            setPadding(0, dp(12), 0, dp(13))
         })
-        addView(text("A calmer, faster space to type.", 13f, Color.rgb(240, 237, 255)))
         val mock = LinearLayout(this@SettingsActivity).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(7), dp(7), dp(7), dp(7))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(14).toFloat()
-                setColor(Color.argb(42, 255, 255, 255))
-            }
+            background = shape(actionBg, 15)
         }
         listOf("q w e r t y u i o p", "a s d f g h j k l", "⇧ z x c v b n m ⌫").forEach { line ->
             val keys = LinearLayout(this@SettingsActivity).apply { gravity = Gravity.CENTER }
@@ -235,22 +248,19 @@ class SettingsActivity : Activity() {
                         text = key
                         gravity = Gravity.CENTER
                         textSize = 10f
-                        setTextColor(Color.WHITE)
-                        background = GradientDrawable().apply {
-                            cornerRadius = dp(5).toFloat()
-                            setColor(Color.argb(54, 255, 255, 255))
-                        }
+                        setTextColor(ink)
+                        background = shape(card, 6)
                     },
-                    LinearLayout.LayoutParams(0, dp(24), 1f).apply {
+                    LinearLayout.LayoutParams(0, dp(25), 1f).apply {
                         setMargins(dp(2), 0, dp(2), dp(3))
                     }
                 )
             }
             mock.addView(keys)
         }
-        addView(mock, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) })
-        addView(text("OFFLINE-FIRST  ·  PERSONALISABLE  ·  PRIVATE", 10f, Color.WHITE, true).apply {
-            setPadding(0, dp(13), 0, 0)
+        addView(mock)
+        addView(text("OFFLINE-FIRST  ·  PRIVATE  ·  PERSONALISABLE", 10f, muted, true).apply {
+            setPadding(0, dp(12), 0, 0)
         })
     }
 
@@ -292,6 +302,8 @@ class SettingsActivity : Activity() {
         initPalette()
         window.statusBarColor = page
         window.navigationBarColor = page
+        if (android.os.Build.VERSION.SDK_INT >= 28) window.navigationBarDividerColor = Color.TRANSPARENT
+        if (android.os.Build.VERSION.SDK_INT >= 29) window.isNavigationBarContrastEnforced = false
         window.decorView.systemUiVisibility =
             if (night) 0 else View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
 
@@ -305,7 +317,7 @@ class SettingsActivity : Activity() {
         }
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(17), dp(18), dp(17), dp(28))
+            setPadding(dp(17), dp(14), dp(17), dp(30))
         }
         scroll.addView(content)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
