@@ -454,6 +454,8 @@ class CrazeKeyboardService : InputMethodService() {
         syncContextAsync()
         updateSuggestions()
         deliverVoice()
+        // If the full editor closed before the original app regained its input connection, deliver now.
+        deliverEditor()
     }
 
     // Cursor moved / text changed outside the keyboard. Debounced so rapid edits cost one refresh.
@@ -520,6 +522,7 @@ class CrazeKeyboardService : InputMethodService() {
 
     private fun toolLabel(id: String): String = when (id) {
         "editor" -> "Text editor"
+        "fulleditor" -> "Full editor"
         "clipboard" -> "Clipboard"
         "emoji" -> "Emoji"
         "voice" -> "Voice"
@@ -535,6 +538,7 @@ class CrazeKeyboardService : InputMethodService() {
 
     private fun toolIcon(id: String): Int = when (id) {
         "editor" -> R.drawable.ic_edit
+        "fulleditor" -> R.drawable.ic_editor_select_all
         "clipboard" -> R.drawable.ic_clip
         "emoji" -> R.drawable.ic_emoji
         "voice" -> R.drawable.ic_mic
@@ -560,6 +564,7 @@ class CrazeKeyboardService : InputMethodService() {
     private fun runTool(id: String) {
         when (id) {
             "editor" -> showPanel("editor")
+            "fulleditor" -> { showPanel("letters"); launchTextEditor() }
             "clipboard" -> showPanel("clip")
             "emoji" -> showPanel("emoji")
             "voice" -> { showPanel("letters"); startVoice() }
@@ -962,7 +967,12 @@ class CrazeKeyboardService : InputMethodService() {
     private fun deliverEditor() {
         if (currentInputEditorInfo?.packageName == packageName) return
         val edited = TextEditorActivity.take() ?: return
-        val ic = currentInputConnection ?: return
+        val ic = currentInputConnection
+        if (ic == null) {
+            // Not focused yet: put the text back so the next onStartInputView can deliver it.
+            TextEditorActivity.post(edited)
+            return
+        }
         ic.commitText(edited, 1)
         setLocalContext(cachedBeforeCursor + edited)
         scheduleRefresh()
@@ -1388,7 +1398,9 @@ class CrazeKeyboardService : InputMethodService() {
 
     private fun buildMenu(): View {
         val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(4), dp(4), dp(2)) }
-        val available = (Prefs.toolbarTools(ctx) + "settings").distinct().take(12)
+        // "Full editor" and "Settings" are always present; the user's own tools fill the remaining slots.
+        val userTools = Prefs.toolbarTools(ctx).filter { it != "settings" && it != "fulleditor" }.take(10)
+        val available = (userTools + "fulleditor" + "settings").distinct()
         val categories = listOf("All", "Typing", "Editing", "Layout")
         val tabs = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
         val tabViews = LinkedHashMap<String, TextView>()
@@ -1398,13 +1410,14 @@ class CrazeKeyboardService : InputMethodService() {
                 val active = name == menuCategory
                 view.background = rounded(if (active) t.special else t.bg, 10)
                 view.alpha = if (active) 1f else 0.62f
+                view.isSelected = active
             }
         }
         fun renderTools() {
             grid.removeAllViews()
             val grouped = when (menuCategory) {
                 "Typing" -> listOf("keyboard", "emoji", "voice", "theme")
-                "Editing" -> listOf("editor", "clipboard", "settings")
+                "Editing" -> listOf("editor", "fulleditor", "clipboard", "settings")
                 "Layout" -> listOf("onehand", "floating", "resize", "hide", "settings")
                 else -> available
             }.filter { it in available }.distinct()
@@ -1425,6 +1438,7 @@ class CrazeKeyboardService : InputMethodService() {
                 gravity = Gravity.CENTER; setTextColor(t.text)
                 setPadding(dp(5), 0, dp(5), 0); minHeight = dp(32)
                 isClickable = true; isFocusable = true
+                contentDescription = "$label tools"
                 setOnClickListener { menuCategory = label; updateTabs(); renderTools() }
             }
             tabViews[label] = tab
@@ -1743,6 +1757,20 @@ class CrazeKeyboardService : InputMethodService() {
                 syncContextAsync()
             } catch (_: Exception) { }
         }
+        // Undo / redo as Ctrl+Z and Ctrl+Shift+Z. Most editors honour these; apps that don't simply ignore them.
+        fun sendCtrlZ(withShift: Boolean) {
+            val ic = connection() ?: return
+            val now = SystemClock.uptimeMillis()
+            val meta = KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON or (if (withShift) KeyEvent.META_SHIFT_ON else 0)
+            try {
+                ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_Z, 0, meta))
+                ic.sendKeyEvent(KeyEvent(now, now + 1, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_Z, 0, meta))
+                status.text = if (withShift) "Redo sent" else "Undo sent"
+                syncContextAsync()
+            } catch (_: Exception) {
+                status.text = "Undo is unavailable in this app"
+            }
+        }
         fun selectAllText() {
             val ic = connection() ?: return
             var selected = false
@@ -1878,6 +1906,8 @@ class CrazeKeyboardService : InputMethodService() {
         iconAction(actions, R.drawable.ic_editor_cut, "Cut selected text") { copyOrCut(true) }
         iconAction(actions, R.drawable.ic_editor_copy, "Copy selected text") { copyOrCut(false) }
         iconAction(actions, R.drawable.ic_editor_paste, "Paste text") { pasteText() }
+        iconAction(actions, R.drawable.ic_editor_undo, "Undo") { sendCtrlZ(false) }
+        iconAction(actions, R.drawable.ic_editor_redo, "Redo") { sendCtrlZ(true) }
         iconAction(actions, R.drawable.ic_trash, "Delete selection or previous character") {
             val ic = connection() ?: return@iconAction
             try {
@@ -1894,6 +1924,10 @@ class CrazeKeyboardService : InputMethodService() {
         polish.cell.contentDescription = "Apply on-device punctuation, spacing and sentence-capitalization fixes"
         attach(polish) { quickPolish() }
         footer.addView(polish.cell)
+        val fullEditor = mk("Full editor", 1.2f, t.special, t.text, 10f)
+        fullEditor.cell.contentDescription = "Open the full-screen text editor"
+        attach(fullEditor) { editorSelecting = false; launchTextEditor() }
+        footer.addView(fullEditor.cell)
         col.addView(footer, lp(MATCH, dp(32)))
         col.addView(status, lp(MATCH, dp(16)))
         return col
