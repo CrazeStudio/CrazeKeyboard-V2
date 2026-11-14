@@ -245,6 +245,22 @@ class CrazeKeyboardService : InputMethodService() {
         super.onDestroy()
     }
 
+    // Keep the IME visually joined to the system navigation area without hiding Android controls.
+    private fun applyImmersiveWindowStyle() {
+        val imeWindow = window.window ?: return
+        imeWindow.navigationBarColor = t.bg
+        if (Build.VERSION.SDK_INT >= 28) imeWindow.setNavigationBarDividerColor(android.graphics.Color.TRANSPARENT)
+        if (Build.VERSION.SDK_INT >= 29) imeWindow.isNavigationBarContrastEnforced = false
+        val decor = imeWindow.decorView
+        val lightBackground = (0.2126 * android.graphics.Color.red(t.bg) +
+            0.7152 * android.graphics.Color.green(t.bg) +
+            0.0722 * android.graphics.Color.blue(t.bg)) / 255.0 > 0.58
+        var flags = decor.systemUiVisibility
+        flags = if (lightBackground) flags or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            else flags and View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
+        decor.systemUiVisibility = flags
+    }
+
     // Fullscreen extract mode in landscape is slow and covers the app, so turn it off.
     override fun onEvaluateFullscreenMode(): Boolean = false
 
@@ -271,10 +287,7 @@ class CrazeKeyboardService : InputMethodService() {
 
     override fun onCreateInputView(): View {
         t = Prefs.theme(this)
-        try {
-            window.window?.navigationBarColor = t.bg
-            if (Build.VERSION.SDK_INT >= 29) window.window?.isNavigationBarContrastEnforced = false
-        } catch (_: Exception) { }
+        applyImmersiveWindowStyle()
         lastSig = Prefs.sig(this)
         floating = Prefs.b(this, "float", false)
         builtOrientation = resources.configuration.orientation
@@ -320,14 +333,14 @@ class CrazeKeyboardService : InputMethodService() {
                 (sw * Prefs.oneHandWidth(this) / 100f).toInt().coerceIn(minWidth, sw)
             outer.addView(root, FrameLayout.LayoutParams(w, WRAP, if (oh == 2) Gravity.END else Gravity.START))
         }
-        buildTop()
-        showPanel(mode)
         return outer
     }
 
     private fun rebuild() {
         mode = "letters"
         setInputView(onCreateInputView())
+        buildTop()
+        showPanel(mode)
     }
 
     // Drag bar of the floating keyboard: drag anywhere on it to move, tap the dock icon to dock again.
@@ -427,9 +440,12 @@ class CrazeKeyboardService : InputMethodService() {
         emojiSearchQuery = ""
         if (info.packageName != packageName) targetInputConnection = currentInputConnection
         val orient = resources.configuration.orientation
-        if (!::outer.isInitialized || Prefs.sig(this) != lastSig || Prefs.b(this, "float", false) != floating || orient != builtOrientation) {
+        val recreateInputView = !::outer.isInitialized || Prefs.sig(this) != lastSig ||
+            Prefs.b(this, "float", false) != floating || orient != builtOrientation
+        if (recreateInputView) {
             setInputView(onCreateInputView())
         } else loadPrefs()
+        applyImmersiveWindowStyle()
         val cls = info.inputType and InputType.TYPE_MASK_CLASS
         val v = info.inputType and InputType.TYPE_MASK_VARIATION
         val noSug = listOf(InputType.TYPE_TEXT_VARIATION_PASSWORD, InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
