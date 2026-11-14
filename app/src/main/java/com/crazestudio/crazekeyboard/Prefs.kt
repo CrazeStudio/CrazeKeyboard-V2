@@ -89,7 +89,7 @@ object Prefs {
     }
     fun nextTheme(c: Context) = setI(c, "theme", (i(c, "theme", 0) + 1) % themes.size)
     fun nextOneHand(c: Context) = setI(c, "onehand", (i(c, "onehand", 0) + 1) % 3)
-    fun keyH(c: Context) = i(c, "keyh", 46).coerceIn(34, 64)
+    fun keyH(c: Context) = i(c, "keyh", 38).coerceIn(34, 64)
     fun keyWidth(c: Context) = i(c, "kbdwidth", 100).coerceIn(55, 100)
     fun oneHandWidth(c: Context) = i(c, "onehandWidth", 78).coerceIn(60, 90)
     fun sig(c: Context) = "${i(c, "theme", 0)}|${i(c, "onehand", 0)}|${keyH(c)}|${keyWidth(c)}|${oneHandWidth(c)}|${b(c, "numrow", true)}|${c.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK}"
