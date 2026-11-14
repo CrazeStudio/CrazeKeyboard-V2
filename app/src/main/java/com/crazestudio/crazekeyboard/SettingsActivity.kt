@@ -902,11 +902,15 @@ class SettingsActivity : Activity() {
                     "settings_category" -> {
                         currentCategory = child.contentDescription?.toString().orEmpty()
                         val selected = activeSettingsCategory == "All" || activeSettingsCategory == currentCategory
-                        val matchingSection = (i + 1 until content.childCount).any { j ->
+                        var matchingSection = false
+                        for (j in i + 1 until content.childCount) {
                             val candidate = content.getChildAt(j)
-                            if (candidate.tag == "settings_category") false
-                            else candidate.tag == "settings_section" &&
-                                candidate.contentDescription?.toString().orEmpty().lowercase().contains(query)
+                            if (candidate.tag == "settings_category") break
+                            if (candidate.tag == "settings_section" &&
+                                candidate.contentDescription?.toString().orEmpty().lowercase().contains(query)) {
+                                matchingSection = true
+                                break
+                            }
                         }
                         child.visibility = if (selected && (query.isEmpty() || currentCategory.lowercase().contains(query) || matchingSection)) View.VISIBLE else View.GONE
                     }
