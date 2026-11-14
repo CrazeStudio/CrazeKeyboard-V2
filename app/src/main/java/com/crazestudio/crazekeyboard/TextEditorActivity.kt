@@ -205,8 +205,9 @@ class TextEditorActivity : Activity() {
         // on narrow phones without shrinking the writing canvas or hiding controls.
         root.addView(toolStrip(listOf(
             "Select all" to { editor.selectAll() },
-            "Find" to { findReplace() },
-            "Replace" to { findReplace() },
+            "Find / replace" to { findReplace() },
+            "Copy" to { copyText() },
+            "Paste" to { pasteText() },
             "Date / time" to { insertDateTime() },
             "Bullet" to { insertBullet() },
             "Clear" to { editor.text?.clear() }
