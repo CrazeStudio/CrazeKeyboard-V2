@@ -799,7 +799,7 @@ class SettingsActivity : Activity() {
         resizeActions.addView(action("Reset", false) {
             widthSeek.progress = 45
             oneHandWidthSeek.progress = 18
-            heightSeek.progress = 12
+            heightSeek.progress = 4
             Prefs.setI(this@SettingsActivity, "onehand", 0)
             Prefs.setB(this@SettingsActivity, "float", false)
             Prefs.setI(this@SettingsActivity, "fx", 0)
@@ -820,7 +820,7 @@ class SettingsActivity : Activity() {
             setPadding(0, dp(6), 0, dp(8))
         })
         val heightPresets = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        listOf("Compact" to 40, "Standard" to 46, "Tall" to 54).forEachIndexed { index, preset ->
+        listOf("Compact" to 34, "Standard" to 38, "Tall" to 46).forEachIndexed { index, preset ->
             heightPresets.addView(action(preset.first) {
                 heightSeek.progress = preset.second - 34
                 updateKeyboardPreview()
@@ -879,23 +879,75 @@ class SettingsActivity : Activity() {
             tag = "settings_search"; contentDescription = "Search all settings"
         }
         content.addView(settingsSearch, 1, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+        var activeSettingsCategory = "All"
         val categoryScroller = HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false; overScrollMode = View.OVER_SCROLL_NEVER
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
             tag = "settings_category_nav"
         }
         val categoryStrip = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val categoryLabels = listOf(
-            "Languages & downloads", "Setup", "AI & voice", "Typing & suggestions",
+            "All", "Languages & downloads", "Setup", "AI & voice", "Typing & suggestions",
             "Toolbar & shortcuts", "Privacy & data", "Appearance",
             "Keyboard size & layout", "Keyboard behaviour"
         )
+        val categoryChips = LinkedHashMap<String, TextView>()
+        fun applySettingsFilter(queryValue: String = settingsSearch.text?.toString().orEmpty()) {
+            val query = queryValue.trim().lowercase()
+            var currentCategory = "Overview"
+            for (i in 0 until content.childCount) {
+                val child = content.getChildAt(i)
+                when (child.tag as? String) {
+                    "settings_search", "settings_category_nav" -> child.visibility = View.VISIBLE
+                    "settings_category" -> {
+                        currentCategory = child.contentDescription?.toString().orEmpty()
+                        val selected = activeSettingsCategory == "All" || activeSettingsCategory == currentCategory
+                        var matchingSection = false
+                        for (j in i + 1 until content.childCount) {
+                            val candidate = content.getChildAt(j)
+                            if (candidate.tag == "settings_category") break
+                            if (candidate.tag == "settings_section" &&
+                                candidate.contentDescription?.toString().orEmpty().lowercase().contains(query)) {
+                                matchingSection = true
+                                break
+                            }
+                        }
+                        child.visibility = if (selected && (query.isEmpty() || currentCategory.lowercase().contains(query) || matchingSection)) View.VISIBLE else View.GONE
+                    }
+                    "settings_section" -> {
+                        val selected = activeSettingsCategory == "All" || activeSettingsCategory == currentCategory
+                        val terms = child.contentDescription?.toString().orEmpty().lowercase()
+                        child.visibility = if (selected && (query.isEmpty() || terms.contains(query) || currentCategory.lowercase().contains(query))) View.VISIBLE else View.GONE
+                    }
+                    else -> {
+                        // Keep the product header, search field and category navigation visible.
+                        child.visibility = if (i == 0 && (activeSettingsCategory == "All" || query.isEmpty())) View.VISIBLE
+                            else if (activeSettingsCategory == "All" && query.isEmpty()) View.VISIBLE else View.GONE
+                    }
+                }
+            }
+            categoryChips.forEach { (name, chip) ->
+                val selected = name == activeSettingsCategory
+                chip.background = shape(if (selected) accent else actionBg, 18)
+                chip.setTextColor(if (selected) Color.WHITE else ink)
+            }
+        }
         categoryLabels.forEach { label ->
             val chip = TextView(this).apply {
-                text = label; textSize = 11f; typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                setTextColor(ink); gravity = Gravity.CENTER; setPadding(dp(12), dp(9), dp(12), dp(9))
-                background = shape(actionBg, 18); isClickable = true; isFocusable = true
-                setOnClickListener { settingsCategoryViews[label]?.let { target -> scroll.smoothScrollTo(0, target.top) } }
+                text = label
+                textSize = 11f
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                gravity = Gravity.CENTER
+                setPadding(dp(13), dp(9), dp(13), dp(9))
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    activeSettingsCategory = label
+                    applySettingsFilter()
+                    scroll.smoothScrollTo(0, 0)
+                }
             }
+            categoryChips[label] = chip
             categoryStrip.addView(chip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = dp(6) })
         }
         categoryScroller.addView(categoryStrip)
@@ -903,34 +955,12 @@ class SettingsActivity : Activity() {
         settingsSearch.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                val query = s?.toString()?.trim()?.lowercase().orEmpty()
-                for (i in 0 until content.childCount) {
-                    val child = content.getChildAt(i)
-                    when (child.tag as? String) {
-                        "settings_search", "settings_category_nav" -> child.visibility = View.VISIBLE
-                        "settings_section" -> {
-                            val terms = child.contentDescription?.toString().orEmpty().lowercase()
-                            child.visibility = if (query.isEmpty() || terms.contains(query)) View.VISIBLE else View.GONE
-                        }
-                        "settings_category" -> {
-                            val label = child.contentDescription?.toString().orEmpty().lowercase()
-                            var match = query.isEmpty() || label.contains(query)
-                            var j = i + 1
-                            while (!match && j < content.childCount && content.getChildAt(j).tag != "settings_category") {
-                                val candidate = content.getChildAt(j)
-                                if (candidate.tag == "settings_section") {
-                                    match = candidate.contentDescription?.toString().orEmpty().lowercase().contains(query)
-                                }
-                                j++
-                            }
-                            child.visibility = if (match) View.VISIBLE else View.GONE
-                        }
-                        else -> child.visibility = if (query.isEmpty()) View.VISIBLE else View.GONE
-                    }
-                }
+                applySettingsFilter(s?.toString().orEmpty())
             }
             override fun afterTextChanged(s: Editable?) = Unit
         })
+        applySettingsFilter()
+
         settingsScroll = scroll
 
         setContentView(root)

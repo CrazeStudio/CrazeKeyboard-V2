@@ -320,14 +320,14 @@ class CrazeKeyboardService : InputMethodService() {
                 (sw * Prefs.oneHandWidth(this) / 100f).toInt().coerceIn(minWidth, sw)
             outer.addView(root, FrameLayout.LayoutParams(w, WRAP, if (oh == 2) Gravity.END else Gravity.START))
         }
-        buildTop()
-        showPanel(mode)
         return outer
     }
 
     private fun rebuild() {
         mode = "letters"
         setInputView(onCreateInputView())
+        buildTop()
+        showPanel(mode)
     }
 
     // Drag bar of the floating keyboard: drag anywhere on it to move, tap the dock icon to dock again.
@@ -427,9 +427,9 @@ class CrazeKeyboardService : InputMethodService() {
         emojiSearchQuery = ""
         if (info.packageName != packageName) targetInputConnection = currentInputConnection
         val orient = resources.configuration.orientation
-        if (!::outer.isInitialized || Prefs.sig(this) != lastSig || Prefs.b(this, "float", false) != floating || orient != builtOrientation) {
-            setInputView(onCreateInputView())
-        } else loadPrefs()
+        val recreateInputView = !::outer.isInitialized || Prefs.sig(this) != lastSig ||
+            Prefs.b(this, "float", false) != floating || orient != builtOrientation
+        if (recreateInputView) setInputView(onCreateInputView()) else loadPrefs()
         val cls = info.inputType and InputType.TYPE_MASK_CLASS
         val v = info.inputType and InputType.TYPE_MASK_VARIATION
         val noSug = listOf(InputType.TYPE_TEXT_VARIATION_PASSWORD, InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
@@ -449,6 +449,7 @@ class CrazeKeyboardService : InputMethodService() {
         cachedHasEditorText = false
         contextEpoch++
         mode = if (cls == InputType.TYPE_CLASS_NUMBER || cls == InputType.TYPE_CLASS_PHONE) "symbols" else "letters"
+        // Render only after the editor mode is known; avoid a transient old page and second layout pass.
         buildTop()
         showPanel(mode)
         syncContextAsync()
@@ -1345,7 +1346,7 @@ class CrazeKeyboardService : InputMethodService() {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             background = keyBg(t.key, 16)
-            setPadding(dp(4), dp(5), dp(4), dp(5))
+            setPadding(dp(2), dp(1), dp(2), dp(1))
             isClickable = true
             isFocusable = true
             contentDescription = label
@@ -1368,16 +1369,17 @@ class CrazeKeyboardService : InputMethodService() {
                 contentDescription = label
                 scaleType = ImageView.ScaleType.CENTER_INSIDE
                 setPadding(dp(7), dp(7), dp(7), dp(7))
-            }, FrameLayout.LayoutParams(dp(40), dp(40), Gravity.CENTER))
-        }, lp(dp(48), dp(48)))
+            }, FrameLayout.LayoutParams(dp(30), dp(30), Gravity.CENTER))
+        }, lp(dp(36), dp(36)))
         box.addView(TextView(ctx).apply {
             text = label
-            textSize = 11f
+            textSize = 10f
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setTextColor(t.text)
             gravity = Gravity.CENTER
-            setPadding(0, dp(5), 0, 0)
-            maxLines = 1
+            includeFontPadding = false
+            setPadding(dp(1), dp(2), dp(1), 0)
+            maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
         })
         val wrap = FrameLayout(ctx).apply { setPadding(dp(3), dp(3), dp(3), dp(3)) }
@@ -1443,9 +1445,7 @@ class CrazeKeyboardService : InputMethodService() {
         addView(backKey(1.4f))
     }
 
-    private fun emojiExtraHeight() = dp(if (landscape()) 44 else 112)
-    private fun bodyHeight() = panelH() + (if (mode == "emoji") emojiExtraHeight() else 0) -
-        (if (mode == "emoji") dp(82) else dp(40)) - cellH - dp(2)
+    private fun bodyHeight() = panelH() - dp(82) - cellH - dp(2)
 
     // Each emoji category grid (~100 views) is built once and reused; only the "recent" grid is rebuilt because it changes.
     private val emojiAliases = mapOf(
@@ -1925,19 +1925,8 @@ class CrazeKeyboardService : InputMethodService() {
                 MotionEvent.ACTION_MOVE -> {
                     val delta = ((lastY - event.rawY) / resources.displayMetrics.density).toInt()
                     if (delta != 0) {
-                        val next = (heightValue + delta).coerceIn(34, 64)
-                        heightValue = next
-                        hd.removeCallbacks(persistHeight)
-                        hd.postDelayed(persistHeight, 180L)
-                        kh = next
-                        cellH = baseCellH()
-                        value.text = "Keyboard height  ·  $next dp"
-                        panel.layoutParams = panel.layoutParams.apply { height = panelH() }
-                        panel.getChildAt(0)?.let { child ->
-                            child.layoutParams = child.layoutParams.apply { height = panelH() }
-                        }
-                        panel.requestLayout()
-                        kbd.requestLayout()
+                        heightValue = (heightValue + delta).coerceIn(34, 64)
+                        value.text = "Keyboard height  ·  $heightValue dp  ·  release to apply"
                         lastY = event.rawY
                     }
                     true
@@ -1945,6 +1934,13 @@ class CrazeKeyboardService : InputMethodService() {
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     hd.removeCallbacks(persistHeight)
                     Prefs.setI(ctx, "keyh", heightValue)
+                    kh = if (landscape()) minOf(heightValue, 38) else heightValue
+                    cellH = baseCellH()
+                    panel.layoutParams = panel.layoutParams.apply { height = panelH() }
+                    panel.getChildAt(0)?.let { child -> child.layoutParams = child.layoutParams.apply { height = panelH() } }
+                    panel.requestLayout()
+                    kbd.requestLayout()
+                    value.text = "Keyboard height  ·  $heightValue dp"
                     true
                 }
                 else -> true
@@ -1954,14 +1950,14 @@ class CrazeKeyboardService : InputMethodService() {
         val row = hrow()
         val reset = mk("Standard", 1f, t.special, t.text, 12f); attach(reset) {
             hd.removeCallbacks(persistHeight)
-            heightValue = 46
-            Prefs.setI(ctx, "keyh", 46)
+            heightValue = 38
+            Prefs.setI(ctx, "keyh", 38)
             Prefs.setI(ctx, "kbdwidth", 100)
             Prefs.setI(ctx, "onehand", 0)
             Prefs.setB(ctx, "float", false)
-            kh = 46
+            kh = 38
             cellH = baseCellH()
-            value.text = "Keyboard height  ·  46 dp"
+            value.text = "Keyboard height  ·  38 dp"
             panel.layoutParams = panel.layoutParams.apply { height = panelH() }
             panel.getChildAt(0)?.let { child -> child.layoutParams = child.layoutParams.apply { height = panelH() } }
             panel.requestLayout()
@@ -2120,11 +2116,9 @@ class CrazeKeyboardService : InputMethodService() {
         val page = pageFor(m)
         (page.parent as? ViewGroup)?.removeView(page)
         panel.removeAllViews()
-        val targetPanelHeight = when (m) {
-            "emoji" -> panelH() + emojiExtraHeight()
-            "editor" -> dp(158)
-            else -> panelH()
-        }
+        // Keep the IME's reported height stable across every page. Variable page heights
+        // were forcing Android to relayout the host app, which looked like the keyboard jumped.
+        val targetPanelHeight = panelH()
         panel.layoutParams = panel.layoutParams.apply { height = targetPanelHeight }
         page.alpha = 0f
         page.translationY = dp(5).toFloat()

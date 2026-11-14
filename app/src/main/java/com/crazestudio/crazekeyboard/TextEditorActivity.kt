@@ -201,6 +201,17 @@ class TextEditorActivity : Activity() {
         root.addView(toolbar, LinearLayout.LayoutParams(-1, dp(54)).apply {
             topMargin = dp(8)
         })
+        // A labelled, horizontally-scrollable action shelf keeps advanced editing discoverable
+        // on narrow phones without shrinking the writing canvas or hiding controls.
+        root.addView(toolStrip(listOf(
+            "Select all" to { editor.selectAll() },
+            "Find / replace" to { findReplace() },
+            "Copy" to { copyText() },
+            "Paste" to { pasteText() },
+            "Date / time" to { insertDateTime() },
+            "Bullet" to { insertBullet() },
+            "Clear" to { editor.text?.clear() }
+        )), LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(5) })
         counter = label("0 words  ·  0 characters", 11f, Color.rgb(75, 80, 89)).apply {
             setPadding(dp(10), dp(7), dp(10), dp(2))
         }
@@ -250,6 +261,17 @@ class TextEditorActivity : Activity() {
         val start = editor.selectionStart.coerceAtLeast(0)
         editor.text?.insert(start, "• ")
         editor.setSelection(start + 2)
+        editor.requestFocus()
+    }
+
+    private fun insertDateTime() {
+        val value = java.text.DateFormat.getDateTimeInstance(
+            java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT
+        ).format(java.util.Date())
+        val start = minOf(editor.selectionStart, editor.selectionEnd).coerceAtLeast(0)
+        val end = maxOf(editor.selectionStart, editor.selectionEnd).coerceAtLeast(0)
+        editor.text?.replace(start, end, value)
+        editor.setSelection((start + value.length).coerceAtMost(editor.text.length))
         editor.requestFocus()
     }
 
