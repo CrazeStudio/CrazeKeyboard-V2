@@ -1934,7 +1934,7 @@ class CrazeKeyboardService : InputMethodService() {
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     hd.removeCallbacks(persistHeight)
                     Prefs.setI(ctx, "keyh", heightValue)
-                    kh = heightValue
+                    kh = if (landscape()) minOf(heightValue, 38) else heightValue
                     cellH = baseCellH()
                     panel.layoutParams = panel.layoutParams.apply { height = panelH() }
                     panel.getChildAt(0)?.let { child -> child.layoutParams = child.layoutParams.apply { height = panelH() } }
