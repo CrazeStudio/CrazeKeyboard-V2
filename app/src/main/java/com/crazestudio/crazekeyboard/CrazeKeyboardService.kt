@@ -2033,16 +2033,6 @@ class CrazeKeyboardService : InputMethodService() {
             attach(key, onLong = { setSelectionMode(true) }) { moveCursor(keyCode) }
             row.addView(key.cell)
         }
-        val cursor = hrow()
-        addCursorKey(cursor, "←", KeyEvent.KEYCODE_DPAD_LEFT, "Move cursor left; long press to extend selection")
-        addCursorKey(cursor, "↑", KeyEvent.KEYCODE_DPAD_UP, "Move cursor up; long press to extend selection")
-        addCursorKey(cursor, "↓", KeyEvent.KEYCODE_DPAD_DOWN, "Move cursor down; long press to extend selection")
-        addCursorKey(cursor, "→", KeyEvent.KEYCODE_DPAD_RIGHT, "Move cursor right; long press to extend selection")
-        addCursorKey(cursor, "Home", KeyEvent.KEYCODE_MOVE_HOME, "Move to line start")
-        addCursorKey(cursor, "End", KeyEvent.KEYCODE_MOVE_END, "Move to line end")
-        col.addView(cursor, lp(MATCH, dp(36)))
-
-        val actions = hrow()
         fun iconAction(row: LinearLayout, icon: Int, label: String, action: () -> Unit): K {
             val key = mk("", 1f, t.special, t.text, 12f, icon)
             key.cell.contentDescription = label
@@ -2050,10 +2040,71 @@ class CrazeKeyboardService : InputMethodService() {
             row.addView(key.cell)
             return key
         }
-        selectionKey = iconAction(actions, R.drawable.ic_editor_select, "Toggle selection mode") {
-            setSelectionMode(!editorSelecting)
+
+        // Gboard-style 3×3 cursor pad: open corners, directional keys and a central Select pill.
+        fun dpadRow(): LinearLayout = hrow().apply {
+            setPadding(dp(2), 0, dp(2), 0)
         }
-        iconAction(actions, R.drawable.ic_editor_select_all, "Select all") { selectAllText() }
+        fun dpadKey(row: LinearLayout, label: String, keyCode: Int, description: String) {
+            val key = mk(label, 1f, t.special, t.text, 16f)
+            key.cell.contentDescription = description
+            attach(key, onLong = { setSelectionMode(true) }) { moveCursor(keyCode) }
+            row.addView(key.cell, lp(0, dp(34), 1f).apply {
+                leftMargin = dp(3)
+                rightMargin = dp(3)
+            })
+        }
+        fun dpadSpacer(row: LinearLayout) {
+            row.addView(View(ctx).apply {
+                background = rounded(t.special, 12)
+                alpha = 0.28f
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }, lp(0, dp(34), 1f).apply {
+                leftMargin = dp(3)
+                rightMargin = dp(3)
+            })
+        }
+
+        val dpad = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(2), 0, dp(2))
+        }
+        val topRow = dpadRow()
+        dpadSpacer(topRow)
+        dpadKey(topRow, "↑", KeyEvent.KEYCODE_DPAD_UP, "Move cursor up; long press to extend selection")
+        dpadSpacer(topRow)
+        dpad.addView(topRow, lp(MATCH, dp(34)))
+
+        val middleRow = dpadRow()
+        dpadKey(middleRow, "←", KeyEvent.KEYCODE_DPAD_LEFT, "Move cursor left; long press to extend selection")
+        selectionKey = mk("Select", 1f, if (editorSelecting) t.accent else t.special,
+            if (editorSelecting) t.accentText else t.text, 12f)
+        selectionKey?.cell?.contentDescription = "Toggle selection mode"
+        selectionKey?.let { key ->
+            key.cell.background = rounded(if (editorSelecting) t.accent else t.special, 999)
+            attach(key) { setSelectionMode(!editorSelecting) }
+            middleRow.addView(key.cell, lp(0, dp(34), 1f).apply {
+                leftMargin = dp(3)
+                rightMargin = dp(3)
+            })
+        }
+        dpadKey(middleRow, "→", KeyEvent.KEYCODE_DPAD_RIGHT, "Move cursor right; long press to extend selection")
+        dpad.addView(middleRow, lp(MATCH, dp(34)).apply { topMargin = dp(4) })
+
+        val bottomRow = dpadRow()
+        val selectAllKey = mk("Select all", 1f, t.special, t.text, 10f)
+        selectAllKey.cell.contentDescription = "Select all text"
+        attach(selectAllKey) { selectAllText() }
+        bottomRow.addView(selectAllKey.cell, lp(0, dp(34), 1f).apply {
+            leftMargin = dp(3)
+            rightMargin = dp(3)
+        })
+        dpadKey(bottomRow, "↓", KeyEvent.KEYCODE_DPAD_DOWN, "Move cursor down; long press to extend selection")
+        dpadKey(bottomRow, "End", KeyEvent.KEYCODE_MOVE_END, "Move cursor to line end")
+        dpad.addView(bottomRow, lp(MATCH, dp(34)).apply { topMargin = dp(4) })
+        col.addView(dpad, lp(MATCH, dp(112)).apply { topMargin = dp(3) })
+
+        val actions = hrow()
         iconAction(actions, R.drawable.ic_editor_cut, "Cut selected text") { copyOrCut(true) }
         iconAction(actions, R.drawable.ic_editor_copy, "Copy selected text") { copyOrCut(false) }
         iconAction(actions, R.drawable.ic_editor_paste, "Paste text") { pasteText() }
@@ -2068,7 +2119,7 @@ class CrazeKeyboardService : InputMethodService() {
                 syncContextAsync()
             } catch (_: Exception) { }
         }
-        col.addView(actions, lp(MATCH, dp(38)))
+        col.addView(actions, lp(MATCH, dp(36)).apply { topMargin = dp(4) })
 
         val footer = hrow()
         val polish = mk("Quick polish", 1.4f, t.accent, t.accentText, 10f)
@@ -2079,7 +2130,7 @@ class CrazeKeyboardService : InputMethodService() {
         fullEditor.cell.contentDescription = "Open the full-screen text editor"
         attach(fullEditor) { editorSelecting = false; launchTextEditor() }
         footer.addView(fullEditor.cell)
-        col.addView(footer, lp(MATCH, dp(32)))
+        col.addView(footer, lp(MATCH, dp(32)).apply { topMargin = dp(3) })
         col.addView(status, lp(MATCH, dp(16)))
         return col
     }
@@ -2307,7 +2358,7 @@ class CrazeKeyboardService : InputMethodService() {
         panel.removeAllViews()
         val targetPanelHeight = when (m) {
             "emoji" -> panelH() + emojiExtraHeight()
-            "editor" -> dp(158)
+            "editor" -> dp(250)
             else -> panelH()
         }
         panel.layoutParams = panel.layoutParams.apply { height = targetPanelHeight }
