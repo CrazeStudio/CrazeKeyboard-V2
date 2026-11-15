@@ -116,6 +116,8 @@ class CrazeKeyboardService : InputMethodService() {
     private var emojiSearchQuery = ""
     private var emojiSearchActive = false
     private var clipListener: ClipboardManager.OnPrimaryClipChangedListener? = null
+    // One-shot clipboard preview shown in the suggestion strip; cleared after paste or dismissal.
+    private var pendingClipboardSuggestion: String? = null
     private val noPersonalizedLearning = 0x1000000   // EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING (API 26) without the API-level gate
 
     private data class EmojiGroup(val key: String, val name: String, val terms: String, val emojis: List<String>)
@@ -224,11 +226,22 @@ class CrazeKeyboardService : InputMethodService() {
             try {
                 if (incognito || !Prefs.b(ctx, "clipboardHistory", true)) return@OnPrimaryClipChangedListener
                 val clip = cm.primaryClip ?: return@OnPrimaryClipChangedListener
-                // Android 13+ marks copied passwords / OTPs as sensitive: never store those.
+                // Android 13+ marks copied passwords / OTPs as sensitive: never store or preview them.
                 if (Build.VERSION.SDK_INT >= 33 &&
                     clip.description?.extras?.getBoolean("android.content.extra.IS_SENSITIVE", false) == true) return@OnPrimaryClipChangedListener
-                if (clip.itemCount > 0) clip.getItemAt(0)?.text?.toString()?.let { Prefs.addClip(ctx, it) }
-            } catch (e: Exception) { }
+                val copiedText = if (clip.itemCount > 0) clip.getItemAt(0)?.text?.toString().orEmpty() else ""
+                if (copiedText.isBlank()) return@OnPrimaryClipChangedListener
+
+                // Keep clipboard history as before, but expose only the newest item in the strip.
+                Prefs.addClip(ctx, copiedText)
+                pendingClipboardSuggestion = copiedText.take(4_000)
+                hd.post {
+                    if (::top.isInitialized && !incognito && suggestOn &&
+                        Prefs.b(ctx, "clipboardHistory", true)) {
+                        buildTop()
+                    }
+                }
+            } catch (_: Exception) { }
         }
         cm.addPrimaryClipChangedListener(clipListener)
     }
@@ -514,6 +527,9 @@ class CrazeKeyboardService : InputMethodService() {
     private fun desiredTopState(): String = when {
         emojiSearchActive -> "emojiSearch"
         mode == "menu" -> "menu"
+        // A single recent clipboard item takes one suggestion slot until pasted or dismissed.
+        !incognito && suggestOn && Prefs.b(ctx, "clipboardHistory", true) &&
+            !pendingClipboardSuggestion.isNullOrBlank() -> "clipboardSuggestion"
         // Private fields still receive generic dictionary/model suggestions.
         // Incognito only disables personalization and all persistent learning.
         !suggestOn || !hasEditorText() -> "tools"
@@ -561,6 +577,24 @@ class CrazeKeyboardService : InputMethodService() {
         }
         startActivity(Intent(ctx, ClipboardActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
+    private fun pasteClipboardSuggestion() {
+        val value = pendingClipboardSuggestion ?: return
+        if (incognito || value.isBlank()) return
+        val connection = currentInputConnection ?: targetInputConnection ?: return
+        val inserted = try { connection.commitText(value, 1) } catch (_: Exception) { false }
+        if (inserted) {
+            pendingClipboardSuggestion = null
+            buildTop()
+            syncContextAsync()
+        }
+    }
+
+    private fun dismissClipboardSuggestion() {
+        pendingClipboardSuggestion = null
+        buildTop()
+        updateSuggestions()
+    }
+
     private fun runTool(id: String) {
         when (id) {
             "editor" -> showPanel("editor")
@@ -629,6 +663,37 @@ class CrazeKeyboardService : InputMethodService() {
                         }
                     }, lp(dp(38), MATCH))
                 }
+            }
+            "clipboardSuggestion" -> {
+                val copiedText = pendingClipboardSuggestion.orEmpty()
+                    .replace(Regex("\\s+"), " ")
+                    .trim()
+                val preview = TextView(ctx).apply {
+                    text = "Paste  ·  $copiedText"
+                    textSize = 12f
+                    typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                    setTextColor(t.text)
+                    gravity = Gravity.CENTER_VERTICAL
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
+                    setPadding(dp(11), 0, dp(8), 0)
+                    background = rounded(t.special, 12)
+                    contentDescription = "Paste latest copied text: $copiedText"
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener { pasteClipboardSuggestion() }
+                }
+                row.addView(preview, lp(0, dp(34), 1f))
+                row.addView(TextView(ctx).apply {
+                    text = "×"
+                    textSize = 21f
+                    gravity = Gravity.CENTER
+                    setTextColor(darken(t.text, 0.35f))
+                    contentDescription = "Dismiss copied text suggestion"
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener { dismissClipboardSuggestion() }
+                }, lp(dp(34), MATCH))
             }
             "menu" -> {
                 row.addView(TextView(ctx).apply {
