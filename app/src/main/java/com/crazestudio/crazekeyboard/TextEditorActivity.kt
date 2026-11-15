@@ -175,8 +175,9 @@ class TextEditorActivity : Activity() {
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             styleChip(this, false, primary)
             setPadding(dp(if (small) 10 else 13), dp(if (small) 5 else 10), dp(if (small) 10 else 13), dp(if (small) 5 else 10))
-            minHeight = dp(if (small) 36 else 42)
-            minWidth = dp(if (small) 36 else 42)
+            minHeight = dp(if (small) 38 else 44)
+            minWidth = dp(if (small) 38 else 44)
+            elevation = if (primary) dp(1).toFloat() else 0f
             isClickable = true
             isFocusable = true
             contentDescription = description ?: text
@@ -212,7 +213,7 @@ class TextEditorActivity : Activity() {
         }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(4), dp(14), dp(8))
+            setPadding(dp(16), dp(8), dp(16), dp(10))
         }
         shell.addView(root, LinearLayout.LayoutParams(-1, -1))
 
@@ -227,8 +228,15 @@ class TextEditorActivity : Activity() {
             isClickable = true
             setOnClickListener { handleBack() }
         }, LinearLayout.LayoutParams(dp(48), dp(54)))
-        header.addView(label("Text Editor", 20f, ink, true),
-            LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(8) })
+        header.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(label("Text Editor", 19f, ink, true))
+            addView(label("WRITE  ·  REFINE  ·  INSERT", 9f, muted, true).apply {
+                letterSpacing = 0.12f
+                setPadding(0, dp(2), 0, 0)
+            })
+        }, LinearLayout.LayoutParams(0, -1, 1f).apply { leftMargin = dp(8) })
         header.addView(chip("Insert", primary = true, small = true, description = "Insert text into the current field") { applyAndClose() },
             LinearLayout.LayoutParams(-2, dp(38)).apply { rightMargin = dp(4) })
         header.addView(TextView(this).apply {
@@ -256,12 +264,14 @@ class TextEditorActivity : Activity() {
                 InputType.TYPE_TEXT_FLAG_MULTI_LINE or
                 InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             imeOptions = EditorInfo.IME_ACTION_NONE
-            setPadding(dp(22), dp(22), dp(18), dp(18))
-            background = null
+            setPadding(dp(20), dp(20), dp(18), dp(18))
+            background = shape(barBg, 20, stroke)
             minLines = 4
             setText(startText)
         }
-        root.addView(editor, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(editor, LinearLayout.LayoutParams(-1, 0, 1f).apply {
+            topMargin = dp(8)
+        })
         current = editor.text.toString()
         editor.onSelection = { updateCounter() }
         editor.addTextChangedListener(watcher { onEditorChanged() })
@@ -280,12 +290,20 @@ class TextEditorActivity : Activity() {
         items.add(chip("Share", small = true) { shareText() })
         items.add(chip("Clear", small = true) { clearText() })
         items.add(chip("⌨", small = true, description = "Show or hide keyboard") { toggleKeyboard() })
-        root.addView(toolStrip(items), LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(8) })
+        root.addView(label("QUICK ACTIONS", 9f, muted, true).apply {
+            letterSpacing = 0.12f
+            setPadding(dp(3), dp(10), 0, dp(2))
+        }, LinearLayout.LayoutParams(-1, dp(20)))
+        root.addView(toolStrip(items), LinearLayout.LayoutParams(-1, dp(44)))
 
-        counter = label("0 words  ·  0 characters", 11f, muted).apply {
-            setPadding(dp(10), dp(7), dp(10), dp(2))
+        counter = label("0 words  ·  0 characters", 11f, muted, true).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            background = shape(barBg, 12, stroke)
+            setPadding(dp(12), dp(9), dp(12), dp(9))
         }
-        root.addView(counter, LinearLayout.LayoutParams(-1, -2))
+        root.addView(counter, LinearLayout.LayoutParams(-1, dp(36)).apply {
+            topMargin = dp(5)
+        })
 
         setContentView(shell)
         updateCounter()
