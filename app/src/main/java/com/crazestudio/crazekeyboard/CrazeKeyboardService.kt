@@ -224,13 +224,25 @@ class CrazeKeyboardService : InputMethodService() {
         val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         clipListener = ClipboardManager.OnPrimaryClipChangedListener {
             try {
-                if (incognito || !Prefs.b(ctx, "clipboardHistory", true)) return@OnPrimaryClipChangedListener
+                if (incognito || !Prefs.b(ctx, "clipboardHistory", true)) {
+                    pendingClipboardSuggestion = null
+                    hd.post { if (::top.isInitialized) buildTop() }
+                    return@OnPrimaryClipChangedListener
+                }
                 val clip = cm.primaryClip ?: return@OnPrimaryClipChangedListener
                 // Android 13+ marks copied passwords / OTPs as sensitive: never store or preview them.
                 if (Build.VERSION.SDK_INT >= 33 &&
-                    clip.description?.extras?.getBoolean("android.content.extra.IS_SENSITIVE", false) == true) return@OnPrimaryClipChangedListener
+                    clip.description?.extras?.getBoolean("android.content.extra.IS_SENSITIVE", false) == true) {
+                    pendingClipboardSuggestion = null
+                    hd.post { if (::top.isInitialized) buildTop() }
+                    return@OnPrimaryClipChangedListener
+                }
                 val copiedText = if (clip.itemCount > 0) clip.getItemAt(0)?.text?.toString().orEmpty() else ""
-                if (copiedText.isBlank()) return@OnPrimaryClipChangedListener
+                if (copiedText.isBlank()) {
+                    pendingClipboardSuggestion = null
+                    hd.post { if (::top.isInitialized) buildTop() }
+                    return@OnPrimaryClipChangedListener
+                }
 
                 // Keep clipboard history as before, but expose only the newest item in the strip.
                 Prefs.addClip(ctx, copiedText)
@@ -452,6 +464,10 @@ class CrazeKeyboardService : InputMethodService() {
             (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0
         // Private fields: don't learn words from them and don't record the clipboard while they are focused.
         incognito = isPasswordField(cls, v) || (info.imeOptions and noPersonalizedLearning) != 0
+        // Do not carry a previous clipboard preview into a password, private, or suggestion-disabled field.
+        if (incognito || !suggestOn || !Prefs.b(this, "clipboardHistory", true)) {
+            pendingClipboardSuggestion = null
+        }
         shift = 0
         autoShift = false
         editorSelecting = false
@@ -678,7 +694,7 @@ class CrazeKeyboardService : InputMethodService() {
                     ellipsize = TextUtils.TruncateAt.END
                     setPadding(dp(11), 0, dp(8), 0)
                     background = rounded(t.special, 12)
-                    contentDescription = "Paste latest copied text: $copiedText"
+                    contentDescription = "Paste latest copied text"
                     isClickable = true
                     isFocusable = true
                     setOnClickListener { pasteClipboardSuggestion() }
