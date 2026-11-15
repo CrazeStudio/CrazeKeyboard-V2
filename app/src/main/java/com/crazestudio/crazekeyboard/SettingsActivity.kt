@@ -881,16 +881,28 @@ class SettingsActivity : Activity() {
         })
 
         val settingsSearch = EditText(this).apply {
-            hint = "Search settings"; setSingleLine(true); textSize = 14f
-            setTextColor(ink); setHintTextColor(muted)
-            setPadding(dp(15), dp(11), dp(15), dp(11))
-            background = shape(fieldBg, 14)
+            hint = "Search settings, tools or privacy"
+            setSingleLine(true)
+            textSize = 14f
+            setTextColor(ink)
+            setHintTextColor(muted)
+            setPadding(dp(16), dp(13), dp(16), dp(13))
+            minHeight = dp(50)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(15).toFloat()
+                setColor(fieldBg)
+                setStroke(dp(1), dividerColor)
+            }
             inputType = InputType.TYPE_CLASS_TEXT
-            tag = "settings_search"; contentDescription = "Search all settings"
+            imeOptions = EditorInfo.IME_ACTION_SEARCH
+            tag = "settings_search"
+            contentDescription = "Search all settings"
         }
         content.addView(settingsSearch, 1, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
         val categoryScroller = HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false; overScrollMode = View.OVER_SCROLL_NEVER
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            clipToPadding = false
             tag = "settings_category_nav"
         }
         val categoryStrip = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -899,17 +911,43 @@ class SettingsActivity : Activity() {
             "Toolbar & shortcuts", "Privacy & data", "Appearance",
             "Keyboard size & layout", "Keyboard behaviour"
         )
-        categoryLabels.forEach { label ->
-            val chip = TextView(this).apply {
-                text = label; textSize = 11f; typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                setTextColor(ink); gravity = Gravity.CENTER; setPadding(dp(12), dp(9), dp(12), dp(9))
-                background = shape(actionBg, 18); isClickable = true; isFocusable = true
-                setOnClickListener { settingsCategoryViews[label]?.let { target -> scroll.smoothScrollTo(0, target.top) } }
+        val categoryChips = LinkedHashMap<String, TextView>()
+        fun selectCategoryChip(selected: String) {
+            categoryChips.forEach { (label, chip) ->
+                val active = label == selected
+                chip.background = shape(if (active) accent else actionBg, 18)
+                chip.setTextColor(if (active) Color.WHITE else ink)
+                chip.isSelected = active
             }
-            categoryStrip.addView(chip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = dp(6) })
+        }
+        categoryLabels.forEachIndexed { index, label ->
+            val chip = TextView(this).apply {
+                text = label
+                textSize = 11f
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                setTextColor(ink)
+                gravity = Gravity.CENTER
+                minHeight = dp(38)
+                setPadding(dp(13), dp(9), dp(13), dp(9))
+                background = shape(actionBg, 18)
+                isClickable = true
+                isFocusable = true
+                contentDescription = "Jump to $label"
+                setOnClickListener {
+                    selectCategoryChip(label)
+                    settingsCategoryViews[label]?.let { target ->
+                        scroll.smoothScrollTo(0, target.top)
+                    }
+                }
+            }
+            categoryChips[label] = chip
+            categoryStrip.addView(chip, LinearLayout.LayoutParams(-2, -2).apply {
+                rightMargin = dp(6)
+            })
+            if (index == 0) selectCategoryChip(label)
         }
         categoryScroller.addView(categoryStrip)
-        content.addView(categoryScroller, 2, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) })
+        content.addView(categoryScroller, 2, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(13) })
         settingsSearch.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
@@ -919,17 +957,29 @@ class SettingsActivity : Activity() {
                     when (child.tag as? String) {
                         "settings_search", "settings_category_nav" -> child.visibility = View.VISIBLE
                         "settings_section" -> {
-                            val terms = child.contentDescription?.toString().orEmpty().lowercase()
-                            child.visibility = if (query.isEmpty() || terms.contains(query)) View.VISIBLE else View.GONE
+                            var match = query.isEmpty() ||
+                                child.contentDescription?.toString().orEmpty().lowercase().contains(query)
+                            for (j in 0 until (child as LinearLayout).childCount) {
+                                val item = child.getChildAt(j)
+                                val itemTerms = item.contentDescription?.toString().orEmpty().lowercase()
+                                if (query.isNotEmpty() && itemTerms.contains(query)) match = true
+                            }
+                            child.visibility = if (match) View.VISIBLE else View.GONE
                         }
                         "settings_category" -> {
                             val label = child.contentDescription?.toString().orEmpty().lowercase()
                             var match = query.isEmpty() || label.contains(query)
                             var j = i + 1
-                            while (!match && j < content.childCount && content.getChildAt(j).tag != "settings_category") {
+                            while (j < content.childCount && content.getChildAt(j).tag != "settings_category") {
                                 val candidate = content.getChildAt(j)
                                 if (candidate.tag == "settings_section") {
-                                    match = candidate.contentDescription?.toString().orEmpty().lowercase().contains(query)
+                                    var terms = candidate.contentDescription?.toString().orEmpty().lowercase()
+                                    if (candidate is LinearLayout) {
+                                        for (k in 0 until candidate.childCount) {
+                                            terms += " " + candidate.getChildAt(k).contentDescription?.toString().orEmpty().lowercase()
+                                        }
+                                    }
+                                    if (query.isEmpty() || terms.contains(query)) match = true
                                 }
                                 j++
                             }
