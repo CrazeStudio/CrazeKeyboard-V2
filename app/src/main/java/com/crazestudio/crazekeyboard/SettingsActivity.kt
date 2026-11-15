@@ -799,7 +799,7 @@ class SettingsActivity : Activity() {
         resizeActions.addView(action("Reset", false) {
             widthSeek.progress = 45
             oneHandWidthSeek.progress = 18
-            heightSeek.progress = 12
+            heightSeek.progress = 4
             Prefs.setI(this@SettingsActivity, "onehand", 0)
             Prefs.setB(this@SettingsActivity, "float", false)
             Prefs.setI(this@SettingsActivity, "fx", 0)
@@ -820,7 +820,7 @@ class SettingsActivity : Activity() {
             setPadding(0, dp(6), 0, dp(8))
         })
         val heightPresets = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        listOf("Compact" to 40, "Standard" to 46, "Tall" to 54).forEachIndexed { index, preset ->
+        listOf("Compact" to 38, "Standard" to 46, "Tall" to 54).forEachIndexed { index, preset ->
             heightPresets.addView(action(preset.first) {
                 heightSeek.progress = preset.second - 34
                 updateKeyboardPreview()
