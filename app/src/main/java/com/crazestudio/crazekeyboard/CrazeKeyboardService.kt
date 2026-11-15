@@ -116,6 +116,8 @@ class CrazeKeyboardService : InputMethodService() {
     private var emojiSearchQuery = ""
     private var emojiSearchActive = false
     private var clipListener: ClipboardManager.OnPrimaryClipChangedListener? = null
+    // One-shot clipboard preview shown in the suggestion strip; cleared after paste or dismissal.
+    private var pendingClipboardSuggestion: String? = null
     private val noPersonalizedLearning = 0x1000000   // EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING (API 26) without the API-level gate
 
     private data class EmojiGroup(val key: String, val name: String, val terms: String, val emojis: List<String>)
@@ -222,13 +224,36 @@ class CrazeKeyboardService : InputMethodService() {
         val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         clipListener = ClipboardManager.OnPrimaryClipChangedListener {
             try {
-                if (incognito || !Prefs.b(ctx, "clipboardHistory", true)) return@OnPrimaryClipChangedListener
+                if (incognito || !Prefs.b(ctx, "clipboardHistory", true)) {
+                    pendingClipboardSuggestion = null
+                    hd.post { if (::top.isInitialized) buildTop() }
+                    return@OnPrimaryClipChangedListener
+                }
                 val clip = cm.primaryClip ?: return@OnPrimaryClipChangedListener
-                // Android 13+ marks copied passwords / OTPs as sensitive: never store those.
+                // Android 13+ marks copied passwords / OTPs as sensitive: never store or preview them.
                 if (Build.VERSION.SDK_INT >= 33 &&
-                    clip.description?.extras?.getBoolean("android.content.extra.IS_SENSITIVE", false) == true) return@OnPrimaryClipChangedListener
-                if (clip.itemCount > 0) clip.getItemAt(0)?.text?.toString()?.let { Prefs.addClip(ctx, it) }
-            } catch (e: Exception) { }
+                    clip.description?.extras?.getBoolean("android.content.extra.IS_SENSITIVE", false) == true) {
+                    pendingClipboardSuggestion = null
+                    hd.post { if (::top.isInitialized) buildTop() }
+                    return@OnPrimaryClipChangedListener
+                }
+                val copiedText = if (clip.itemCount > 0) clip.getItemAt(0)?.text?.toString().orEmpty() else ""
+                if (copiedText.isBlank()) {
+                    pendingClipboardSuggestion = null
+                    hd.post { if (::top.isInitialized) buildTop() }
+                    return@OnPrimaryClipChangedListener
+                }
+
+                // Keep clipboard history as before, but expose only the newest item in the strip.
+                Prefs.addClip(ctx, copiedText)
+                pendingClipboardSuggestion = copiedText.take(4_000)
+                hd.post {
+                    if (::top.isInitialized && !incognito && suggestOn &&
+                        Prefs.b(ctx, "clipboardHistory", true)) {
+                        buildTop()
+                    }
+                }
+            } catch (_: Exception) { }
         }
         cm.addPrimaryClipChangedListener(clipListener)
     }
@@ -439,6 +464,10 @@ class CrazeKeyboardService : InputMethodService() {
             (info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0
         // Private fields: don't learn words from them and don't record the clipboard while they are focused.
         incognito = isPasswordField(cls, v) || (info.imeOptions and noPersonalizedLearning) != 0
+        // Do not carry a previous clipboard preview into a password, private, or suggestion-disabled field.
+        if (incognito || !suggestOn || !Prefs.b(this, "clipboardHistory", true)) {
+            pendingClipboardSuggestion = null
+        }
         shift = 0
         autoShift = false
         editorSelecting = false
@@ -514,6 +543,9 @@ class CrazeKeyboardService : InputMethodService() {
     private fun desiredTopState(): String = when {
         emojiSearchActive -> "emojiSearch"
         mode == "menu" -> "menu"
+        // A single recent clipboard item takes one suggestion slot until pasted or dismissed.
+        !incognito && suggestOn && Prefs.b(ctx, "clipboardHistory", true) &&
+            !pendingClipboardSuggestion.isNullOrBlank() -> "clipboardSuggestion"
         // Private fields still receive generic dictionary/model suggestions.
         // Incognito only disables personalization and all persistent learning.
         !suggestOn || !hasEditorText() -> "tools"
@@ -561,6 +593,24 @@ class CrazeKeyboardService : InputMethodService() {
         }
         startActivity(Intent(ctx, ClipboardActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
+    private fun pasteClipboardSuggestion() {
+        val value = pendingClipboardSuggestion ?: return
+        if (incognito || value.isBlank()) return
+        val connection = currentInputConnection ?: targetInputConnection ?: return
+        val inserted = try { connection.commitText(value, 1) } catch (_: Exception) { false }
+        if (inserted) {
+            pendingClipboardSuggestion = null
+            buildTop()
+            syncContextAsync()
+        }
+    }
+
+    private fun dismissClipboardSuggestion() {
+        pendingClipboardSuggestion = null
+        buildTop()
+        updateSuggestions()
+    }
+
     private fun runTool(id: String) {
         when (id) {
             "editor" -> showPanel("editor")
@@ -629,6 +679,37 @@ class CrazeKeyboardService : InputMethodService() {
                         }
                     }, lp(dp(38), MATCH))
                 }
+            }
+            "clipboardSuggestion" -> {
+                val copiedText = pendingClipboardSuggestion.orEmpty()
+                    .replace(Regex("\\s+"), " ")
+                    .trim()
+                val preview = TextView(ctx).apply {
+                    text = "Paste  ·  $copiedText"
+                    textSize = 12f
+                    typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                    setTextColor(t.text)
+                    gravity = Gravity.CENTER_VERTICAL
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
+                    setPadding(dp(11), 0, dp(8), 0)
+                    background = rounded(t.special, 12)
+                    contentDescription = "Paste latest copied text"
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener { pasteClipboardSuggestion() }
+                }
+                row.addView(preview, lp(0, dp(34), 1f))
+                row.addView(TextView(ctx).apply {
+                    text = "×"
+                    textSize = 21f
+                    gravity = Gravity.CENTER
+                    setTextColor(darken(t.text, 0.35f))
+                    contentDescription = "Dismiss copied text suggestion"
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener { dismissClipboardSuggestion() }
+                }, lp(dp(34), MATCH))
             }
             "menu" -> {
                 row.addView(TextView(ctx).apply {
@@ -1952,16 +2033,6 @@ class CrazeKeyboardService : InputMethodService() {
             attach(key, onLong = { setSelectionMode(true) }) { moveCursor(keyCode) }
             row.addView(key.cell)
         }
-        val cursor = hrow()
-        addCursorKey(cursor, "←", KeyEvent.KEYCODE_DPAD_LEFT, "Move cursor left; long press to extend selection")
-        addCursorKey(cursor, "↑", KeyEvent.KEYCODE_DPAD_UP, "Move cursor up; long press to extend selection")
-        addCursorKey(cursor, "↓", KeyEvent.KEYCODE_DPAD_DOWN, "Move cursor down; long press to extend selection")
-        addCursorKey(cursor, "→", KeyEvent.KEYCODE_DPAD_RIGHT, "Move cursor right; long press to extend selection")
-        addCursorKey(cursor, "Home", KeyEvent.KEYCODE_MOVE_HOME, "Move to line start")
-        addCursorKey(cursor, "End", KeyEvent.KEYCODE_MOVE_END, "Move to line end")
-        col.addView(cursor, lp(MATCH, dp(36)))
-
-        val actions = hrow()
         fun iconAction(row: LinearLayout, icon: Int, label: String, action: () -> Unit): K {
             val key = mk("", 1f, t.special, t.text, 12f, icon)
             key.cell.contentDescription = label
@@ -1969,10 +2040,71 @@ class CrazeKeyboardService : InputMethodService() {
             row.addView(key.cell)
             return key
         }
-        selectionKey = iconAction(actions, R.drawable.ic_editor_select, "Toggle selection mode") {
-            setSelectionMode(!editorSelecting)
+
+        // Gboard-style 3×3 cursor pad: open corners, directional keys and a central Select pill.
+        fun dpadRow(): LinearLayout = hrow().apply {
+            setPadding(dp(2), 0, dp(2), 0)
         }
-        iconAction(actions, R.drawable.ic_editor_select_all, "Select all") { selectAllText() }
+        fun dpadKey(row: LinearLayout, label: String, keyCode: Int, description: String) {
+            val key = mk(label, 1f, t.special, t.text, 16f)
+            key.cell.contentDescription = description
+            attach(key, onLong = { setSelectionMode(true) }) { moveCursor(keyCode) }
+            row.addView(key.cell, lp(0, dp(34), 1f).apply {
+                leftMargin = dp(3)
+                rightMargin = dp(3)
+            })
+        }
+        fun dpadSpacer(row: LinearLayout) {
+            row.addView(View(ctx).apply {
+                background = rounded(t.special, 12)
+                alpha = 0.28f
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }, lp(0, dp(34), 1f).apply {
+                leftMargin = dp(3)
+                rightMargin = dp(3)
+            })
+        }
+
+        val dpad = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(2), 0, dp(2))
+        }
+        val topRow = dpadRow()
+        dpadSpacer(topRow)
+        dpadKey(topRow, "↑", KeyEvent.KEYCODE_DPAD_UP, "Move cursor up; long press to extend selection")
+        dpadSpacer(topRow)
+        dpad.addView(topRow, lp(MATCH, dp(34)))
+
+        val middleRow = dpadRow()
+        dpadKey(middleRow, "←", KeyEvent.KEYCODE_DPAD_LEFT, "Move cursor left; long press to extend selection")
+        selectionKey = mk("Select", 1f, if (editorSelecting) t.accent else t.special,
+            if (editorSelecting) t.accentText else t.text, 12f)
+        selectionKey?.cell?.contentDescription = "Toggle selection mode"
+        selectionKey?.let { key ->
+            key.tv.background = keyBg(if (editorSelecting) t.accent else t.special, 999)
+            attach(key) { setSelectionMode(!editorSelecting) }
+            middleRow.addView(key.cell, lp(0, dp(34), 1f).apply {
+                leftMargin = dp(3)
+                rightMargin = dp(3)
+            })
+        }
+        dpadKey(middleRow, "→", KeyEvent.KEYCODE_DPAD_RIGHT, "Move cursor right; long press to extend selection")
+        dpad.addView(middleRow, lp(MATCH, dp(34)).apply { topMargin = dp(4) })
+
+        val bottomRow = dpadRow()
+        val selectAllKey = mk("Select all", 1f, t.special, t.text, 10f)
+        selectAllKey.cell.contentDescription = "Select all text"
+        attach(selectAllKey) { selectAllText() }
+        bottomRow.addView(selectAllKey.cell, lp(0, dp(34), 1f).apply {
+            leftMargin = dp(3)
+            rightMargin = dp(3)
+        })
+        dpadKey(bottomRow, "↓", KeyEvent.KEYCODE_DPAD_DOWN, "Move cursor down; long press to extend selection")
+        dpadKey(bottomRow, "End", KeyEvent.KEYCODE_MOVE_END, "Move cursor to line end")
+        dpad.addView(bottomRow, lp(MATCH, dp(34)).apply { topMargin = dp(4) })
+        col.addView(dpad, lp(MATCH, dp(112)).apply { topMargin = dp(3) })
+
+        val actions = hrow()
         iconAction(actions, R.drawable.ic_editor_cut, "Cut selected text") { copyOrCut(true) }
         iconAction(actions, R.drawable.ic_editor_copy, "Copy selected text") { copyOrCut(false) }
         iconAction(actions, R.drawable.ic_editor_paste, "Paste text") { pasteText() }
@@ -1987,7 +2119,7 @@ class CrazeKeyboardService : InputMethodService() {
                 syncContextAsync()
             } catch (_: Exception) { }
         }
-        col.addView(actions, lp(MATCH, dp(38)))
+        col.addView(actions, lp(MATCH, dp(36)).apply { topMargin = dp(4) })
 
         val footer = hrow()
         val polish = mk("Quick polish", 1.4f, t.accent, t.accentText, 10f)
@@ -1998,7 +2130,7 @@ class CrazeKeyboardService : InputMethodService() {
         fullEditor.cell.contentDescription = "Open the full-screen text editor"
         attach(fullEditor) { editorSelecting = false; launchTextEditor() }
         footer.addView(fullEditor.cell)
-        col.addView(footer, lp(MATCH, dp(32)))
+        col.addView(footer, lp(MATCH, dp(32)).apply { topMargin = dp(3) })
         col.addView(status, lp(MATCH, dp(16)))
         return col
     }
@@ -2226,7 +2358,7 @@ class CrazeKeyboardService : InputMethodService() {
         panel.removeAllViews()
         val targetPanelHeight = when (m) {
             "emoji" -> panelH() + emojiExtraHeight()
-            "editor" -> dp(158)
+            "editor" -> dp(250)
             else -> panelH()
         }
         panel.layoutParams = panel.layoutParams.apply { height = targetPanelHeight }
