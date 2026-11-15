@@ -1354,8 +1354,9 @@ class CrazeKeyboardService : InputMethodService() {
         val box = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            background = keyBg(t.key, 16)
-            setPadding(dp(4), dp(5), dp(4), dp(5))
+            background = keyBg(t.key, 18)
+            setPadding(dp(4), dp(6), dp(4), dp(6))
+            minimumHeight = dp(74)
             isClickable = true
             isFocusable = true
             contentDescription = label
@@ -1377,16 +1378,16 @@ class CrazeKeyboardService : InputMethodService() {
                 setColorFilter(t.text)
                 contentDescription = label
                 scaleType = ImageView.ScaleType.CENTER_INSIDE
-                setPadding(dp(7), dp(7), dp(7), dp(7))
-            }, FrameLayout.LayoutParams(dp(40), dp(40), Gravity.CENTER))
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+            }, FrameLayout.LayoutParams(dp(42), dp(42), Gravity.CENTER))
         }, lp(dp(48), dp(48)))
         box.addView(TextView(ctx).apply {
             text = label
-            textSize = 11f
+            textSize = 10.5f
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setTextColor(t.text)
             gravity = Gravity.CENTER
-            setPadding(0, dp(5), 0, 0)
+            setPadding(dp(1), dp(6), dp(1), 0)
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
         })
@@ -1399,20 +1400,38 @@ class CrazeKeyboardService : InputMethodService() {
     private fun buildMenu(): View {
         val col = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(5), dp(4), dp(5), dp(2))
+            setPadding(dp(7), dp(4), dp(7), dp(2))
             clipToPadding = false
         }
 
-        // Full editor and Settings are permanent anchors; every other tile follows the
-        // user's toolbar selection and ordering.
+        // Full editor and Settings stay available even when the user customises the toolbar.
         val userTools = Prefs.toolbarTools(ctx)
             .filter { it != "settings" && it != "fulleditor" }
             .take(10)
         val available = (userTools + listOf("fulleditor", "settings")).distinct()
         val categories = listOf("All", "Typing", "Editing", "Layout")
+
+        val heading = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), 0, 0, 0)
+        }
+        heading.addView(TextView(ctx).apply {
+            text = "Tools"
+            textSize = 15f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setTextColor(t.text)
+        })
+        heading.addView(TextView(ctx).apply {
+            text = "Quick access to your keyboard features"
+            textSize = 9f
+            setTextColor(darken(t.text, 0.58f))
+        })
+        col.addView(heading, lp(MATCH, dp(34)))
+
         val tabs = LinearLayout(ctx).apply {
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(1), 0, dp(1), 0)
+            setPadding(dp(1), dp(2), dp(1), dp(2))
         }
         val tabViews = LinkedHashMap<String, TextView>()
         val grid = LinearLayout(ctx).apply {
@@ -1431,11 +1450,11 @@ class CrazeKeyboardService : InputMethodService() {
         fun updateTabs() {
             tabViews.forEach { (name, view) ->
                 val active = name == menuCategory
-                view.background = rounded(if (active) t.accent else t.special, 11)
+                view.background = rounded(if (active) t.accent else t.special, 12)
                 view.setTextColor(if (active) t.accentText else t.text)
-                view.alpha = if (active) 1f else 0.78f
+                view.alpha = if (active) 1f else 0.76f
                 view.isSelected = active
-                view.elevation = if (active) dp(1).toFloat() else 0f
+                view.elevation = if (active) dp(2).toFloat() else 0f
             }
         }
 
@@ -1444,7 +1463,7 @@ class CrazeKeyboardService : InputMethodService() {
             val grouped = toolsForCategory()
             if (grouped.isEmpty()) {
                 grid.addView(TextView(ctx).apply {
-                    text = "No tools in this section. Enable tools in CrazeKeyboard settings."
+                    text = "No tools here yet. Enable more tools in Settings."
                     textSize = 11f
                     gravity = Gravity.CENTER
                     setTextColor(darken(t.text, 0.35f))
@@ -1454,7 +1473,6 @@ class CrazeKeyboardService : InputMethodService() {
             }
 
             val rows = grouped.chunked(4)
-            // Three stable rows keep tile hit targets consistent across categories.
             repeat(maxOf(3, rows.size)) { rowIndex ->
                 val ids = rows.getOrNull(rowIndex).orEmpty()
                 val row = LinearLayout(ctx).apply {
@@ -1471,10 +1489,10 @@ class CrazeKeyboardService : InputMethodService() {
             }
         }
 
-        categories.forEach { label ->
+        categories.forEach { category ->
             val tab = TextView(ctx).apply {
-                text = label
-                textSize = 11f
+                text = category
+                textSize = 10.5f
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 gravity = Gravity.CENTER
                 setTextColor(t.text)
@@ -1482,16 +1500,16 @@ class CrazeKeyboardService : InputMethodService() {
                 setPadding(dp(5), 0, dp(5), 0)
                 isClickable = true
                 isFocusable = true
-                contentDescription = "$label tools"
+                contentDescription = "$category tools"
                 setOnClickListener {
-                    menuCategory = label
+                    menuCategory = category
                     updateTabs()
                     renderTools()
                 }
             }
-            tabViews[label] = tab
+            tabViews[category] = tab
             tabs.addView(tab, lp(0, dp(34), 1f).apply {
-                if (label != categories.first()) leftMargin = dp(5)
+                if (category != categories.first()) leftMargin = dp(5)
             })
         }
 
