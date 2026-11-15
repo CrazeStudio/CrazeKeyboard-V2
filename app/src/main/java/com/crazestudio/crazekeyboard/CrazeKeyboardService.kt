@@ -108,7 +108,7 @@ class CrazeKeyboardService : InputMethodService() {
     private var prevTv: TextView? = null
     private var lastSig = ""
     private var builtOrientation = -1
-    private var kh = 46
+    private var kh = 38
     private var cellH = 0
     private var hapticsOn = true
     private var keySoundOn = false
@@ -1397,56 +1397,108 @@ class CrazeKeyboardService : InputMethodService() {
     }
 
     private fun buildMenu(): View {
-        val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(4), dp(4), dp(2)) }
-        // "Full editor" and "Settings" are always present; the user's own tools fill the remaining slots.
-        val userTools = Prefs.toolbarTools(ctx).filter { it != "settings" && it != "fulleditor" }.take(10)
-        val available = (userTools + "fulleditor" + "settings").distinct()
+        val col = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(5), dp(4), dp(5), dp(2))
+            clipToPadding = false
+        }
+
+        // Full editor and Settings are permanent anchors; every other tile follows the
+        // user's toolbar selection and ordering.
+        val userTools = Prefs.toolbarTools(ctx)
+            .filter { it != "settings" && it != "fulleditor" }
+            .take(10)
+        val available = (userTools + listOf("fulleditor", "settings")).distinct()
         val categories = listOf("All", "Typing", "Editing", "Layout")
-        val tabs = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
+        val tabs = LinearLayout(ctx).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(1), 0, dp(1), 0)
+        }
         val tabViews = LinkedHashMap<String, TextView>()
-        val grid = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        val grid = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            clipChildren = false
+            clipToPadding = false
+        }
+
+        fun toolsForCategory(): List<String> = when (menuCategory) {
+            "Typing" -> listOf("keyboard", "emoji", "voice", "theme")
+            "Editing" -> listOf("editor", "fulleditor", "clipboard", "settings")
+            "Layout" -> listOf("onehand", "floating", "resize", "hide", "settings")
+            else -> available
+        }.filter { it in available }.distinct()
+
         fun updateTabs() {
             tabViews.forEach { (name, view) ->
                 val active = name == menuCategory
-                view.background = rounded(if (active) t.special else t.bg, 10)
-                view.alpha = if (active) 1f else 0.62f
+                view.background = rounded(if (active) t.accent else t.special, 11)
+                view.setTextColor(if (active) t.accentText else t.text)
+                view.alpha = if (active) 1f else 0.78f
                 view.isSelected = active
+                view.elevation = if (active) dp(1).toFloat() else 0f
             }
         }
+
         fun renderTools() {
             grid.removeAllViews()
-            val grouped = when (menuCategory) {
-                "Typing" -> listOf("keyboard", "emoji", "voice", "theme")
-                "Editing" -> listOf("editor", "fulleditor", "clipboard", "settings")
-                "Layout" -> listOf("onehand", "floating", "resize", "hide", "settings")
-                else -> available
-            }.filter { it in available }.distinct()
+            val grouped = toolsForCategory()
+            if (grouped.isEmpty()) {
+                grid.addView(TextView(ctx).apply {
+                    text = "No tools in this section. Enable tools in CrazeKeyboard settings."
+                    textSize = 11f
+                    gravity = Gravity.CENTER
+                    setTextColor(darken(t.text, 0.35f))
+                    setPadding(dp(12), dp(8), dp(12), dp(8))
+                }, lp(MATCH, MATCH))
+                return
+            }
+
             val rows = grouped.chunked(4)
-            val rowCount = maxOf(3, rows.size)
-            repeat(rowCount) { rowIndex ->
+            // Three stable rows keep tile hit targets consistent across categories.
+            repeat(maxOf(3, rows.size)) { rowIndex ->
                 val ids = rows.getOrNull(rowIndex).orEmpty()
-                val row = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
-                ids.forEach { id -> row.addView(tile(toolIcon(id), toolLabel(id)) { runTool(id) }) }
-                repeat(4 - ids.size) { row.addView(View(ctx), lp(0, 1, 1f)) }
+                val row = LinearLayout(ctx).apply {
+                    gravity = Gravity.CENTER_VERTICAL
+                    clipChildren = false
+                }
+                ids.forEach { id ->
+                    row.addView(tile(toolIcon(id), toolLabel(id)) { runTool(id) })
+                }
+                repeat(4 - ids.size) {
+                    row.addView(View(ctx), lp(0, 1, 1f))
+                }
                 grid.addView(row, lp(MATCH, 0, 1f))
             }
         }
+
         categories.forEach { label ->
             val tab = TextView(ctx).apply {
-                text = label; textSize = 11f
+                text = label
+                textSize = 11f
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                gravity = Gravity.CENTER; setTextColor(t.text)
-                setPadding(dp(5), 0, dp(5), 0); minHeight = dp(32)
-                isClickable = true; isFocusable = true
+                gravity = Gravity.CENTER
+                setTextColor(t.text)
+                minHeight = dp(32)
+                setPadding(dp(5), 0, dp(5), 0)
+                isClickable = true
+                isFocusable = true
                 contentDescription = "$label tools"
-                setOnClickListener { menuCategory = label; updateTabs(); renderTools() }
+                setOnClickListener {
+                    menuCategory = label
+                    updateTabs()
+                    renderTools()
+                }
             }
             tabViews[label] = tab
-            tabs.addView(tab, lp(0, dp(34), 1f).apply { if (label != "All") leftMargin = dp(4) })
+            tabs.addView(tab, lp(0, dp(34), 1f).apply {
+                if (label != categories.first()) leftMargin = dp(5)
+            })
         }
+
         col.addView(tabs, lp(MATCH, dp(38)))
         col.addView(grid, lp(MATCH, 0, 1f))
-        updateTabs(); renderTools()
+        updateTabs()
+        renderTools()
         return col
     }
 
@@ -1986,16 +2038,16 @@ class CrazeKeyboardService : InputMethodService() {
         }
         col.addView(handle, LinearLayout.LayoutParams(MATCH, 0, 1f).apply { topMargin = dp(8); bottomMargin = dp(8) })
         val row = hrow()
-        val reset = mk("Standard", 1f, t.special, t.text, 12f); attach(reset) {
+        val reset = mk("Default", 1f, t.special, t.text, 12f); attach(reset) {
             hd.removeCallbacks(persistHeight)
-            heightValue = 46
-            Prefs.setI(ctx, "keyh", 46)
+            heightValue = 38
+            Prefs.setI(ctx, "keyh", 38)
             Prefs.setI(ctx, "kbdwidth", 100)
             Prefs.setI(ctx, "onehand", 0)
             Prefs.setB(ctx, "float", false)
-            kh = 46
+            kh = 38
             cellH = baseCellH()
-            value.text = "Keyboard height  ·  46 dp"
+            value.text = "Keyboard height  ·  38 dp"
             panel.layoutParams = panel.layoutParams.apply { height = panelH() }
             panel.getChildAt(0)?.let { child -> child.layoutParams = child.layoutParams.apply { height = panelH() } }
             panel.requestLayout()
