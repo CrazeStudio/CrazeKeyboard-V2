@@ -339,7 +339,6 @@ class TextEditorActivity : Activity() {
             isHorizontalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
             clipToPadding = false
-            fadingEdgeLength = dp(16)
             addView(row, LinearLayout.LayoutParams(-2, dp(40)))
         }
     }
