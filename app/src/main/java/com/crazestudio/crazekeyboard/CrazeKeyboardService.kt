@@ -2081,7 +2081,7 @@ class CrazeKeyboardService : InputMethodService() {
             if (editorSelecting) t.accentText else t.text, 12f)
         selectionKey?.cell?.contentDescription = "Toggle selection mode"
         selectionKey?.let { key ->
-            key.cell.background = rounded(if (editorSelecting) t.accent else t.special, 999)
+            key.tv.background = keyBg(if (editorSelecting) t.accent else t.special, 999)
             attach(key) { setSelectionMode(!editorSelecting) }
             middleRow.addView(key.cell, lp(0, dp(34), 1f).apply {
                 leftMargin = dp(3)
