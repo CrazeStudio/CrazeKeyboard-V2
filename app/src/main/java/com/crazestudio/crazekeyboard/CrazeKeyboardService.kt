@@ -2038,14 +2038,14 @@ class CrazeKeyboardService : InputMethodService() {
         }
         col.addView(handle, LinearLayout.LayoutParams(MATCH, 0, 1f).apply { topMargin = dp(8); bottomMargin = dp(8) })
         val row = hrow()
-        val reset = mk("Standard", 1f, t.special, t.text, 12f); attach(reset) {
+        val reset = mk("Default", 1f, t.special, t.text, 12f); attach(reset) {
             hd.removeCallbacks(persistHeight)
             heightValue = 38
             Prefs.setI(ctx, "keyh", 38)
             Prefs.setI(ctx, "kbdwidth", 100)
             Prefs.setI(ctx, "onehand", 0)
             Prefs.setB(ctx, "float", false)
-            kh = 46
+            kh = 38
             cellH = baseCellH()
             value.text = "Keyboard height  ·  38 dp"
             panel.layoutParams = panel.layoutParams.apply { height = panelH() }
