@@ -100,26 +100,26 @@ class SettingsActivity : Activity() {
     private fun action(label: String, primary: Boolean = false, click: () -> Unit) =
         TextView(this).apply {
             text = label
-            textSize = 14f
+            textSize = 13f
             gravity = Gravity.CENTER
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setTextColor(if (primary) Color.WHITE else ink)
-            background = shape(if (primary) accent else actionBg, 13)
+            background = shape(if (primary) accent else actionBg, 14)
             setPadding(dp(16), dp(12), dp(16), dp(12))
-            minHeight = dp(44)
+            minHeight = dp(46)
             isClickable = true
             isFocusable = true
-            ripple(this, 13)
+            elevation = if (primary) dp(1).toFloat() else 0f
+            ripple(this, 14)
             setOnClickListener { click() }
         }
 
     private fun category(label: String) = TextView(this).apply {
-        text = label.uppercase()
-        textSize = 10f
-        letterSpacing = 0.10f
+        text = label
+        textSize = 13f
         typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        setTextColor(muted)
-        setPadding(dp(4), dp(7), dp(4), dp(8))
+        setTextColor(ink)
+        setPadding(dp(3), dp(13), dp(3), dp(9))
         tag = "settings_category"
         contentDescription = label
         settingsCategoryViews[label] = this
@@ -128,13 +128,20 @@ class SettingsActivity : Activity() {
     private fun section(title: String, hint: String? = null): LinearLayout =
         LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = shape(card, 20)
-            setPadding(dp(16), dp(15), dp(16), dp(15))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(20).toFloat()
+                setColor(card)
+                setStroke(dp(1), dividerColor)
+            }
+            elevation = dp(1).toFloat()
+            setPadding(dp(17), dp(16), dp(17), dp(16))
             tag = "settings_section"
             contentDescription = "settings_section:" + title + " " + hint.orEmpty()
             addView(text(title, 16f, ink, true))
             if (hint != null) addView(text(hint, 12f, muted).apply {
-                setPadding(0, dp(4), 0, dp(10))
+                setLineSpacing(dp(2).toFloat(), 1f)
+                setPadding(0, dp(5), 0, dp(12))
             })
         }
 
@@ -159,15 +166,22 @@ class SettingsActivity : Activity() {
         LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(10), 0, dp(10))
-            val labels = LinearLayout(this@SettingsActivity).apply { orientation = LinearLayout.VERTICAL }
-            labels.addView(text(title, 14f, ink, true))
-            labels.addView(text(detail, 11f, muted))
+            minimumHeight = dp(62)
+            setPadding(0, dp(9), 0, dp(9))
+            contentDescription = "$title $detail $key"
+            tag = "settings_item"
+            val labels = LinearLayout(this@SettingsActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(text(title, 14f, ink, true))
+                addView(text(detail, 11f, muted).apply {
+                    setLineSpacing(dp(1).toFloat(), 1f)
+                    setPadding(0, dp(3), 0, 0)
+                })
+            }
             addView(labels, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(12) })
             addView(Switch(this@SettingsActivity).apply {
                 isChecked = Prefs.b(this@SettingsActivity, key, default)
                 contentDescription = title
-                // Accent-coloured switch that is readable in both light and dark mode.
                 thumbTintList = ColorStateList(
                     arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
                     intArrayOf(accent, if (night) Color.rgb(150, 156, 172) else Color.rgb(250, 250, 252))
@@ -209,49 +223,45 @@ class SettingsActivity : Activity() {
 
     private fun hero() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(20), dp(20), dp(20), dp(18))
+        setPadding(dp(20), dp(20), dp(20), dp(19))
         background = GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
-            intArrayOf(Color.rgb(31, 28, 61), Color.rgb(93, 72, 193), Color.rgb(126, 79, 191))
-        ).apply { cornerRadius = dp(26).toFloat() }
-        addView(text("CRAZESTUDIO  /  INPUT STUDIO", 10f, Color.rgb(222, 216, 255), true))
-        addView(text("CrazeKeyboard", 29f, Color.WHITE, true).apply {
-            setPadding(0, dp(6), 0, dp(2))
+            intArrayOf(Color.rgb(24, 25, 38), Color.rgb(54, 47, 105), Color.rgb(91, 68, 169))
+        ).apply { cornerRadius = dp(25).toFloat() }
+
+        addView(text("CRAZESTUDIO  /  INPUT STUDIO", 10f, Color.rgb(207, 201, 255), true))
+        addView(text("Make typing\nfeel like yours.", 27f, Color.WHITE, true).apply {
+            setLineSpacing(dp(1).toFloat(), 1f)
+            setPadding(0, dp(8), 0, dp(7))
         })
-        addView(text("A calmer, faster space to type.", 13f, Color.rgb(240, 237, 255)))
-        val mock = LinearLayout(this@SettingsActivity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(7), dp(7), dp(7), dp(7))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(14).toFloat()
-                setColor(Color.argb(42, 255, 255, 255))
-            }
-        }
-        listOf("q w e r t y u i o p", "a s d f g h j k l", "⇧ z x c v b n m ⌫").forEach { line ->
-            val keys = LinearLayout(this@SettingsActivity).apply { gravity = Gravity.CENTER }
-            line.split(" ").filter { it.isNotEmpty() }.forEach { key ->
-                keys.addView(
-                    TextView(this@SettingsActivity).apply {
-                        text = key
-                        gravity = Gravity.CENTER
-                        textSize = 10f
-                        setTextColor(Color.WHITE)
-                        background = GradientDrawable().apply {
-                            cornerRadius = dp(5).toFloat()
-                            setColor(Color.argb(54, 255, 255, 255))
-                        }
-                    },
-                    LinearLayout.LayoutParams(0, dp(24), 1f).apply {
-                        setMargins(dp(2), 0, dp(2), dp(3))
-                    }
-                )
-            }
-            mock.addView(keys)
-        }
-        addView(mock, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) })
-        addView(text("OFFLINE-FIRST  ·  PERSONALISABLE  ·  PRIVATE", 10f, Color.WHITE, true).apply {
-            setPadding(0, dp(13), 0, 0)
+        addView(text("Tune your keyboard, tools and privacy in one place.", 12f, Color.rgb(231, 228, 247)).apply {
+            setLineSpacing(dp(2).toFloat(), 1f)
         })
+
+        val footer = LinearLayout(this@SettingsActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(17), 0, 0)
+        }
+        listOf("OFFLINE-FIRST", "PRIVATE BY DESIGN").forEachIndexed { index, label ->
+            val chip = TextView(this@SettingsActivity).apply {
+                text = label
+                textSize = 9f
+                letterSpacing = 0.04f
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                setTextColor(Color.WHITE)
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(20).toFloat()
+                    setColor(Color.argb(38, 255, 255, 255))
+                    setStroke(dp(1), Color.argb(48, 255, 255, 255))
+                }
+                setPadding(dp(10), dp(7), dp(10), dp(7))
+            }
+            footer.addView(chip)
+            if (index == 0) footer.addView(Space(this@SettingsActivity),
+                LinearLayout.LayoutParams(dp(7), 1))
+        }
+        addView(footer)
     }
 
     // Mini keyboard swatch for a theme: shows its real background, key and accent colours.
