@@ -1454,9 +1454,9 @@ class CrazeKeyboardService : InputMethodService() {
             }
 
             val rows = grouped.chunked(4)
-            // Keep the familiar four-column layout while allowing sparse categories
-            // to breathe instead of rendering several empty rows.
-            rows.forEach { ids ->
+            // Three stable rows keep tile hit targets consistent across categories.
+            repeat(maxOf(3, rows.size)) { rowIndex ->
+                val ids = rows.getOrNull(rowIndex).orEmpty()
                 val row = LinearLayout(ctx).apply {
                     gravity = Gravity.CENTER_VERTICAL
                     clipChildren = false
