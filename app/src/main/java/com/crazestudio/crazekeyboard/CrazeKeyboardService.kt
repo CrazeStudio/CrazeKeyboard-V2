@@ -93,8 +93,8 @@ class CrazeKeyboardService : InputMethodService() {
     private var menuCategory = "All"
     private var floating = false
     private var suggestOn = true
-    private var incognito = false
-    private var manualIncognito = false
+    @Volatile private var incognito = false
+    @Volatile private var manualIncognito = false
     private var autoCorrectOn = true
     private var doubleSpaceOn = true
     private var nextWordOn = true
@@ -613,7 +613,10 @@ class CrazeKeyboardService : InputMethodService() {
         when (id) {
             "editor" -> showPanel("editor")
             "fulleditor" -> { showPanel("letters"); launchTextEditor() }
-            "clipboard" -> showPanel("clip")
+            "clipboard" -> {
+                if (incognito) Toast.makeText(ctx, "Clipboard is disabled in private mode", Toast.LENGTH_SHORT).show()
+                else showPanel("clip")
+            }
             "emoji" -> showPanel("emoji")
             "numpad" -> showPanel("numpad")
             "incognito" -> toggleManualIncognito()
@@ -2390,6 +2393,23 @@ class CrazeKeyboardService : InputMethodService() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(6), dp(3), dp(6), 0)
         }
+        if (incognito) {
+            col.addView(TextView(ctx).apply {
+                text = "Clipboard paused"
+                textSize = 14.5f
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                setTextColor(t.text)
+                setPadding(dp(8), dp(8), 0, dp(3))
+            })
+            col.addView(TextView(ctx).apply {
+                text = "Saved snippets are hidden while Private Mode is active."
+                textSize = 11.5f
+                setTextColor(mutedInk())
+                setPadding(dp(8), dp(3), dp(8), dp(12))
+            })
+            col.addView(backBar())
+            return col
+        }
         val head = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
         head.addView(LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
@@ -2410,9 +2430,11 @@ class CrazeKeyboardService : InputMethodService() {
         head.addView(iconImg(R.drawable.ic_editor_select_all, padDp = 8) {
             val connection = currentInputConnection ?: targetInputConnection
             ClipboardActivity.onPaste = { value ->
-                connection?.commitText(value, 1)
-                setLocalContext(cachedBeforeCursor + value)
-                scheduleRefresh()
+                if (!incognito) {
+                    connection?.commitText(value, 1)
+                    setLocalContext(cachedBeforeCursor + value)
+                    scheduleRefresh()
+                }
             }
             startActivity(Intent(ctx, ClipboardActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }.apply { contentDescription = "Open full clipboard manager" }, lp(dp(38), dp(38)))
