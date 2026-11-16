@@ -133,6 +133,12 @@ class TextEditorActivity : Activity() {
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
+    private fun isDarkColor(color: Int): Boolean {
+        val luminance = (0.2126 * Color.red(color) + 0.7152 * Color.green(color) +
+            0.0722 * Color.blue(color)) / 255.0
+        return luminance < 0.34
+    }
+
     private fun initPalette() {
         val theme = Prefs.theme(this)
         page = theme.bg
@@ -141,7 +147,7 @@ class TextEditorActivity : Activity() {
         ink = theme.text
         accent = theme.accent
         accentText = theme.accentText
-        night = Color.luminance(page) < 0.34f
+        night = isDarkColor(page)
         muted = Color.argb(175, Color.red(ink), Color.green(ink), Color.blue(ink))
         stroke = Color.argb(if (night) 85 else 55, Color.red(ink), Color.green(ink), Color.blue(ink))
         highlight = Color.argb(85, Color.red(accent), Color.green(accent), Color.blue(accent))
