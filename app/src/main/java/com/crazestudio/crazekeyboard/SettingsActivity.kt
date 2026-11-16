@@ -1088,6 +1088,7 @@ class SettingsActivity : Activity() {
             setPadding(dp(3), dp(2), 0, dp(8))
         })
 
+        var showCategory: (String?) -> Unit = {}
         val categoryTiles = LinkedHashMap<String, View>()
         val categoryGrid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         categoryLabels.chunked(2).forEach { labels ->
@@ -1179,7 +1180,7 @@ class SettingsActivity : Activity() {
         }
 
         var openPage: String? = null
-        fun showCategory(label: String?) {
+        showCategory = { label ->
             openPage = label
             pageHost.removeAllViews()
             val target = if (label == null) homeScroll else pageScreens[label]
