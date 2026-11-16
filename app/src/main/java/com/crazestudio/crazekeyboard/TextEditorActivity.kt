@@ -183,9 +183,9 @@ class TextEditorActivity : Activity() {
             gravity = Gravity.CENTER
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             styleChip(this, false, primary)
-            setPadding(dp(if (small) 10 else 13), dp(if (small) 5 else 10), dp(if (small) 10 else 13), dp(if (small) 5 else 10))
-            minHeight = dp(if (small) 36 else 42)
-            minWidth = dp(if (small) 36 else 42)
+            setPadding(dp(if (small) 12 else 14), dp(if (small) 6 else 10), dp(if (small) 12 else 14), dp(if (small) 6 else 10))
+            minHeight = dp(if (small) 40 else 46)
+            minWidth = dp(if (small) 40 else 46)
             isClickable = true
             isFocusable = true
             contentDescription = description ?: text
@@ -240,8 +240,20 @@ class TextEditorActivity : Activity() {
             isClickable = true
             setOnClickListener { handleBack() }
         }, LinearLayout.LayoutParams(dp(48), dp(54)))
-        header.addView(label("Text Editor", 20f, ink, true),
-            LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(8) })
+        val titleBlock = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), 0, dp(4), 0)
+        }
+        titleBlock.addView(label("Text Editor", 18f, ink, true),
+            LinearLayout.LayoutParams(-1, -2))
+        counter = label("0 words  ·  0 characters", 10.5f, muted).apply {
+            setSingleLine(true)
+            setPadding(0, dp(1), 0, 0)
+            alpha = 0.92f
+        }
+        titleBlock.addView(counter, LinearLayout.LayoutParams(-1, -2))
+        header.addView(titleBlock, LinearLayout.LayoutParams(0, -1, 1f))
         header.addView(chip("Insert", primary = true, small = true, description = "Insert text into the current field") { applyAndClose() },
             LinearLayout.LayoutParams(-2, dp(38)).apply { rightMargin = dp(4) })
         header.addView(TextView(this).apply {
@@ -269,9 +281,13 @@ class TextEditorActivity : Activity() {
                 InputType.TYPE_TEXT_FLAG_MULTI_LINE or
                 InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             imeOptions = EditorInfo.IME_ACTION_NONE
-            setPadding(dp(22), dp(22), dp(18), dp(18))
-            background = shape(chipBg, 18, stroke)
+            setPadding(dp(20), dp(20), dp(20), dp(24))
+            background = shape(chipBg, 20, stroke)
+            includeFontPadding = false
+            setLineSpacing(dp(4).toFloat(), 1.0f)
+            highlightColor = highlight
             minLines = 4
+            setHorizontallyScrolling(false)
             setText(startText)
         }
         root.addView(editor, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -279,28 +295,33 @@ class TextEditorActivity : Activity() {
         editor.onSelection = { updateCounter() }
         editor.addTextChangedListener(watcher { onEditorChanged() })
 
-        // ---- tool strip ----
-        val items = ArrayList<View>()
-        undoChip = chip("↶ Undo", small = true, description = "Undo") { undo() }.also { items.add(it) }
-        redoChip = chip("↷ Redo", small = true, description = "Redo") { redo() }.also { items.add(it) }
-        items.add(chip("Polish", small = true, description = "Fix spacing and sentence capitalization on-device") { polishEditorText() })
-        items.add(chip("Aa", small = true, description = "Change case") { cycleCase() })
-        items.add(chip("• List", small = true, description = "Toggle bullet list") { toggleBullets() })
-        items.add(chip("Find", small = true, description = "Find and replace") { openFind() })
-        items.add(chip("Select all", small = true) { editor.requestFocus(); editor.selectAll() })
-        items.add(chip("Copy", small = true) { copyText() })
-        items.add(chip("Cut", small = true) { cutText() })
-        items.add(chip("Paste", small = true) { pasteText() })
-        items.add(chip("Share", small = true) { shareText() })
-        items.add(chip("Clear", small = true) { clearText() })
-        items.add(chip("⌨", small = true, description = "Show or hide keyboard") { toggleKeyboard() })
-        root.addView(toolStrip(items), LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(8) })
-
-        counter = label("0 words  ·  0 characters", 11f, muted).apply {
-            setPadding(dp(10), dp(7), dp(10), dp(2))
-        }
-        counter.background = shape(barBg, 12, stroke)
-        root.addView(counter, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
+        // ---- grouped tool strip ----
+        val categories = linkedMapOf<String, List<View>>()
+        undoChip = chip("↶ Undo", small = true, description = "Undo") { undo() }
+        redoChip = chip("↷ Redo", small = true, description = "Redo") { redo() }
+        categories["Edit"] = listOf(
+            undoChip!!,
+            redoChip!!,
+            chip("Find", small = true, description = "Find and replace") { openFind() },
+            chip("Select", small = true, description = "Select all text") { editor.requestFocus(); editor.selectAll() },
+            chip("Copy", small = true) { copyText() },
+            chip("Cut", small = true) { cutText() },
+            chip("Paste", small = true) { pasteText() }
+        )
+        categories["Format"] = listOf(
+            chip("Polish", small = true, description = "Fix spacing and sentence capitalization on-device") { polishEditorText() },
+            chip("Aa", small = true, description = "Change case") { cycleCase() },
+            chip("• List", small = true, description = "Toggle bullet list") { toggleBullets() },
+            chip("A−", small = true, description = "Decrease text size") { changeTextSize(-1) },
+            chip("A+", small = true, description = "Increase text size") { changeTextSize(1) }
+        )
+        categories["Tools"] = listOf(
+            chip("Share", small = true) { shareText() },
+            chip("Copy all", small = true) { copyAll() },
+            chip("Clear", small = true) { clearText() },
+            chip("⌨ Keyboard", small = true, description = "Show or hide keyboard") { toggleKeyboard() }
+        )
+        root.addView(toolStrip(categories), LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
 
         setContentView(shell)
         updateCounter()
@@ -322,22 +343,63 @@ class TextEditorActivity : Activity() {
         }
     }
 
-    private fun toolStrip(items: List<View>): HorizontalScrollView {
-        val row = LinearLayout(this).apply {
+    private fun toolStrip(categories: Map<String, List<View>>): LinearLayout {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        val tabs = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = shape(barBg, 14, stroke)
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+        }
+        val actions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        items.forEachIndexed { index, item ->
-            row.addView(item, LinearLayout.LayoutParams(-2, dp(38)).apply {
-                if (index > 0) leftMargin = dp(6)
-            })
-        }
-        return HorizontalScrollView(this).apply {
+        val actionScroll = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
             clipToPadding = false
-            addView(row, LinearLayout.LayoutParams(-2, dp(40)))
+            addView(actions, LinearLayout.LayoutParams(-2, dp(42)))
         }
+        val tabViews = LinkedHashMap<String, TextView>()
+
+        fun selectCategory(name: String) {
+            tabViews.forEach { (tabName, tab) -> styleChip(tab, tabName == name) }
+            actions.removeAllViews()
+            categories[name].orEmpty().forEachIndexed { index, item ->
+                actions.addView(item, LinearLayout.LayoutParams(-2, dp(40)).apply {
+                    if (index > 0) leftMargin = dp(7)
+                })
+            }
+            actionScroll.scrollTo(0, 0)
+        }
+
+        categories.keys.forEach { name ->
+            val tab = TextView(this).apply {
+                text = name
+                textSize = 12f
+                gravity = Gravity.CENTER
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                isClickable = true
+                isFocusable = true
+                minHeight = dp(32)
+                contentDescription = "$name editing tools"
+                setOnClickListener { selectCategory(name) }
+            }
+            tabViews[name] = tab
+            tabs.addView(tab, LinearLayout.LayoutParams(0, dp(32), 1f).apply {
+                if (tabs.childCount > 0) leftMargin = dp(4)
+            })
+        }
+
+        container.addView(tabs, LinearLayout.LayoutParams(-1, dp(40)))
+        container.addView(actionScroll, LinearLayout.LayoutParams(-1, dp(42)).apply {
+            topMargin = dp(5)
+        })
+        categories.keys.firstOrNull()?.let { selectCategory(it) }
+        return container
     }
 
     // ------------------------------------------------------------------ lifecycle
@@ -427,11 +489,17 @@ class TextEditorActivity : Activity() {
         val menu = PopupMenu(this, anchor)
         menu.menu.add("Select all").setOnMenuItemClickListener { editor.requestFocus(); editor.selectAll(); true }
         menu.menu.add("Find and replace").setOnMenuItemClickListener { openFind(); true }
+        menu.menu.add("Polish text on-device").setOnMenuItemClickListener { polishEditorText(); true }
+        menu.menu.add("Change case").setOnMenuItemClickListener { cycleCase(); true }
+        menu.menu.add("Toggle bullet list").setOnMenuItemClickListener { toggleBullets(); true }
         menu.menu.add("Copy all").setOnMenuItemClickListener { copyAll(); true }
+        menu.menu.add("Copy selection").setOnMenuItemClickListener { copyText(); true }
+        menu.menu.add("Cut selection").setOnMenuItemClickListener { cutText(); true }
         menu.menu.add("Paste").setOnMenuItemClickListener { pasteText(); true }
         menu.menu.add("Share").setOnMenuItemClickListener { shareText(); true }
         menu.menu.add("Increase text size").setOnMenuItemClickListener { changeTextSize(1); true }
         menu.menu.add("Decrease text size").setOnMenuItemClickListener { changeTextSize(-1); true }
+        menu.menu.add("Show or hide keyboard").setOnMenuItemClickListener { toggleKeyboard(); true }
         menu.menu.add("Clear").setOnMenuItemClickListener { clearText(); true }
         menu.menu.add("Insert into current field").setOnMenuItemClickListener { applyAndClose(); true }
         menu.show()
