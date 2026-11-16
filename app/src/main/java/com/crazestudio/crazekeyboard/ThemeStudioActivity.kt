@@ -65,7 +65,7 @@ class ThemeStudioActivity : Activity() {
             textSize = 13f
             gravity = Gravity.CENTER
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            setTextColor(if (primary) Color.WHITE else uiInk)
+            setTextColor(if (primary) contrastText(uiAccent) else uiInk)
             background = shape(if (primary) uiAccent else uiCard, 13)
             setPadding(dp(14), dp(10), dp(14), dp(10))
             minHeight = dp(44)
@@ -87,6 +87,15 @@ class ThemeStudioActivity : Activity() {
 
     private fun colorText(value: Int): String =
         "#" + Integer.toHexString(value).takeLast(6).uppercase()
+
+    private fun isValidHexColor(value: String): Boolean =
+        Regex("^#?(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$").matches(value.trim())
+
+    private fun contrastText(color: Int): Int {
+        val luminance = (0.2126 * Color.red(color) + 0.7152 * Color.green(color) +
+            0.0722 * Color.blue(color)) / 255.0
+        return if (luminance > 0.58) Color.BLACK else Color.WHITE
+    }
 
     private fun readTheme(): Theme {
         fun color(key: String, fallback: Int) = parseColor(fields[key]?.text?.toString().orEmpty(), fallback)
@@ -346,11 +355,20 @@ class ThemeStudioActivity : Activity() {
             setThemeFields(current, Prefs.activeCustomTheme(this@ThemeStudioActivity).ifBlank { "My Theme" })
         }, LinearLayout.LayoutParams(0, dp(48), 1f).apply { rightMargin = dp(5) })
         footer.addView(button("Save & Apply", true) {
-            val themeName = nameInput.text.toString().trim().ifBlank { "My Theme" }
-            val th = readTheme()
-            Prefs.saveCustomTheme(this@ThemeStudioActivity, themeName, th, activate = true)
-            Toast.makeText(this@ThemeStudioActivity, "Theme saved and applied", Toast.LENGTH_SHORT).show()
-            finish()
+            val invalid = colors.firstOrNull { (_, key) ->
+                !isValidHexColor(fields[key]?.text?.toString().orEmpty())
+            }
+            if (invalid != null) {
+                fields[invalid.second]?.error = "Enter #RRGGBB or #AARRGGBB"
+                fields[invalid.second]?.requestFocus()
+                Toast.makeText(this@ThemeStudioActivity, "Fix the highlighted colour value first", Toast.LENGTH_SHORT).show()
+            } else {
+                val themeName = nameInput.text.toString().trim().ifBlank { "My Theme" }
+                val th = readTheme()
+                Prefs.saveCustomTheme(this@ThemeStudioActivity, themeName, th, activate = true)
+                Toast.makeText(this@ThemeStudioActivity, "Theme saved and applied", Toast.LENGTH_SHORT).show()
+                finish()
+            }
         }, LinearLayout.LayoutParams(0, dp(48), 1f).apply { leftMargin = dp(5) })
         body.addView(footer, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(6) })
 
