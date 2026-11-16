@@ -16,18 +16,9 @@ android {
             abiFilters += setOf("armeabi-v7a", "arm64-v8a")
         }
     }
-    signingConfigs {
-        create("debugConfig") {
-            storeFile = file("${rootDir}/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
-        }
-    }
     buildTypes {
-        debug {
-            signingConfig = signingConfigs.getByName("debugConfig")
-        }
+        // Keep Android Gradle Plugin's generated debug signing configuration.
+        // A repository-local debug.keystore is not present in CI or required here.
         release {
             isMinifyEnabled = true
             isShrinkResources = true
