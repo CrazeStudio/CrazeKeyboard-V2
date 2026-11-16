@@ -3,7 +3,6 @@ package com.crazestudio.crazekeyboard
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.res.ColorStateList
-import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -42,27 +41,32 @@ class ClipboardActivity : Activity() {
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
+    private fun blend(foreground: Int, background: Int, amount: Float): Int {
+        val weight = amount.coerceIn(0f, 1f)
+        return Color.rgb(
+            (Color.red(foreground) * weight + Color.red(background) * (1f - weight)).toInt(),
+            (Color.green(foreground) * weight + Color.green(background) * (1f - weight)).toInt(),
+            (Color.blue(foreground) * weight + Color.blue(background) * (1f - weight)).toInt()
+        )
+    }
+
+    private fun isDark(color: Int): Boolean {
+        val luminance = (0.2126 * Color.red(color) + 0.7152 * Color.green(color) +
+            0.0722 * Color.blue(color)) / 255.0
+        return luminance < 0.34
+    }
+
     private fun initPalette() {
-        night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-        if (night) {
-            ink = Color.rgb(238, 240, 247)
-            muted = Color.rgb(154, 161, 178)
-            page = Color.rgb(18, 19, 26)
-            card = Color.rgb(30, 32, 42)
-            fieldBg = Color.rgb(25, 27, 36)
-            stroke = Color.rgb(48, 52, 66)
-            accent = Color.rgb(142, 127, 255)
-            bannerBg = Color.rgb(34, 32, 54)
-        } else {
-            ink = Color.rgb(29, 34, 43)
-            muted = Color.rgb(104, 111, 124)
-            page = Color.rgb(245, 246, 250)
-            card = Color.WHITE
-            fieldBg = Color.WHITE
-            stroke = Color.rgb(229, 232, 240)
-            accent = Color.rgb(102, 83, 215)
-            bannerBg = Color.rgb(235, 232, 252)
-        }
+        val theme = Prefs.theme(this)
+        page = theme.bg
+        card = theme.key
+        fieldBg = theme.special
+        ink = theme.text
+        accent = theme.accent
+        night = isDark(page)
+        muted = blend(ink, page, 0.58f)
+        stroke = blend(ink, page, if (night) 0.20f else 0.12f)
+        bannerBg = blend(accent, page, if (night) 0.22f else 0.14f)
     }
 
     private fun rounded(color: Int, radius: Int = 18, border: Int = stroke) = GradientDrawable().apply {
@@ -73,7 +77,11 @@ class ClipboardActivity : Activity() {
     }
 
     private fun ripple(view: View, radius: Int) {
-        view.foreground = RippleDrawable(ColorStateList.valueOf(Color.argb(44, 128, 128, 128)), null, rounded(Color.WHITE, radius, 0))
+        view.foreground = RippleDrawable(
+            ColorStateList.valueOf(Color.argb(46, Color.red(accent), Color.green(accent), Color.blue(accent))),
+            null,
+            rounded(Color.WHITE, radius, 0)
+        )
     }
 
     private fun label(value: String, size: Float, color: Int, bold: Boolean = false) = TextView(this).apply {
@@ -142,7 +150,11 @@ class ClipboardActivity : Activity() {
         }, LinearLayout.LayoutParams(dp(26), dp(26)))
         val bannerText = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), 0, 0, 0) }
         bannerText.addView(label("Local Clipboard Vault", 15.5f, ink, true))
-        bannerText.addView(label("Snippets stay on this device. Password fields are excluded.", 12f, muted))
+        bannerText.addView(label(
+            if (Prefs.b(this, "clipboardHistory", false)) "History enabled · saved locally on this device"
+            else "History is off by default · enable it when you need it",
+            12f, muted
+        ))
         banner.addView(bannerText)
         maxCol.addView(banner, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8); bottomMargin = dp(12) })
 
@@ -202,7 +214,7 @@ class ClipboardActivity : Activity() {
             setPadding(0, dp(4), dp(8), dp(4))
             isClickable = true
             ripple(this, 10)
-            setOnClickListener { onPaste?.invoke(value); finish() }
+            setOnClickListener { paste(value) }
         }
         row.addView(preview, LinearLayout.LayoutParams(0, -2, 1f))
         row.addView(iconButton(R.drawable.ic_pin, if (pinned) accent else muted, if (pinned) "Unpin" else "Pin") {
@@ -210,14 +222,25 @@ class ClipboardActivity : Activity() {
             render()
         }, LinearLayout.LayoutParams(dp(44), dp(44)))
         row.addView(iconButton(R.drawable.ic_editor_copy, ink, "Paste item") {
-            onPaste?.invoke(value)
-            finish()
+            paste(value)
         }, LinearLayout.LayoutParams(dp(44), dp(44)))
         row.addView(iconButton(R.drawable.ic_close, muted, "Delete item") {
             Prefs.removeClip(this, value)
             render()
         }, LinearLayout.LayoutParams(dp(44), dp(44)))
         contentList.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
+    }
+
+    private fun paste(value: String) {
+        val callback = onPaste
+        onPaste = null
+        callback?.invoke(value)
+        finish()
+    }
+
+    override fun onDestroy() {
+        if (!isChangingConfigurations) onPaste = null
+        super.onDestroy()
     }
 
     private fun render() {
