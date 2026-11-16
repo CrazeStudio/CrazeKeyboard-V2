@@ -1383,7 +1383,16 @@ class CrazeKeyboardService : InputMethodService() {
         } catch (_: Exception) { popup = null }
     }
 
-    private fun hrow() = LinearLayout(ctx).apply { gravity = Gravity.CENTER }
+    // Keep keyboard rows consistently level and left-to-right. Key cells are
+    // FrameLayouts without text baselines, so baseline alignment is unnecessary.
+    private fun hrow() = LinearLayout(ctx).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        baselineAligned = false
+        layoutDirection = View.LAYOUT_DIRECTION_LTR
+        clipChildren = false
+        clipToPadding = false
+    }
     private fun spacer(w: Float) = View(ctx).apply { layoutParams = lp(0, 1, w) }
 
     private fun addSecondaryHint(key: K, value: String) {
