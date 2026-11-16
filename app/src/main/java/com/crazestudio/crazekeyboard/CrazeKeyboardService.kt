@@ -561,7 +561,7 @@ class CrazeKeyboardService : InputMethodService() {
         "numpad" -> "Numpad"
         "incognito" -> if (manualIncognito) "Private ON" else "Private"
         "voice" -> "Voice"
-        "theme" -> "Theme"
+        "theme" -> "Theme Studio"
         "onehand" -> when (Prefs.i(ctx, "onehand", 0)) {
             1 -> "Left hand"
             2 -> "Right hand"
@@ -618,7 +618,7 @@ class CrazeKeyboardService : InputMethodService() {
             "numpad" -> showPanel("numpad")
             "incognito" -> toggleManualIncognito()
             "voice" -> { showPanel("letters"); startVoice() }
-            "theme" -> { Prefs.nextTheme(ctx); rebuild() }
+            "theme" -> startActivity(Intent(ctx, ThemeStudioActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             "onehand" -> { Prefs.nextOneHand(ctx); rebuild() }
             "floating" -> { Prefs.setB(ctx, "float", !floating); rebuild() }
             "resize" -> showPanel("resize")
@@ -1651,6 +1651,32 @@ class CrazeKeyboardService : InputMethodService() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(8), dp(6), dp(8), dp(4))
         }
+        val intro = LinearLayout(ctx).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(2), dp(4), dp(7))
+        }
+        intro.addView(ImageView(ctx).apply {
+            setImageResource(R.drawable.ic_menu)
+            setColorFilter(t.accent)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setPadding(dp(5), dp(5), dp(5), dp(5))
+        }, lp(dp(38), dp(38)))
+        intro.addView(LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(ctx).apply {
+                text = "Keyboard Tools"
+                textSize = 14f
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                setTextColor(t.text)
+            })
+            addView(TextView(ctx).apply {
+                text = "Quick actions · built for offline use"
+                textSize = 10.5f
+                setTextColor(mutedInk())
+            })
+        }, lp(0, WRAP, 1f).apply { leftMargin = dp(7) })
+        col.addView(intro, lp(MATCH, dp(42)))
+
         val userTools = Prefs.toolbarTools(ctx).filter { it != "settings" && it != "fulleditor" }
         val available = (userTools + "fulleditor" + "settings").distinct()
         val categories = listOf("All", "Typing", "Editing", "Layout")
@@ -2118,7 +2144,16 @@ class CrazeKeyboardService : InputMethodService() {
             }
         }
 
-        // Row 1: Directional D-pad & cursor jumps
+        fun sectionLabel(value: String): TextView = TextView(ctx).apply {
+            text = value.uppercase()
+            textSize = 9.5f
+            letterSpacing = 0.08f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setTextColor(mutedInk())
+            setPadding(dp(4), dp(5), 0, dp(4))
+        }
+
+        col.addView(sectionLabel("Cursor & selection"))
         val cursorRow = hrow()
         fun addArrowKey(icon: Int, keyCode: Int, desc: String) {
             val k = mk("", 1.1f, t.key, t.text, 15f, icon)
@@ -2138,10 +2173,11 @@ class CrazeKeyboardService : InputMethodService() {
         addArrowKey(R.drawable.ic_arrow_down, KeyEvent.KEYCODE_DPAD_DOWN, "Move cursor down")
         addArrowKey(R.drawable.ic_arrow_right, KeyEvent.KEYCODE_DPAD_RIGHT, "Move cursor right")
         addTextCursorKey("End", KeyEvent.KEYCODE_MOVE_END, "Move to line end")
-        col.addView(cursorRow, lp(MATCH, dp(44)).apply { bottomMargin = dp(4) })
+        col.addView(cursorRow, lp(MATCH, dp(40)).apply { bottomMargin = dp(3) })
 
-        // Row 2: Action tools with vector icons
+        col.addView(sectionLabel("Text actions"))
         val actionsRow = hrow()
+        val actionsRow2 = hrow()
         fun iconAction(row: LinearLayout, icon: Int, label: String, action: () -> Unit): K {
             val key = mk("", 1f, t.special, t.text, 12f, icon)
             key.cell.contentDescription = label
@@ -2155,10 +2191,10 @@ class CrazeKeyboardService : InputMethodService() {
         iconAction(actionsRow, R.drawable.ic_editor_select_all, "Select all") { selectAllText() }
         iconAction(actionsRow, R.drawable.ic_editor_cut, "Cut selected text") { copyOrCut(true) }
         iconAction(actionsRow, R.drawable.ic_editor_copy, "Copy selected text") { copyOrCut(false) }
-        iconAction(actionsRow, R.drawable.ic_editor_paste, "Paste text") { pasteText() }
-        iconAction(actionsRow, R.drawable.ic_editor_undo, "Undo") { sendCtrlZ(false) }
-        iconAction(actionsRow, R.drawable.ic_editor_redo, "Redo") { sendCtrlZ(true) }
-        iconAction(actionsRow, R.drawable.ic_trash, "Delete selection or previous character") {
+        iconAction(actionsRow2, R.drawable.ic_editor_paste, "Paste text") { pasteText() }
+        iconAction(actionsRow2, R.drawable.ic_editor_undo, "Undo") { sendCtrlZ(false) }
+        iconAction(actionsRow2, R.drawable.ic_editor_redo, "Redo") { sendCtrlZ(true) }
+        iconAction(actionsRow2, R.drawable.ic_trash, "Delete selection or previous character") {
             val ic = connection() ?: return@iconAction
             try {
                 val selected = ic.getSelectedText(0)
@@ -2167,20 +2203,45 @@ class CrazeKeyboardService : InputMethodService() {
                 syncContextAsync()
             } catch (_: Exception) { }
         }
-        col.addView(actionsRow, lp(MATCH, dp(44)).apply { bottomMargin = dp(4) })
+        col.addView(actionsRow, lp(MATCH, dp(42)).apply { bottomMargin = dp(2) })
+        col.addView(actionsRow2, lp(MATCH, dp(42)).apply { bottomMargin = dp(5) })
 
-        // Row 3: Quick Polish & Full Editor
+        col.addView(sectionLabel("More editing"))
         val footer = hrow()
         val polish = mk("✦ Quick Polish", 1.2f, t.accent, t.accentText, 13f)
         polish.cell.contentDescription = "Apply on-device punctuation, spacing and capitalization polish"
         attach(polish) { quickPolish() }
         footer.addView(polish.cell)
-        val fullEditor = mk("Expand Full Editor ↗", 1.2f, t.special, t.text, 13f)
+        val clearAll = mk("Clear All", 1f, t.special, t.text, 12f, R.drawable.ic_trash)
+        clearAll.cell.contentDescription = "Clear all text in the current field"
+        attach(clearAll) {
+            val ic = connection()
+            val extracted = try { ic?.getExtractedText(android.view.inputmethod.ExtractedTextRequest(), 0) } catch (_: Exception) { null }
+            val value = extracted?.text?.toString()
+            if (!value.isNullOrEmpty() && extracted.partialStartOffset < 0) {
+                ic?.beginBatchEdit()
+                try {
+                    ic?.setSelection(0, value.length)
+                    ic?.commitText("", 1)
+                } finally { ic?.endBatchEdit() }
+                status.text = "All text cleared"
+                syncContextAsync()
+            } else status.text = "Clear all unavailable here"
+        }
+        footer.addView(clearAll.cell)
+        val fullEditor = mk("Full Editor ↗", 1f, t.special, t.text, 12f, R.drawable.ic_editor_select_all)
         fullEditor.cell.contentDescription = "Open full-screen text editor companion"
         attach(fullEditor) { editorSelecting = false; launchTextEditor() }
         footer.addView(fullEditor.cell)
-        col.addView(footer, lp(MATCH, dp(44)))
-        return col
+        col.addView(footer, lp(MATCH, dp(42)))
+        val scroll = ScrollView(ctx).apply {
+            isVerticalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            clipToPadding = false
+            fillViewport = false
+        }
+        scroll.addView(col, FrameLayout.LayoutParams(MATCH, WRAP))
+        return scroll
     }
 
     private fun buildResize(): View {

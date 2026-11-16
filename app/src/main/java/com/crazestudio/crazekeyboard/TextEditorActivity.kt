@@ -92,6 +92,7 @@ class TextEditorActivity : Activity() {
     private var ink = 0
     private var muted = 0
     private var accent = 0
+    private var accentText = Color.WHITE
     private var page = 0
     private var chipBg = 0
     private var stroke = 0
@@ -133,16 +134,18 @@ class TextEditorActivity : Activity() {
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
     private fun initPalette() {
-        night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-        ink = if (night) Color.rgb(236, 238, 244) else Color.rgb(31, 37, 51)
-        muted = if (night) Color.rgb(150, 157, 176) else Color.rgb(110, 118, 137)
-        accent = if (night) Color.rgb(112, 96, 235) else Color.rgb(102, 83, 215)
-        page = if (night) Color.rgb(18, 20, 27) else Color.WHITE
-        chipBg = if (night) Color.rgb(36, 40, 52) else Color.WHITE
-        stroke = if (night) Color.rgb(58, 64, 82) else Color.rgb(229, 232, 240)
-        barBg = if (night) Color.rgb(30, 33, 44) else Color.rgb(245, 246, 248)
-        highlight = if (night) Color.argb(110, 142, 127, 255) else Color.argb(90, 255, 213, 79)
-        currentHighlight = if (night) Color.argb(200, 142, 127, 255) else Color.argb(200, 255, 152, 0)
+        val theme = Prefs.theme(this)
+        page = theme.bg
+        chipBg = theme.key
+        barBg = theme.special
+        ink = theme.text
+        accent = theme.accent
+        accentText = theme.accentText
+        night = Color.luminance(page) < 0.34f
+        muted = Color.argb(175, Color.red(ink), Color.green(ink), Color.blue(ink))
+        stroke = Color.argb(if (night) 85 else 55, Color.red(ink), Color.green(ink), Color.blue(ink))
+        highlight = Color.argb(85, Color.red(accent), Color.green(accent), Color.blue(accent))
+        currentHighlight = Color.argb(205, Color.red(accent), Color.green(accent), Color.blue(accent))
     }
 
     private fun shape(color: Int, radius: Int = 16, strokeColor: Int = 0) =
@@ -163,7 +166,7 @@ class TextEditorActivity : Activity() {
 
     private fun styleChip(view: TextView, selected: Boolean, primary: Boolean = false) {
         val active = primary || selected
-        view.setTextColor(if (active) Color.WHITE else ink)
+        view.setTextColor(if (active) accentText else ink)
         view.background = shape(if (active) accent else chipBg, 12, if (active) 0 else stroke)
     }
 
@@ -217,7 +220,11 @@ class TextEditorActivity : Activity() {
         shell.addView(root, android.widget.FrameLayout.LayoutParams(maxWidth, -1, Gravity.CENTER_HORIZONTAL))
 
         // ---- header ----
-        val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        val header = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            background = shape(barBg, 18, stroke)
+            setPadding(dp(4), 0, dp(4), 0)
+        }
         header.addView(TextView(this).apply {
             text = "‹"
             textSize = 34f
@@ -257,7 +264,7 @@ class TextEditorActivity : Activity() {
                 InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             imeOptions = EditorInfo.IME_ACTION_NONE
             setPadding(dp(22), dp(22), dp(18), dp(18))
-            background = null
+            background = shape(chipBg, 18, stroke)
             minLines = 4
             setText(startText)
         }
@@ -286,7 +293,8 @@ class TextEditorActivity : Activity() {
         counter = label("0 words  ·  0 characters", 11f, muted).apply {
             setPadding(dp(10), dp(7), dp(10), dp(2))
         }
-        root.addView(counter, LinearLayout.LayoutParams(-1, -2))
+        counter.background = shape(barBg, 12, stroke)
+        root.addView(counter, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
 
         setContentView(shell)
         updateCounter()

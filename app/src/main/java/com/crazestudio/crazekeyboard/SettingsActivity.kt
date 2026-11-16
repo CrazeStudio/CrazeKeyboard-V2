@@ -47,7 +47,8 @@ class SettingsActivity : Activity() {
     private var night = false
     private var ink = 0
     private var muted = 0
-    private val accent = Color.rgb(102, 83, 215)
+    private var accent = Color.rgb(102, 83, 215)
+    private var themeSignatureAtCreate = ""
     private var page = 0
     private var card = 0
     private var dividerColor = 0
@@ -65,6 +66,7 @@ class SettingsActivity : Activity() {
 
     private fun initPalette() {
         night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        accent = Prefs.theme(this).accent
         if (night) {
             ink = Color.rgb(238, 240, 247); muted = Color.rgb(154, 161, 178)
             page = Color.rgb(18, 19, 26); card = Color.rgb(30, 32, 42)
@@ -332,7 +334,7 @@ class SettingsActivity : Activity() {
             isFocusable = true
             contentDescription = "$name theme" + if (selected) ", selected" else ""
             setOnClickListener {
-                Prefs.setI(this@SettingsActivity, "theme", index)
+                Prefs.selectBuiltInTheme(this@SettingsActivity, index)
                 recreate()
             }
         }
@@ -352,6 +354,7 @@ class SettingsActivity : Activity() {
     @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        themeSignatureAtCreate = Prefs.themeSignature(this)
         initPalette()
         window.statusBarColor = page
         window.navigationBarColor = page
@@ -735,7 +738,7 @@ class SettingsActivity : Activity() {
         // ---- Appearance ----
         val appearance = section("Appearance", "Select the colour theme used by your keyboard.")
         val themeGrid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val currentTheme = Prefs.i(this, "theme", 0)
+        val currentTheme = if (Prefs.activeCustomTheme(this).isEmpty()) Prefs.i(this, "theme", 0) else -1
         Prefs.themeNames.chunked(3).forEachIndexed { rowIndex, names ->
             val themeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             names.forEachIndexed { columnIndex, name ->
@@ -747,6 +750,12 @@ class SettingsActivity : Activity() {
             themeGrid.addView(themeRow)
         }
         appearance.addView(themeGrid)
+        appearance.addView(action("Open Theme Studio", true) {
+            startActivity(Intent(this, ThemeStudioActivity::class.java))
+        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+        appearance.addView(text("Create, preview and save your own keyboard colour themes. Themes stay on this device.", 11f, muted).apply {
+            setPadding(dp(2), dp(8), dp(2), 0)
+        })
         content.addView(category("Appearance"))
         content.addView(appearance, margin())
 
@@ -994,82 +1003,234 @@ class SettingsActivity : Activity() {
             setPadding(0, dp(8), 0, dp(10))
         })
 
-        // Search & Quick Category Navigation at top
-        val settingsSearch = EditText(this).apply {
-            hint = "Search settings"
-            setSingleLine(true)
-            textSize = 14f
-            setTextColor(ink)
-            setHintTextColor(muted)
-            setPadding(dp(15), dp(11), dp(15), dp(11))
-            background = shape(fieldBg, 14)
-            inputType = InputType.TYPE_CLASS_TEXT
-            tag = "settings_search"
-            contentDescription = "Search all settings"
-        }
-        content.addView(settingsSearch, 1, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
-        val categoryScroller = HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            overScrollMode = View.OVER_SCROLL_NEVER
-            tag = "settings_category_nav"
-        }
-        val categoryStrip = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        // Independent category pages: each Settings group opens on its own screen.
         val categoryLabels = listOf(
             "Setup & testing", "AI & voice", "Languages & downloads",
             "Typing & suggestions", "Toolbar & shortcuts", "Privacy & data",
             "Appearance", "Keyboard size & layout", "Keyboard behaviour"
         )
+        val categoryDescriptions = mapOf(
+            "Setup & testing" to "Activate CrazeKeyboard and test typing",
+            "AI & voice" to "On-device prediction and speech input",
+            "Languages & downloads" to "Language packs and offline dictionaries",
+            "Typing & suggestions" to "Autocorrect, learning and key behaviour",
+            "Toolbar & shortcuts" to "Choose and arrange keyboard tools",
+            "Privacy & data" to "Local storage, incognito and data controls",
+            "Appearance" to "Themes, colours and Theme Studio",
+            "Keyboard size & layout" to "Height, width, floating and one-handed mode",
+            "Keyboard behaviour" to "Keyboard modes and interaction preferences"
+        )
+        val categoryIcons = mapOf(
+            "Setup & testing" to R.drawable.ic_settings,
+            "AI & voice" to R.drawable.ic_mic,
+            "Languages & downloads" to R.drawable.ic_globe,
+            "Typing & suggestions" to R.drawable.ic_edit,
+            "Toolbar & shortcuts" to R.drawable.ic_menu,
+            "Privacy & data" to R.drawable.ic_shield_private,
+            "Appearance" to R.drawable.ic_palette,
+            "Keyboard size & layout" to R.drawable.ic_grip,
+            "Keyboard behaviour" to R.drawable.ic_activity
+        )
+
+        val landingHero = content.getChildAt(0)
+        content.removeView(landingHero)
+        val sectionPages = LinkedHashMap<String, LinearLayout>()
         categoryLabels.forEach { label ->
-            val chip = TextView(this).apply {
-                text = label
-                textSize = 11f
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                setTextColor(ink)
-                gravity = Gravity.CENTER
-                setPadding(dp(12), dp(9), dp(12), dp(9))
-                background = shape(actionBg, 18)
-                isClickable = true
-                isFocusable = true
-                ripple(this, 18)
-                setOnClickListener { settingsCategoryViews[label]?.let { target -> scroll.smoothScrollTo(0, target.top) } }
+            sectionPages[label] = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, dp(2), 0, dp(14))
             }
-            categoryStrip.addView(chip, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = dp(6) })
         }
-        categoryScroller.addView(categoryStrip)
-        content.addView(categoryScroller, 2, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) })
+        val trailingViews = ArrayList<View>()
+        var activeCategory: String? = null
+        while (content.childCount > 0) {
+            val child = content.getChildAt(0)
+            content.removeViewAt(0)
+            if (child.tag == "settings_category") {
+                val nextCategory = child.contentDescription?.toString().orEmpty()
+                activeCategory = if (nextCategory in sectionPages.keys) nextCategory else null
+            } else {
+                val destination = activeCategory?.let { sectionPages[it] }
+                if (destination != null) destination.addView(child)
+                else trailingViews.add(child)
+            }
+        }
+
+        val pageHost = FrameLayout(this)
+        root.removeAllViews()
+        root.addView(pageHost, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        val homeScroll = ScrollView(this).apply {
+            clipToPadding = false
+            isFillViewport = true
+            overScrollMode = View.OVER_SCROLL_NEVER
+        }
+        val homeBody = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(28))
+        }
+        homeBody.addView(landingHero, margin())
+
+        val settingsSearch = EditText(this).apply {
+            hint = "Search categories and settings"
+            setSingleLine(true)
+            textSize = 14f
+            setTextColor(ink)
+            setHintTextColor(muted)
+            setPadding(dp(15), dp(12), dp(15), dp(12))
+            background = shape(fieldBg, 14)
+            inputType = InputType.TYPE_CLASS_TEXT
+            contentDescription = "Search settings categories"
+        }
+        homeBody.addView(settingsSearch, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(14) })
+        homeBody.addView(text("SETTINGS CATEGORIES", 10f, muted, true).apply {
+            letterSpacing = 0.10f
+            setPadding(dp(3), dp(2), 0, dp(8))
+        })
+
+        val categoryTiles = LinkedHashMap<String, View>()
+        val categoryGrid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        categoryLabels.chunked(2).forEach { labels ->
+            val row = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+            labels.forEach { label ->
+                val tile = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    background = shape(card, 18)
+                    setPadding(dp(14), dp(12), dp(12), dp(12))
+                    isClickable = true
+                    isFocusable = true
+                    ripple(this, 18)
+                    contentDescription = label + " " + categoryDescriptions.getValue(label)
+                    setOnClickListener { showCategory(label) }
+                    val head = LinearLayout(this@SettingsActivity).apply { gravity = Gravity.CENTER_VERTICAL }
+                    val icon = FrameLayout(this@SettingsActivity).apply {
+                        background = shape(actionBg, 12)
+                        addView(ImageView(this@SettingsActivity).apply {
+                            setImageResource(categoryIcons.getValue(label))
+                            setColorFilter(accent)
+                            scaleType = ImageView.ScaleType.CENTER_INSIDE
+                            setPadding(dp(8), dp(8), dp(8), dp(8))
+                        }, FrameLayout.LayoutParams(dp(38), dp(38), Gravity.CENTER))
+                    }
+                    head.addView(icon, LinearLayout.LayoutParams(dp(42), dp(42)))
+                    head.addView(text(label, 13.5f, ink, true), LinearLayout.LayoutParams(0, -2, 1f).apply {
+                        leftMargin = dp(9)
+                    })
+                    addView(head)
+                    addView(text(categoryDescriptions.getValue(label), 11f, muted).apply {
+                        setPadding(0, dp(8), 0, dp(4))
+                    })
+                    addView(text((sectionPages[label]?.childCount ?: 0).toString() + " settings groups", 10f, muted))
+                }
+                categoryTiles[label] = tile
+                row.addView(tile, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                    setMargins(dp(4), dp(4), dp(4), dp(4))
+                })
+            }
+            if (labels.size == 1) row.addView(Space(this), LinearLayout.LayoutParams(0, 1, 1f))
+            categoryGrid.addView(row)
+        }
+        homeBody.addView(categoryGrid)
+        trailingViews.forEach { homeBody.addView(it) }
+        homeScroll.addView(homeBody)
+
+        val pageScrolls = LinkedHashMap<String, ScrollView>()
+        val pageScreens = LinkedHashMap<String, View>()
+        categoryLabels.forEach { label ->
+            val pageScroll = ScrollView(this).apply {
+                clipToPadding = false
+                isFillViewport = true
+                overScrollMode = View.OVER_SCROLL_NEVER
+            }
+            pageScroll.addView(sectionPages.getValue(label))
+            pageScrolls[label] = pageScroll
+
+            val screen = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setBackgroundColor(page)
+            }
+            val pageHeader = LinearLayout(this).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(8), dp(16), dp(10))
+                background = shape(card, 18)
+            }
+            pageHeader.addView(action("‹", click = { showCategory(null) }), LinearLayout.LayoutParams(dp(44), dp(44)))
+            val titleColumn = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            titleColumn.addView(text(label, 17f, ink, true))
+            titleColumn.addView(text(categoryDescriptions.getValue(label), 11f, muted))
+            pageHeader.addView(titleColumn, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(8) })
+            screen.addView(pageHeader, LinearLayout.LayoutParams(-1, -2).apply {
+                setMargins(dp(14), dp(10), dp(14), dp(8))
+            })
+            screen.addView(pageScroll, LinearLayout.LayoutParams(-1, 0, 1f))
+            pageScreens[label] = screen
+        }
+
+        fun applyCategorySearch(label: String, query: String) {
+            val group = sectionPages[label] ?: return
+            for (i in 0 until group.childCount) {
+                val child = group.getChildAt(i)
+                val matches = query.isEmpty() || (
+                    child.tag == "settings_section" &&
+                        child.contentDescription?.toString().orEmpty().lowercase().contains(query)
+                )
+                child.visibility = if (matches) View.VISIBLE else View.GONE
+            }
+        }
+
+        var openPage: String? = null
+        fun showCategory(label: String?) {
+            openPage = label
+            pageHost.removeAllViews()
+            val target = if (label == null) homeScroll else pageScreens[label]
+            if (target != null) {
+                pageHost.addView(target, FrameLayout.LayoutParams(-1, -1))
+                target.alpha = 0f
+                target.translationY = dp(7).toFloat()
+                target.animate().alpha(1f).translationY(0f).setDuration(170L)
+                    .setInterpolator(android.view.animation.DecelerateInterpolator()).start()
+                if (label != null) applyCategorySearch(label, settingsSearch.text.toString().trim().lowercase())
+            }
+        }
+
         settingsSearch.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 val query = s?.toString()?.trim()?.lowercase().orEmpty()
-                for (i in 0 until content.childCount) {
-                    val child = content.getChildAt(i)
-                    when (child.tag as? String) {
-                        "settings_search", "settings_category_nav" -> child.visibility = View.VISIBLE
-                        "settings_section" -> {
-                            val terms = child.contentDescription?.toString().orEmpty().lowercase()
-                            child.visibility = if (query.isEmpty() || terms.contains(query)) View.VISIBLE else View.GONE
+                categoryTiles.forEach { (label, tile) ->
+                    val sectionMatch = sectionPages[label]?.let { group ->
+                        (0 until group.childCount).any { index ->
+                            group.getChildAt(index).contentDescription?.toString().orEmpty().lowercase().contains(query)
                         }
-                        "settings_category" -> {
-                            val label = child.contentDescription?.toString().orEmpty().lowercase()
-                            var match = query.isEmpty() || label.contains(query)
-                            var j = i + 1
-                            while (!match && j < content.childCount && content.getChildAt(j).tag != "settings_category") {
-                                val candidate = content.getChildAt(j)
-                                if (candidate.tag == "settings_section") {
-                                    match = candidate.contentDescription?.toString().orEmpty().lowercase().contains(query)
-                                }
-                                j++
-                            }
-                            child.visibility = if (match) View.VISIBLE else View.GONE
-                        }
-                        else -> child.visibility = if (query.isEmpty()) View.VISIBLE else View.GONE
-                    }
+                    } ?: false
+                    tile.visibility = if (query.isEmpty() || label.lowercase().contains(query) ||
+                        categoryDescriptions.getValue(label).lowercase().contains(query) || sectionMatch) View.VISIBLE else View.GONE
                 }
+                openPage?.let { applyCategorySearch(it, query) }
             }
             override fun afterTextChanged(s: Editable?) = Unit
         })
 
+        showCategory(null)
         setContentView(shell)
+        homeBody.alpha = 0f
+        homeBody.translationY = dp(8).toFloat()
+        homeBody.animate().alpha(1f).translationY(0f).setDuration(220L)
+            .setInterpolator(android.view.animation.DecelerateInterpolator()).start()
+
+        refreshKeyboardStatus()
+        CrazeLmTflitePredictor.refreshInitialStatus(applicationContext)
+        refreshMemoryReadout()
+        if (intent.getBooleanExtra("open_resizer", false)) {
+            showCategory("Keyboard size & layout")
+            pageScrolls["Keyboard size & layout"]?.post {
+                pageScrolls["Keyboard size & layout"]?.smoothScrollTo(0, resizeSection.top)
+            }
+        }
+        if (intent.getBooleanExtra("request_voice_permission", false) &&
+            checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), voicePermissionRequest)
+        }
         content.alpha = 0f
         content.translationY = dp(8).toFloat()
         content.post {
@@ -1090,6 +1251,12 @@ class SettingsActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        val latestThemeSignature = Prefs.themeSignature(this)
+        if (themeSignatureAtCreate.isNotEmpty() && latestThemeSignature != themeSignatureAtCreate) {
+            themeSignatureAtCreate = latestThemeSignature
+            recreate()
+            return
+        }
         refreshKeyboardStatus()
         CrazeLmTflitePredictor.refreshInitialStatus(applicationContext)
         CrazeLmTflitePredictor.observe { message ->

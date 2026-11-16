@@ -4,8 +4,10 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.graphics.Color
+import android.util.Base64
 
 class Theme(val bg: Int, val key: Int, val special: Int, val text: Int, val accent: Int, val accentText: Int)
+data class ThemeEntry(val name: String, val theme: Theme)
 
 object Prefs {
     val themeNames = listOf("System", "Dark", "Craze", "Sage Garden", "Sandstone", "Mist Blue")
@@ -18,6 +20,8 @@ object Prefs {
         Theme(0xFFE5F1FA.toInt(), 0xFFFFFFFF.toInt(), 0xFFC9E1F2.toInt(), 0xFF203344.toInt(), 0xFF438FC1.toInt(), 0xFFFFFFFF.toInt())
     )
     private const val SEP = "\u0001"
+    private const val THEME_SEP = "\u0002"
+    private const val THEME_FIELD_SEP = "~"
     val availableToolbarTools = listOf(
         "clipboard", "emoji", "voice", "incognito", "editor", "numpad",
         "theme", "onehand", "floating", "resize", "settings", "fulleditor",
@@ -88,7 +92,67 @@ object Prefs {
         contrastText(theme.accent)
     )
 
+    fun customThemes(c: Context): List<ThemeEntry> {
+        val raw = string(c, "customThemes")
+        if (raw.isBlank()) return emptyList()
+        return raw.split(THEME_SEP).mapNotNull { record ->
+            val fields = record.split(THEME_FIELD_SEP)
+            if (fields.size != 7) return@mapNotNull null
+            try {
+                val name = String(Base64.decode(fields[0], Base64.URL_SAFE or Base64.NO_WRAP), Charsets.UTF_8)
+                if (name.isBlank()) return@mapNotNull null
+                val colors = fields.drop(1).map { it.toLong(16).toInt() }
+                ThemeEntry(name, Theme(colors[0], colors[1], colors[2], colors[3], colors[4], colors[5]))
+            } catch (_: Exception) { null }
+        }
+    }
+
+    fun activeCustomTheme(c: Context): String = string(c, "activeCustomTheme")
+
+    fun saveCustomTheme(c: Context, name: String, theme: Theme, activate: Boolean = true) {
+        val safeName = name.trim().take(24).ifBlank { "My Theme" }
+        val updated = (customThemes(c).filterNot { it.name.equals(safeName, ignoreCase = true) } +
+            ThemeEntry(safeName, theme)).takeLast(12)
+        val encoded = updated.map { entry ->
+            val encodedName = Base64.encodeToString(
+                entry.name.toByteArray(Charsets.UTF_8),
+                Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
+            )
+            val colors = listOf(entry.theme.bg, entry.theme.key, entry.theme.special, entry.theme.text,
+                entry.theme.accent, entry.theme.accentText)
+            (listOf(encodedName) + colors.map { Integer.toHexString(it) }).joinToString(THEME_FIELD_SEP)
+        }
+        setString(c, "customThemes", encoded.joinToString(THEME_SEP))
+        if (activate) setString(c, "activeCustomTheme", safeName)
+    }
+
+    fun selectCustomTheme(c: Context, name: String) {
+        if (customThemes(c).any { it.name == name }) setString(c, "activeCustomTheme", name)
+    }
+
+    fun deleteCustomTheme(c: Context, name: String) {
+        val updated = customThemes(c).filterNot { it.name == name }
+        val encoded = updated.map { entry ->
+            val encodedName = Base64.encodeToString(
+                entry.name.toByteArray(Charsets.UTF_8),
+                Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
+            )
+            val colors = listOf(entry.theme.bg, entry.theme.key, entry.theme.special, entry.theme.text,
+                entry.theme.accent, entry.theme.accentText)
+            (listOf(encodedName) + colors.map { Integer.toHexString(it) }).joinToString(THEME_FIELD_SEP)
+        }
+        setString(c, "customThemes", encoded.joinToString(THEME_SEP))
+        if (activeCustomTheme(c) == name) setString(c, "activeCustomTheme", "")
+    }
+
+    fun selectBuiltInTheme(c: Context, index: Int) {
+        setString(c, "activeCustomTheme", "")
+        setI(c, "theme", index.coerceIn(0, themes.size - 1))
+    }
+
     fun theme(c: Context): Theme {
+        val active = activeCustomTheme(c)
+        if (active.isNotEmpty()) customThemes(c).firstOrNull { it.name == active }?.let { return it.theme }
         val index = i(c, "theme", 0).coerceIn(0, themes.size - 1)
         val night = isNightMode(c)
         return when {
@@ -97,12 +161,19 @@ object Prefs {
             else -> themes[index]
         }
     }
-    fun nextTheme(c: Context) = setI(c, "theme", (i(c, "theme", 0) + 1) % themes.size)
+
+    fun themeSignature(c: Context): String {
+        val th = theme(c)
+        return listOf(activeCustomTheme(c), i(c, "theme", 0), th.bg, th.key, th.special, th.text, th.accent, th.accentText)
+            .joinToString("|")
+    }
+
+    fun nextTheme(c: Context) = selectBuiltInTheme(c, (i(c, "theme", 0) + 1) % themes.size)
     fun nextOneHand(c: Context) = setI(c, "onehand", (i(c, "onehand", 0) + 1) % 3)
     fun keyH(c: Context) = i(c, "keyh", 46).coerceIn(34, 64)
     fun keyWidth(c: Context) = i(c, "kbdwidth", 100).coerceIn(55, 100)
     fun oneHandWidth(c: Context) = i(c, "onehandWidth", 78).coerceIn(60, 90)
-    fun sig(c: Context) = "${i(c, "theme", 0)}|${i(c, "onehand", 0)}|${keyH(c)}|${keyWidth(c)}|${oneHandWidth(c)}|${b(c, "numrow", true)}|${numberHints(c)}|${c.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK}"
+    fun sig(c: Context) = "${themeSignature(c)}|${i(c, "onehand", 0)}|${keyH(c)}|${keyWidth(c)}|${oneHandWidth(c)}|${b(c, "numrow", true)}|${numberHints(c)}|${c.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK}"
 
     private fun list(c: Context, k: String) = (sp(c).getString(k, "") ?: "").split(SEP).filter { it.isNotEmpty() }
     private fun put(c: Context, k: String, l: List<String>) = sp(c).edit().putString(k, l.joinToString(SEP)).apply()
