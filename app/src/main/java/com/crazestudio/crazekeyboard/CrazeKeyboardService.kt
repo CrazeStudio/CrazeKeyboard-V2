@@ -252,9 +252,10 @@ class CrazeKeyboardService : InputMethodService() {
         CrazeLmTflitePredictor.refreshInitialStatus(applicationContext)
         DownloadedVocabularyIndex.loadInstalledAsync(applicationContext)
         val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        manualIncognito = Prefs.manualIncognito(applicationContext)
         clipListener = ClipboardManager.OnPrimaryClipChangedListener {
             try {
-                if (incognito || manualIncognito || !Prefs.b(ctx, "clipboardHistory", false)) return@OnPrimaryClipChangedListener
+                if (incognito || Prefs.manualIncognito(ctx) || !Prefs.b(ctx, "clipboardHistory", false)) return@OnPrimaryClipChangedListener
                 val clip = cm.primaryClip ?: return@OnPrimaryClipChangedListener
                 if (Build.VERSION.SDK_INT >= 33 &&
                     clip.description?.extras?.getBoolean("android.content.extra.IS_SENSITIVE", false) == true) return@OnPrimaryClipChangedListener
@@ -547,7 +548,7 @@ class CrazeKeyboardService : InputMethodService() {
     }
 
     private fun isToolActive(id: String): Boolean = when (id) {
-        "incognito" -> manualIncognito
+        "incognito" -> incognito
         "onehand" -> Prefs.i(ctx, "onehand", 0) != 0
         "floating" -> floating
         else -> false
@@ -559,7 +560,7 @@ class CrazeKeyboardService : InputMethodService() {
         "clipboard" -> "Clipboard"
         "emoji" -> "Emoji"
         "numpad" -> "Numpad"
-        "incognito" -> if (manualIncognito) "Private ON" else "Private"
+        "incognito" -> if (incognito) "Private ON" else "Private OFF"
         "voice" -> "Voice"
         "theme" -> "Theme Studio"
         "onehand" -> when (Prefs.i(ctx, "onehand", 0)) {
@@ -600,9 +601,14 @@ class CrazeKeyboardService : InputMethodService() {
         val cls = (ei?.inputType ?: 0) and InputType.TYPE_MASK_CLASS
         val v = (ei?.inputType ?: 0) and InputType.TYPE_MASK_VARIATION
         incognito = manualIncognito || isPasswordField(cls, v) || ((ei?.imeOptions ?: 0) and noPersonalizedLearning) != 0
+        val secureField = isPasswordField(cls, v) || ((ei?.imeOptions ?: 0) and noPersonalizedLearning) != 0
         Toast.makeText(
             ctx,
-            if (manualIncognito) "Private mode ON — zero learning or clipboard saving" else "Private mode OFF",
+            when {
+                manualIncognito -> "Private mode ON — zero learning or clipboard saving"
+                secureField -> "Private mode remains active for this secure field"
+                else -> "Private mode OFF"
+            },
             Toast.LENGTH_SHORT
         ).show()
         buildTop()
