@@ -123,6 +123,7 @@ class TextEditorActivity : Activity() {
     private var current = ""
     private var lastEditAt = 0L
     private var restoring = false
+    private var forceUndoSnapshot = false
 
     // ---- find ----
     private var matches: List<Int> = emptyList()
@@ -539,6 +540,11 @@ class TextEditorActivity : Activity() {
         return out.toString()
     }
 
+    /** Make the next real programmatic edit its own undo step instead of merging it into typing. */
+    private fun prepareAtomicEdit() {
+        forceUndoSnapshot = true
+    }
+
     private fun polishEditorText() {
         val text = editor.text
         val start = selStart()
@@ -553,6 +559,7 @@ class TextEditorActivity : Activity() {
             Toast.makeText(this, "Text already looks clean", Toast.LENGTH_SHORT).show()
             return
         }
+        prepareAtomicEdit()
         text.replace(targetStart, targetEnd, polished)
         if (whole) editor.setSelection(polished.length.coerceAtMost(editor.text.length))
         else editor.setSelection(targetStart, (targetStart + polished.length).coerceAtMost(editor.text.length))
@@ -575,6 +582,7 @@ class TextEditorActivity : Activity() {
         }
         if (next == segment) return
         val cursor = selEnd().coerceAtMost(text.length)
+        prepareAtomicEdit()
         text.replace(start, end, next)
         if (whole) editor.setSelection(cursor.coerceAtMost(editor.text.length))
         else editor.setSelection(start, start + next.length)
@@ -600,6 +608,7 @@ class TextEditorActivity : Activity() {
                 else -> "• $line"
             }
         }
+        prepareAtomicEdit()
         text.replace(lineStart, lineEnd, updated)
         if (lines.size == 1) editor.setSelection(lineStart + updated.length)
         else editor.setSelection(lineStart, lineStart + updated.length)
@@ -632,6 +641,7 @@ class TextEditorActivity : Activity() {
             return
         }
         clipboard().setPrimaryClip(ClipData.newPlainText("CrazeKeyboard text", editor.text.substring(start, end)))
+        prepareAtomicEdit()
         editor.text.delete(start, end)
     }
 
@@ -643,7 +653,11 @@ class TextEditorActivity : Activity() {
         }
         val value = clip.getItemAt(0).coerceToText(this)?.toString().orEmpty()
         if (value.isEmpty()) return
-        editor.text.replace(selStart(), selEnd(), value)
+        val start = selStart()
+        val end = selEnd()
+        if (editor.text.substring(start, end) == value) return
+        prepareAtomicEdit()
+        editor.text.replace(start, end, value)
         editor.requestFocus()
     }
 
@@ -667,6 +681,7 @@ class TextEditorActivity : Activity() {
 
     private fun clearText() {
         if (editor.text.isEmpty()) return
+        prepareAtomicEdit()
         editor.text.clear()
         Toast.makeText(this, "Cleared. Tap Undo to bring it back.", Toast.LENGTH_SHORT).show()
     }
@@ -678,10 +693,11 @@ class TextEditorActivity : Activity() {
         if (!restoring && value != current) {
             val now = SystemClock.uptimeMillis()
             val bigChange = kotlin.math.abs(value.length - current.length) > 1
-            if (bigChange || undoStack.isEmpty() || now - lastEditAt > BURST_MS) {
+            if (forceUndoSnapshot || bigChange || undoStack.isEmpty() || now - lastEditAt > BURST_MS) {
                 undoStack.addLast(current)
                 while (undoStack.size > UNDO_LIMIT) undoStack.removeFirst()
             }
+            forceUndoSnapshot = false
             redoStack.clear()
             current = value
             lastEditAt = now
@@ -766,6 +782,8 @@ class TextEditorActivity : Activity() {
             setTextColor(ink)
             setHintTextColor(muted)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            background = shape(chipBg, 10, stroke)
+            setPadding(dp(10), dp(8), dp(10), dp(8))
             imeOptions = EditorInfo.IME_ACTION_SEARCH
             setOnEditorActionListener { _, _, _ -> findStep(1); true }
             addTextChangedListener(watcher { refreshMatches(true) })
@@ -788,6 +806,8 @@ class TextEditorActivity : Activity() {
             setTextColor(ink)
             setHintTextColor(muted)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            background = shape(chipBg, 10, stroke)
+            setPadding(dp(10), dp(8), dp(10), dp(8))
         }
         caseChip = chip("Aa", small = true, description = "Match case") {
             matchCase = !matchCase
@@ -914,6 +934,8 @@ class TextEditorActivity : Activity() {
         }
         val start = matches[matchIndex]
         val replacement = replaceInput.text.toString()
+        if (editor.text.substring(start, start + query.length) == replacement) return
+        prepareAtomicEdit()
         editor.text.replace(start, start + query.length, replacement)
         refreshMatches(true, start + replacement.length)
     }
@@ -930,6 +952,11 @@ class TextEditorActivity : Activity() {
         val before = editor.text.toString()
         val cursor = editor.selectionEnd.coerceAtLeast(0)
         val updated = before.replace(query, replaceInput.text.toString(), ignoreCase = !matchCase)
+        if (updated == before) {
+            Toast.makeText(this, "Replacement made no changes", Toast.LENGTH_SHORT).show()
+            return
+        }
+        prepareAtomicEdit()
         clearHighlights()
         editor.setText(updated)
         editor.setSelection(cursor.coerceAtMost(editor.text.length))
