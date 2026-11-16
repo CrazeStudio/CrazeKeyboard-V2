@@ -2238,7 +2238,6 @@ class CrazeKeyboardService : InputMethodService() {
             isVerticalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
             clipToPadding = false
-            fillViewport = false
         }
         scroll.addView(col, FrameLayout.LayoutParams(MATCH, WRAP))
         return scroll
