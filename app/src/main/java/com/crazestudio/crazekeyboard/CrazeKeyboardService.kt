@@ -254,7 +254,7 @@ class CrazeKeyboardService : InputMethodService() {
         val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         clipListener = ClipboardManager.OnPrimaryClipChangedListener {
             try {
-                if (incognito || manualIncognito || !Prefs.b(ctx, "clipboardHistory", true)) return@OnPrimaryClipChangedListener
+                if (incognito || manualIncognito || !Prefs.b(ctx, "clipboardHistory", false)) return@OnPrimaryClipChangedListener
                 val clip = cm.primaryClip ?: return@OnPrimaryClipChangedListener
                 if (Build.VERSION.SDK_INT >= 33 &&
                     clip.description?.extras?.getBoolean("android.content.extra.IS_SENSITIVE", false) == true) return@OnPrimaryClipChangedListener
@@ -1060,19 +1060,31 @@ class CrazeKeyboardService : InputMethodService() {
             sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
             return
         }
+
+        fun previousStart(end: Int): Int {
+            if (end <= 0) return 0
+            return end - Character.charCount(Character.codePointBefore(before, end))
+        }
+        fun previousCodePoint(end: Int): Int = Character.codePointBefore(before, end)
+        fun isWordCodePoint(codePoint: Int): Boolean =
+            Character.isLetterOrDigit(codePoint) || codePoint == '\''.code || codePoint == '’'.code
+
         var idx = before.length
-        while (idx > 0 && before[idx - 1].isWhitespace()) idx--
+        while (idx > 0 && Character.isWhitespace(previousCodePoint(idx))) idx = previousStart(idx)
         if (idx > 0) {
-            val isWordChar = before[idx - 1].isLetterOrDigit() || before[idx - 1] == '\''
-            if (isWordChar) {
-                while (idx > 0 && (before[idx - 1].isLetterOrDigit() || before[idx - 1] == '\'')) idx--
+            if (isWordCodePoint(previousCodePoint(idx))) {
+                while (idx > 0 && isWordCodePoint(previousCodePoint(idx))) idx = previousStart(idx)
             } else {
-                idx--
+                idx = previousStart(idx)
             }
         }
-        val deleteCount = before.length - idx
-        if (deleteCount > 0) {
-            ic.deleteSurroundingText(deleteCount, 0)
+        val deleteCodePoints = before.codePointCount(idx, before.length)
+        if (deleteCodePoints > 0) {
+            try {
+                ic.deleteSurroundingTextInCodePoints(deleteCodePoints, 0)
+            } catch (_: Exception) {
+                ic.deleteSurroundingText(before.length - idx, 0)
+            }
             setLocalContext(before.substring(0, idx))
             if (hapticsOn) panel.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             scheduleRefresh()
@@ -1242,12 +1254,12 @@ class CrazeKeyboardService : InputMethodService() {
         if (sequence.length < 3) return false
         val word = Words.swipeCandidates(this, sequence, 3).firstOrNull() ?: return false
         val connection = currentInputConnection ?: targetInputConnection ?: return false
+        val previous = tokensBeforeCursor(cachedBeforeCursor).takeLast(2)
         return try {
             acceptPendingCorrection()
             connection.commitText("$word ", 1)
             setLocalContext(cachedBeforeCursor + "$word ")
             if (!incognito && Prefs.b(this, "personalized", true)) {
-                val previous = tokensBeforeCursor(cachedBeforeCursor).takeLast(2)
                 UserLanguageModel.observe(this, previous, word)
                 if (!Words.known(word)) Words.learn(this, word)
             }
@@ -1261,7 +1273,13 @@ class CrazeKeyboardService : InputMethodService() {
         var swipeLastKey = ""
         val swipePath = StringBuilder()
         val letterKey = letterKeys.any { it.first === k.tv }
-        val longR = Runnable { fired = true; hidePreview(); onLong?.invoke() }
+        val longR = Runnable {
+            fired = true
+            swipeTracking = false
+            swipePath.setLength(0)
+            hidePreview()
+            onLong?.invoke()
+        }
         val repR = object : Runnable { override fun run() { tap(); hd.postDelayed(this, 45) } }
         k.cell.setOnTouchListener { _, e ->
             when (e.actionMasked) {
@@ -1285,7 +1303,7 @@ class CrazeKeyboardService : InputMethodService() {
                     if (showPrev) showPreview(k)
                     if (repeat) { tap(); hd.postDelayed(repR, 380) }
                     else if (fast) tap()
-                    else if (onLong != null && !swipeTracking) hd.postDelayed(longR, 350)
+                    else if (onLong != null) hd.postDelayed(longR, 350)
                 }
                 MotionEvent.ACTION_MOVE -> {
                     if (swipeTracking && e.pointerCount == 1) {
@@ -2466,7 +2484,11 @@ class CrazeKeyboardService : InputMethodService() {
         }
         if (clips.isEmpty()) {
             list.addView(TextView(ctx).apply {
-                text = "Copied text stays private on your device. Tap any snippet to paste."
+                text = when {
+                    !Prefs.b(ctx, "clipboardHistory", false) -> "Clipboard history is off. Enable it in Settings → Privacy & data to save snippets."
+                    incognito -> "Private mode is active. Clipboard history is paused."
+                    else -> "Saved snippets stay on this device. Tap any item to paste."
+                }
                 textSize = 12f
                 setTextColor(mutedInk())
                 setPadding(dp(12), dp(16), dp(12), dp(12))
