@@ -1315,7 +1315,9 @@ class CrazeKeyboardService : InputMethodService() {
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     fired = false; swiped = false; swipeMoved = false
-                    swipeTracking = letterKey && Prefs.b(ctx, "swipeTyping", false) && Prefs.string(ctx, "activeLanguage", "en") == "en"
+                    swipeTracking = letterKey && !incognito &&
+                        Prefs.b(ctx, "swipeTyping", false) &&
+                        Prefs.string(ctx, "activeLanguage", "en") == "en"
                     swipePath.setLength(0)
                     if (swipeTracking) {
                         captureSwipeKeyCenters()
@@ -2537,8 +2539,11 @@ class CrazeKeyboardService : InputMethodService() {
                 setTextColor(t.text)
             })
             addView(TextView(ctx).apply {
-                text = if (incognito) "Private mode active · history paused"
-                else "${Prefs.clips(ctx).size} snippets · stored locally"
+                text = when {
+                    incognito -> "Private mode active · history paused"
+                    !Prefs.b(ctx, "clipboardHistory", false) -> "History off · nothing new is saved"
+                    else -> "${Prefs.clips(ctx).size} snippets · stored locally"
+                }
                 textSize = 10.5f
                 setTextColor(mutedInk())
             })
