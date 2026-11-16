@@ -48,6 +48,7 @@ class SettingsActivity : Activity() {
     private var ink = 0
     private var muted = 0
     private var accent = Color.rgb(102, 83, 215)
+    private var accentText = Color.WHITE
     private var themeSignatureAtCreate = ""
     private var page = 0
     private var card = 0
@@ -86,6 +87,7 @@ class SettingsActivity : Activity() {
         fieldBg = theme.special
         ink = theme.text
         accent = theme.accent
+        accentText = theme.accentText
         night = isDark(page)
         muted = blend(ink, page, 0.58f)
         dividerColor = blend(ink, page, if (night) 0.20f else 0.12f)
@@ -120,7 +122,7 @@ class SettingsActivity : Activity() {
             textSize = 14f
             gravity = Gravity.CENTER
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            setTextColor(if (primary) Color.WHITE else ink)
+            setTextColor(if (primary) accentText else ink)
             background = shape(if (primary) accent else actionBg, 13)
             setPadding(dp(16), dp(12), dp(16), dp(12))
             minHeight = dp(48)
