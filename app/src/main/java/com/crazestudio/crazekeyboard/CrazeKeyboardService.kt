@@ -2153,6 +2153,72 @@ class CrazeKeyboardService : InputMethodService() {
                 status.text = "Paste unavailable"
             }
         }
+        fun transformText(label: String, transform: (String) -> String) {
+            if (incognito) {
+                status.text = "Text transforms are paused in private mode"
+                return
+            }
+            val ic = connection() ?: return
+            try {
+                val selected = ic.getSelectedText(0)?.toString().orEmpty()
+                if (selected.isNotEmpty()) {
+                    ic.commitText(transform(selected), 1)
+                } else {
+                    val extracted = ic.getExtractedText(android.view.inputmethod.ExtractedTextRequest(), 0)
+                    val original = extracted?.text?.toString()
+                    if (original.isNullOrEmpty() || extracted.partialStartOffset >= 0) {
+                        status.text = "Select text first"
+                        return
+                    }
+                    val converted = transform(original)
+                    ic.beginBatchEdit()
+                    try {
+                        ic.setSelection(0, original.length)
+                        ic.commitText(converted, 1)
+                        ic.setSelection(converted.length, converted.length)
+                    } finally {
+                        ic.endBatchEdit()
+                    }
+                }
+                status.text = "$label applied on-device"
+                syncContextAsync()
+            } catch (_: Exception) {
+                status.text = "$label unavailable in this field"
+            }
+        }
+
+        fun titleCase(value: String): String {
+            var capitalizeNext = true
+            return buildString(value.length) {
+                value.forEach { character ->
+                    if (character.isLetter()) {
+                        append(if (capitalizeNext) character.uppercaseChar() else character.lowercaseChar())
+                        capitalizeNext = false
+                    } else {
+                        append(character)
+                        capitalizeNext = character.isWhitespace() || character == '-' || character == '/'
+                    }
+                }
+            }
+        }
+
+        fun sentenceCase(value: String): String {
+            var capitalizeNext = true
+            return buildString(value.length) {
+                value.forEach { character ->
+                    if (character.isLetter()) {
+                        append(if (capitalizeNext) character.uppercaseChar() else character.lowercaseChar())
+                        capitalizeNext = false
+                    } else {
+                        append(character)
+                        if (character == '.' || character == '!' || character == '?' || character == '\n') {
+                            capitalizeNext = true
+                        }
+                    }
+                }
+            }
+        }
+
         fun quickPolish() {
             if (incognito) {
                 status.text = "Text polish disabled in private mode"
@@ -2260,6 +2326,22 @@ class CrazeKeyboardService : InputMethodService() {
         }
         col.addView(actionsRow, lp(MATCH, dp(42)).apply { bottomMargin = dp(2) })
         col.addView(actionsRow2, lp(MATCH, dp(42)).apply { bottomMargin = dp(5) })
+
+        col.addView(sectionLabel("Text transform"))
+        val transformRow = hrow()
+        val transforms = listOf(
+            Triple("UPPER", "Convert text to uppercase") { value: String -> value.uppercase() },
+            Triple("lower", "Convert text to lowercase") { value: String -> value.lowercase() },
+            Triple("Title", "Convert text to title case") { value: String -> titleCase(value) },
+            Triple("Sentence", "Convert text to sentence case") { value: String -> sentenceCase(value) }
+        )
+        transforms.forEach { (label, description, transform) ->
+            val key = mk(label, 1f, t.special, t.text, 10.5f)
+            key.cell.contentDescription = description
+            attach(key) { transformText(label, transform) }
+            transformRow.addView(key.cell)
+        }
+        col.addView(transformRow, lp(MATCH, dp(40)).apply { bottomMargin = dp(5) })
 
         col.addView(sectionLabel("More editing"))
         val footer = hrow()
