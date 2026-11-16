@@ -11,21 +11,61 @@ import java.security.MessageDigest
 
 internal data class CrazeLmFiles(val model: File, val tokenizer: File)
 
-/** Uses verified APK-bundled assets first; falls back to a verified release download. */
+/** Uses verified APK-bundled assets first; falls back to a verified release download when requested. */
 internal object CrazeLmAssets {
     private const val BASE =
         "https://github.com/CrazeStudio/Crazekeyboard-llm/releases/download/v1.0/"
     private const val MANIFEST_URL = BASE + "CrazeLM-30M-v1.0.tflite.json"
     private const val MODEL_URL = BASE + "CrazeLM-30M-v1.0.tflite"
     private const val TOKENIZER_URL = BASE + "tokenizer.model"
+    private const val MODEL_FILE_NAME = "CrazeLM-30M-v1.0.tflite"
+    private const val TOKENIZER_FILE_NAME = "tokenizer.model"
     private const val TOKENIZER_BYTES = 1_993_147L
     private const val TOKENIZER_SHA256 =
         "2f48ce89eee2cd8a49668d4baf08652eaf8206a07def1bee55451f80b1bd981e"
 
-    fun ensureDownloaded(context: Context, progress: (String) -> Unit = {}): CrazeLmFiles {
+    fun hasLocalFiles(context: Context): Boolean {
+        val dir = File(context.filesDir, "crazelm")
+        val model = File(dir, MODEL_FILE_NAME)
+        val tokenizer = File(dir, TOKENIZER_FILE_NAME)
+        val modelMarker = File(dir, "model.verified")
+        val tokenizerMarker = File(dir, "tokenizer.verified")
+        return model.isFile && model.length() > 0L &&
+            tokenizer.isFile && tokenizer.length() == TOKENIZER_BYTES &&
+            modelMarker.isFile && tokenizerMarker.isFile
+    }
+
+    fun localModelSizeMb(context: Context): Int {
+        val model = File(File(context.filesDir, "crazelm"), MODEL_FILE_NAME)
+        if (!model.isFile) return 0
+        return (model.length() / (1024L * 1024L)).toInt()
+    }
+
+    fun ensureAvailable(
+        context: Context,
+        allowNetworkDownload: Boolean,
+        progress: (String) -> Unit = {}
+    ): CrazeLmFiles? {
         val directory = File(context.filesDir, "crazelm")
         if (!directory.exists() && !directory.mkdirs()) error("Cannot create CrazeLM private storage.")
-        val manifestText = readBundledText(context, "crazelm/manifest.json") ?: readText(MANIFEST_URL)
+
+        val model = File(directory, MODEL_FILE_NAME)
+        val tokenizer = File(directory, TOKENIZER_FILE_NAME)
+        val modelMarker = File(directory, "model.verified")
+        val tokenizerMarker = File(directory, "tokenizer.verified")
+
+        if (!allowNetworkDownload &&
+            model.isFile && model.length() > 0L && modelMarker.isFile &&
+            tokenizer.isFile && tokenizer.length() == TOKENIZER_BYTES &&
+            tokenizerMarker.isFile && tokenizerMarker.readText().trim() == TOKENIZER_SHA256
+        ) {
+            return CrazeLmFiles(model, tokenizer)
+        }
+
+        val bundledManifest = readBundledText(context, "crazelm/manifest.json")
+        if (bundledManifest == null && !allowNetworkDownload) return null
+
+        val manifestText = bundledManifest ?: readText(MANIFEST_URL)
         val manifest = JSONObject(manifestText)
         require(manifest.optString("format") == "LiteRT/TFLite") {
             "The published CrazeLM asset is not a TFLite model."
@@ -48,18 +88,24 @@ internal object CrazeLmAssets {
             "CrazeLM model manifest is invalid."
         }
 
-        val model = File(directory, "CrazeLM-30M-v1.0.tflite")
-        val modelMarker = File(directory, "model.verified")
-        if (!copyBundledVerified(context, "crazelm/CrazeLM-30M-v1.0.tflite",
+        if (!copyBundledVerified(context, "crazelm/$MODEL_FILE_NAME",
                 model, modelBytes, modelSha, modelMarker, "AI model", progress)) {
+            if (!allowNetworkDownload &&
+                !(model.isFile && model.length() == modelBytes && modelMarker.isFile && modelMarker.readText().trim() == modelSha)
+            ) {
+                return null
+            }
             downloadVerified(MODEL_URL, model, modelBytes, modelSha,
                 modelMarker, "AI model", progress)
         }
 
-        val tokenizer = File(directory, "tokenizer.model")
-        val tokenizerMarker = File(directory, "tokenizer.verified")
-        if (!copyBundledVerified(context, "crazelm/tokenizer.model",
+        if (!copyBundledVerified(context, "crazelm/$TOKENIZER_FILE_NAME",
                 tokenizer, TOKENIZER_BYTES, TOKENIZER_SHA256, tokenizerMarker, "Tokenizer", progress)) {
+            if (!allowNetworkDownload &&
+                !(tokenizer.isFile && tokenizer.length() == TOKENIZER_BYTES && tokenizerMarker.isFile && tokenizerMarker.readText().trim() == TOKENIZER_SHA256)
+            ) {
+                return null
+            }
             downloadVerified(TOKENIZER_URL, tokenizer, TOKENIZER_BYTES, TOKENIZER_SHA256,
                 tokenizerMarker, "Tokenizer", progress)
         }
@@ -137,7 +183,7 @@ internal object CrazeLmAssets {
             connectTimeout = 20_000
             readTimeout = 45_000
             instanceFollowRedirects = true
-            setRequestProperty("User-Agent", "CrazeKeyboard/1.6")
+            setRequestProperty("User-Agent", "CrazeKeyboard/1.7")
             setRequestProperty("Accept", "application/octet-stream")
         }
         try {
@@ -201,12 +247,12 @@ internal object CrazeLmAssets {
             connectTimeout = 20_000
             readTimeout = 30_000
             instanceFollowRedirects = true
-            setRequestProperty("User-Agent", "CrazeKeyboard/1.6")
+            setRequestProperty("User-Agent", "CrazeKeyboard/1.7")
         }
         return try {
             val status = connection.responseCode
             require(status in 200..299) {
-                "Could not read the CrazeLM release manifest (HTTP " + status + ")."
+                "Could not read the CrazeLM release manifest (HTTP $status)."
             }
             connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
         } finally {

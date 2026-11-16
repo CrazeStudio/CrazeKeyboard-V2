@@ -1,14 +1,14 @@
 package com.crazestudio.crazekeyboard
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.graphics.Color
-import android.content.SharedPreferences
 
 class Theme(val bg: Int, val key: Int, val special: Int, val text: Int, val accent: Int, val accentText: Int)
 
 object Prefs {
-    val themeNames = listOf("System", "Dark", "Craze", "🌿 Sage Garden", "🏜 Sandstone", "〰 Mist Blue")
+    val themeNames = listOf("System", "Dark", "Craze", "Sage Garden", "Sandstone", "Mist Blue")
     val themes = listOf(
         Theme(0xFFF1F3F8.toInt(), 0xFFFFFFFF.toInt(), 0xFFE2E7F0.toInt(), 0xFF202633.toInt(), 0xFF6656D9.toInt(), 0xFFFFFFFF.toInt()),
         Theme(0xFF17191F.toInt(), 0xFF292D36.toInt(), 0xFF222630.toInt(), 0xFFF0F2F7.toInt(), 0xFFB9A9FF.toInt(), 0xFF17191F.toInt()),
@@ -19,10 +19,14 @@ object Prefs {
     )
     private const val SEP = "\u0001"
     val availableToolbarTools = listOf(
-        "editor", "clipboard", "emoji", "voice", "theme", "onehand",
-        "floating", "resize", "settings", "keyboard", "hide"
+        "clipboard", "emoji", "voice", "incognito", "editor", "numpad",
+        "theme", "onehand", "floating", "resize", "settings", "fulleditor",
+        "keyboard", "hide"
     )
-    private val defaultToolbarTools = availableToolbarTools
+    private val defaultToolbarTools = listOf(
+        "clipboard", "emoji", "voice", "incognito", "editor", "numpad",
+        "theme", "onehand", "floating", "resize", "settings", "fulleditor", "hide"
+    )
     @Volatile private var learnedCache: List<String>? = null
     @Volatile private var shared: SharedPreferences? = null
 
@@ -34,6 +38,14 @@ object Prefs {
     fun setI(c: Context, k: String, v: Int) = sp(c).edit().putInt(k, v).apply()
     fun string(c: Context, k: String, d: String = "") = sp(c).getString(k, d) ?: d
     fun setString(c: Context, k: String, v: String) = sp(c).edit().putString(k, v).apply()
+
+    fun lowRamAi(c: Context) = b(c, "lowRamAi", true)
+    fun swipeBackspace(c: Context) = b(c, "swipeBackspace", true)
+    fun keyPopup(c: Context) = b(c, "keyPopup", true)
+    fun autoCap(c: Context) = b(c, "autoCap", true)
+    fun numberHints(c: Context) = b(c, "numberHints", true)
+    fun manualIncognito(c: Context) = b(c, "manualIncognito", false)
+
     private fun isNightMode(c: Context): Boolean =
         (c.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
 
@@ -60,7 +72,6 @@ object Prefs {
         val accent = attrs.getColor(2, Color.rgb(80, 100, 210))
         attrs.recycle()
         return if (night) {
-            // Host-app theme attributes can remain light even while Android is in dark mode.
             Theme(0xFF15171D.toInt(), 0xFF292D36.toInt(), 0xFF222630.toInt(),
                 0xFFF0F2F7.toInt(), accent, contrastText(accent))
         } else {
@@ -77,7 +88,6 @@ object Prefs {
         contrastText(theme.accent)
     )
 
-    // System follows Android's light/dark mode. Custom light palettes also become dark surfaces at night.
     fun theme(c: Context): Theme {
         val index = i(c, "theme", 0).coerceIn(0, themes.size - 1)
         val night = isNightMode(c)
@@ -92,7 +102,7 @@ object Prefs {
     fun keyH(c: Context) = i(c, "keyh", 46).coerceIn(34, 64)
     fun keyWidth(c: Context) = i(c, "kbdwidth", 100).coerceIn(55, 100)
     fun oneHandWidth(c: Context) = i(c, "onehandWidth", 78).coerceIn(60, 90)
-    fun sig(c: Context) = "${i(c, "theme", 0)}|${i(c, "onehand", 0)}|${keyH(c)}|${keyWidth(c)}|${oneHandWidth(c)}|${b(c, "numrow", true)}|${c.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK}"
+    fun sig(c: Context) = "${i(c, "theme", 0)}|${i(c, "onehand", 0)}|${keyH(c)}|${keyWidth(c)}|${oneHandWidth(c)}|${b(c, "numrow", true)}|${numberHints(c)}|${c.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK}"
 
     private fun list(c: Context, k: String) = (sp(c).getString(k, "") ?: "").split(SEP).filter { it.isNotEmpty() }
     private fun put(c: Context, k: String, l: List<String>) = sp(c).edit().putString(k, l.joinToString(SEP)).apply()
@@ -125,19 +135,24 @@ object Prefs {
     fun recents(c: Context) = list(c, "recent")
     fun addRecent(c: Context, e: String) = put(c, "recent", (listOf(e) + recents(c).filter { it != e }).take(32))
 
-    // Single source of truth for learned words (lowercase, newest first). Words.kt reads this directly,
-    // so "Clear learned words" takes effect immediately instead of after a service restart.
     fun learned(c: Context): List<String> {
         learnedCache?.let { return it }
         return synchronized(this) { learnedCache ?: list(c, "learned").also { learnedCache = it } }
     }
-    fun isLearned(c: Context, w: String) = learned(c).contains(w.lowercase())
     @Synchronized fun learn(c: Context, w: String) {
         val word = w.trim().lowercase()
         if (word.isEmpty() || word.length > 40 || !word.any { it.isLetter() }) return
         val current = learned(c)
         if (word in current) return
         val updated = (listOf(word) + current).take(500)
+        put(c, "learned", updated)
+        learnedCache = updated
+    }
+    @Synchronized fun unlearn(c: Context, w: String) {
+        val word = w.trim().lowercase()
+        val current = learned(c)
+        if (word !in current) return
+        val updated = current.filterNot { it == word }
         put(c, "learned", updated)
         learnedCache = updated
     }

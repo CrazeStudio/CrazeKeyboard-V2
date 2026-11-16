@@ -27,7 +27,6 @@ object Alts {
 }
 
 object Words {
-    // Roughly ordered by frequency, so earlier words are suggested first.
     private val dict: List<String> = ("the be to of and a in that have it for not on with he as you do at this but his by from they we " +
         "say her she or an will my one all would there their what so up out if about who get which go me when make can like time no " +
         "just him know take people into year your good some could them see other than then now look only come its over think also " +
@@ -45,7 +44,8 @@ object Words {
         "tell talk speak watch play read write learn study start stop open close give take bring buy pay cost price free " +
         "money time week month year weekend monday tuesday wednesday thursday friday saturday sunday january february march " +
         "april june july august september october november december yesterday sorry excuse understand remember forget believe " +
-        "believe maybe probably actually definitely absolutely exactly totally literally basically honestly seriously").split(" ").filter { it.isNotEmpty() }.distinct()
+        "maybe probably actually definitely absolutely exactly totally literally basically honestly seriously " +
+        "awesome cool sounds good morning afternoon evening awesome update settings privacy secure local offline fast").split(" ").filter { it.isNotEmpty() }.distinct()
 
     private val dictSet = dict.toHashSet()
     private val dictRank: Map<String, Int> = HashMap<String, Int>(dict.size * 2).also { map ->
@@ -59,8 +59,6 @@ object Words {
     }
     private val starters = listOf("I", "The", "Thanks")
 
-    // Typing shortcuts that are almost never intended: missing apostrophes, a lone "i" and the
-    // most common misspellings. Applied before the (more conservative) edit-distance search.
     private val commonFixes: Map<String, String> = mapOf(
         "i" to "I", "im" to "I'm", "ive" to "I've", "ill" to "ill", "id" to "id",
         "dont" to "don't", "cant" to "can't", "wont" to "won't", "isnt" to "isn't", "arent" to "aren't",
@@ -89,13 +87,15 @@ object Words {
         "sucessful" to "successful", "suprise" to "surprise", "truely" to "truly", "writting" to "writing"
     )
 
-    /**
-     * Ranking bonus for the curated list above: 3.0 for the last entry up to 7.0 for the first.
-     * Words outside it get no bonus. Used to combine with the lexicon's usage frequency.
-     */
     internal fun dictBonus(word: String): Double {
         val rank = dictRank[word] ?: return 0.0
         return 3.0 + 4.0 * (1.0 - rank.toDouble() / dict.size)
+    }
+
+    fun rankScore(word: String): Double {
+        val value = word.lowercase()
+        val bonus = dictBonus(value)
+        return if (bonus > 0.0) bonus else if (DownloadedVocabularyIndex.contains("en", value)) 1.5 else 0.0
     }
 
     fun known(w: String): Boolean {
@@ -106,9 +106,7 @@ object Words {
             value.any { it in '\u0900'..'\u097F' } -> "hi"
             else -> "en"
         }
-        return if (language == "en") {
-            VocabularyIndex.contains(value) || DownloadedVocabularyIndex.contains("en", value)
-        } else DownloadedVocabularyIndex.contains(language, value)
+        return DownloadedVocabularyIndex.contains(language, value)
     }
 
     fun learn(c: Context, w: String) {
@@ -123,12 +121,11 @@ object Words {
         else -> s
     }
 
-    // True when a and b differ by exactly one insertion, deletion, substitution or adjacent swap.
     private fun near(a: String, b: String): Boolean {
         if (a == b) return false
         val la = a.length
         val lb = b.length
-        if (Math.abs(la - lb) > 1) return false
+        if (kotlin.math.abs(la - lb) > 1) return false
         var i = 0
         var j = 0
         var edits = 0
@@ -146,17 +143,9 @@ object Words {
         return edits <= 1
     }
 
-    // Ranking used to pick between several equally-close correction candidates.
     private fun candidateScore(learned: List<String>, word: String): Double =
-        VocabularyIndex.rankScore(word) + if (word in learned) 4.0 else 0.0
+        rankScore(word) + if (word in learned) 4.0 else 0.0
 
-    // Conservative auto-correction. Order of checks:
-    //  1. the user's own learned words are never "corrected";
-    //  2. a table of near-certain fixes ("dont" -> "don't", "teh" -> "the", a lone "i" -> "I");
-    //  3. real words of the lexicon are never touched;
-    //  4. an unknown, plain-letter word with one close candidate that shares its first letter. With several
-    //     close candidates the most frequent wins only if it clearly dominates the runner-up.
-    // Three-letter words are only fixed when they are a simple swap ("teh" -> "the").
     fun correction(c: Context, w: String): String? {
         if (w.isEmpty() || w.length > 20 || w.any { !it.isLetter() }) return null
         val lower = w.lowercase()
@@ -168,14 +157,12 @@ object Words {
         }
         if (w.length < 3) return null
         if (w.drop(1).any { it.isUpperCase() }) return null
-        if (lower in dictSet) return null
-        val vocabReady = VocabularyIndex.isLoaded()
-        if (vocabReady && known(lower)) return null
+        if (known(lower)) return null
 
         val candidates = LinkedHashSet<String>()
         candidates.addAll(byFirst[lower[0]].orEmpty())
         candidates.addAll(learned)
-        candidates.addAll(VocabularyIndex.byFirstLetter(lower[0], 700))
+        candidates.addAll(DownloadedVocabularyIndex.byFirstLetter("en", lower[0], 500))
         val matches = candidates.filter { near(lower, it) }
         if (matches.isEmpty()) return null
 
@@ -183,10 +170,8 @@ object Words {
         if (matches.size == 1) {
             best = matches[0]
         } else {
-            // Without frequency data there is no safe way to choose between candidates.
-            if (!vocabReady) return null
             val ranked = matches.map { it to candidateScore(learned, it) }.sortedByDescending { it.second }
-            if (ranked[0].second - ranked[1].second < 3.0) return null
+            if (ranked[0].second - ranked[1].second < 2.2) return null
             best = ranked[0].first
         }
         if (lower.length == 3 && lower.toCharArray().sorted() != best.toCharArray().sorted()) return null
@@ -195,47 +180,36 @@ object Words {
 
     fun suggest(c: Context, w: String): List<String> = suggestPool(c, w, 3)
 
-    /**
-     * Up to [limit] completions (or close spellings) of [w], best first. Candidates come from the
-     * user's learned words, the frequency-ranked lexicon and the curated list, and are scored on one
-     * common scale so a frequent word beats a rare alphabetical neighbour.
-     */
     fun suggestPool(c: Context, w: String, limit: Int): List<String> {
         if (limit <= 0) return emptyList()
         if (w.isEmpty()) return starters.take(limit)
         val lower = w.lowercase()
         val scored = LinkedHashMap<String, Double>()
 
-        // Words the user has taught the keyboard rank above ordinary words of similar frequency.
         Prefs.learned(c).forEachIndexed { index, x ->
             if (x.startsWith(lower) && x != lower) scored[x] = 11.0 - minOf(index, 300) * 0.01
         }
-        for (x in VocabularyIndex.suggest(lower, 12)) {
-            if (x !in scored) scored[x] = VocabularyIndex.rankScore(x) - 0.08 * (x.length - lower.length)
+        for (x in DownloadedVocabularyIndex.suggest("en", lower, 12)) {
+            if (x !in scored) scored[x] = rankScore(x) - 0.08 * (x.length - lower.length)
         }
-        // The curated list still answers while the lexicon is loading.
         val prefixCandidates = if (lower.length >= 2) byPrefix[lower.take(2)].orEmpty()
             else byFirst[lower.first()].orEmpty()
         for (x in prefixCandidates) {
             if (x.startsWith(lower) && x != lower && x !in scored) {
-                scored[x] = VocabularyIndex.rankScore(x) - 0.08 * (x.length - lower.length)
+                scored[x] = rankScore(x) - 0.08 * (x.length - lower.length)
             }
         }
-        // Typo fallback is uncommon and only useful for longer, clearly mistyped words.
         if (scored.size < limit && lower.length >= 4) {
             val typoPool = LinkedHashSet<String>(dict)
-            typoPool.addAll(VocabularyIndex.byFirstLetter(lower[0], 400))
+            typoPool.addAll(DownloadedVocabularyIndex.byFirstLetter("en", lower[0], 400))
             for (x in typoPool) {
-                if (x !in scored && near(lower, x)) scored[x] = VocabularyIndex.rankScore(x) - 2.0
+                if (x !in scored && near(lower, x)) scored[x] = rankScore(x) - 2.0
             }
         }
         val out = scored.entries.sortedByDescending { it.value }.map { cased(it.key, w) }.distinct().take(limit)
         return if (out.isEmpty()) listOf(w) else out
     }
-    /**
-     * Rank a captured QWERTY key path against the local dictionary. This is a lightweight
-     * edit-distance heuristic, not a trained swipe model; the feature is therefore opt-in.
-     */
+
     fun swipeCandidates(c: Context, keyPath: String, limit: Int = 3): List<String> {
         val path = keyPath.filter { it.isLetter() }.lowercase().take(24)
         if (path.length < 3 || limit <= 0) return emptyList()
@@ -243,7 +217,7 @@ object Words {
         val candidates = LinkedHashSet<String>()
         candidates.addAll(dict)
         candidates.addAll(learned)
-        candidates.addAll(VocabularyIndex.byFirstLetter(path.first(), 2500))
+        candidates.addAll(DownloadedVocabularyIndex.byFirstLetter("en", path.first(), 1200))
         fun editDistance(a: String, b: String): Int {
             if (kotlin.math.abs(a.length - b.length) > maxOf(3, path.length / 3)) return maxOf(a.length, b.length)
             var previous = IntArray(b.length + 1) { it }
@@ -265,7 +239,7 @@ object Words {
                 val edits = editDistance(path, word)
                 val normalizedPenalty = edits.toDouble() / maxOf(path.length, word.length)
                 val personalBonus = if (word in learned) 1.5 else 0.0
-                val score = VocabularyIndex.rankScore(word) + personalBonus - normalizedPenalty * 11.0 - edits * 0.7
+                val score = rankScore(word) + personalBonus - normalizedPenalty * 11.0 - edits * 0.7
                 Triple(word, edits, score)
             }
             .filter { it.second <= maxDistance }
@@ -274,5 +248,4 @@ object Words {
             .map { it.first }
             .toList()
     }
-
 }

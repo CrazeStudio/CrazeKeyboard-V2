@@ -44,6 +44,54 @@ internal class CrazeLmTokenizer private constructor(
         return String(blob, start + 3, length - 3, Charsets.UTF_8)
     }
 
+    /**
+     * Zero-allocation check for whether piece [id] is a "▁word" candidate of 2..20 valid characters
+     * (letters, apostrophe, or hyphen). Avoids allocating 100K temporary Strings during setup.
+     */
+    fun isCandidateWordPiece(id: Int): Boolean {
+        if (id < 0 || id >= scores.size) return false
+        val start = offsets[id]
+        val end = offsets[id + 1]
+        if (end - start <= 3 || blob[start] != 0xE2.toByte() || blob[start + 1] != 0x96.toByte() ||
+            blob[start + 2] != 0x81.toByte()) return false
+        var pos = start + 3
+        var charCount = 0
+        while (pos < end) {
+            val b0 = blob[pos].toInt() and 0xFF
+            val cp: Int
+            val step: Int
+            when {
+                b0 < 0x80 -> {
+                    cp = b0
+                    step = 1
+                }
+                (b0 and 0xE0) == 0xC0 && pos + 1 < end -> {
+                    cp = ((b0 and 0x1F) shl 6) or (blob[pos + 1].toInt() and 0x3F)
+                    step = 2
+                }
+                (b0 and 0xF0) == 0xE0 && pos + 2 < end -> {
+                    cp = ((b0 and 0x0F) shl 12) or
+                        ((blob[pos + 1].toInt() and 0x3F) shl 6) or
+                        (blob[pos + 2].toInt() and 0x3F)
+                    step = 3
+                }
+                (b0 and 0xF8) == 0xF0 && pos + 3 < end -> {
+                    cp = ((b0 and 0x07) shl 18) or
+                        ((blob[pos + 1].toInt() and 0x3F) shl 12) or
+                        ((blob[pos + 2].toInt() and 0x3F) shl 6) or
+                        (blob[pos + 3].toInt() and 0x3F)
+                    step = 4
+                }
+                else -> return false
+            }
+            if (!Character.isLetter(cp) && cp != '\''.code && cp != '-'.code) return false
+            charCount++
+            if (charCount > 20) return false
+            pos += step
+        }
+        return charCount >= 2
+    }
+
     private fun hash(source: ByteArray, start: Int, end: Int): Int {
         var h = -0x7ee3623b // FNV-1a offset basis
         for (i in start until end) h = (h xor (source[i].toInt() and 0xff)) * 16777619
@@ -181,29 +229,32 @@ internal class CrazeLmTokenizer private constructor(
 
         fun load(file: File): CrazeLmTokenizer {
             require(file.isFile && file.length() > 0L) { "CrazeLM tokenizer file is missing." }
-            val data = file.readBytes()
+            var data: ByteArray? = file.readBytes()
+            val raw = data!!
             val offsets = IntArray(EXPECTED_PIECES + 1)
             val scores = FloatArray(EXPECTED_PIECES)
             val types = ByteArray(EXPECTED_PIECES)
-            val packed = ByteArray(data.size)
+            val packed = ByteArray(raw.size)
             var used = 0
             var count = 0
-            val reader = ProtoReader(data)
+            val reader = ProtoReader(raw)
             while (!reader.done()) {
                 val (field, wire) = reader.readTag()
                 if (field == 1 && wire == 2) {
                     val length = reader.varint()
-                    require(length >= 0 && length <= (data.size - reader.position).toLong()) {
+                    require(length >= 0 && length <= (raw.size - reader.position).toLong()) {
                         "Invalid SentencePiece record length $length at byte ${reader.position}."
                     }
                     val end = reader.position + length.toInt()
                     require(count < EXPECTED_PIECES) { "Tokenizer has more than $EXPECTED_PIECES pieces." }
                     offsets[count] = used
-                    used = parsePiece(data, reader.position, end, packed, used, count, scores, types)
+                    used = parsePiece(raw, reader.position, end, packed, used, count, scores, types)
                     count++
                     reader.setPosition(end)
                 } else reader.skipField(field, wire)
             }
+            @Suppress("UNUSED_VALUE")
+            data = null
             require(count == EXPECTED_PIECES) { "Expected 100,000 tokenizer pieces, found $count." }
             offsets[count] = used
             val blob = packed.copyOf(used)

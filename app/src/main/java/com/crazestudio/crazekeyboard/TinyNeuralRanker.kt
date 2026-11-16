@@ -2,15 +2,10 @@ package com.crazestudio.crazekeyboard
 
 import android.content.Context
 import kotlin.math.exp
-import kotlin.math.max
 
 /**
  * Tiny on-device neural reranker (6 inputs -> 8 hidden units -> 1 score).
- *
- * It does not generate text. It learns which candidate the user accepts and
- * nudges future ranking using local context statistics. Only model weights are
- * persisted here; no sentences or keystrokes are stored. Training is called
- * only for non-private, personalized fields.
+ * Uses debounced persistence so typing never triggers SharedPreferences writes on every space.
  */
 internal object TinyNeuralRanker {
     private const val PREFS = "craze_tiny_neural"
@@ -27,6 +22,8 @@ internal object TinyNeuralRanker {
     private var w2 = initialW2.copyOf()
     private var b2 = 0f
     private var loaded = false
+    private var dirty = false
+    private var updatesSinceFlush = 0
 
     private fun load(context: Context) {
         if (loaded) return
@@ -72,7 +69,6 @@ internal object TinyNeuralRanker {
         }.take(limit).map { it.value }
     }
 
-    /** Pairwise online learning: accepted candidate positive, visible alternatives negative. */
     @Synchronized
     fun learn(context: Context, precedingWords: List<String>, accepted: String, alternatives: List<String>) {
         if (accepted.isBlank() || alternatives.isEmpty()) return
@@ -101,10 +97,16 @@ internal object TinyNeuralRanker {
                 b2 += outputGradient * (positiveScore - negativeScore)
             }
         }
-        persist(context)
+        dirty = true
+        updatesSinceFlush++
+        if (updatesSinceFlush >= 12) flush(context)
     }
 
-    private fun persist(context: Context) {
+    @Synchronized
+    fun flush(context: Context) {
+        if (!dirty) return
+        dirty = false
+        updatesSinceFlush = 0
         val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         prefs.edit()
             .putString("w1", w1.flatMap { it.asIterable() }.joinToString(","))
@@ -116,6 +118,8 @@ internal object TinyNeuralRanker {
 
     @Synchronized
     fun clear(context: Context) {
+        dirty = false
+        updatesSinceFlush = 0
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
         w1 = Array(HIDDEN) { initialW1[it].copyOf() }
         b1 = initialB1.copyOf()

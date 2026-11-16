@@ -205,8 +205,7 @@ class TextEditorActivity : Activity() {
         if (!restored) prefs.edit().remove(KEY_DRAFT).apply()
         sizeIndex = prefs.getInt(KEY_SIZE, 2).coerceIn(0, TEXT_SIZES.lastIndex)
 
-        val shell = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        val shell = android.widget.FrameLayout(this).apply {
             setBackgroundColor(page)
             fitsSystemWindows = true
         }
@@ -214,7 +213,8 @@ class TextEditorActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(4), dp(14), dp(8))
         }
-        shell.addView(root, LinearLayout.LayoutParams(-1, -1))
+        val maxWidth = minOf(resources.displayMetrics.widthPixels, dp(680))
+        shell.addView(root, android.widget.FrameLayout.LayoutParams(maxWidth, -1, Gravity.CENTER_HORIZONTAL))
 
         // ---- header ----
         val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
@@ -270,6 +270,7 @@ class TextEditorActivity : Activity() {
         val items = ArrayList<View>()
         undoChip = chip("↶ Undo", small = true, description = "Undo") { undo() }.also { items.add(it) }
         redoChip = chip("↷ Redo", small = true, description = "Redo") { redo() }.also { items.add(it) }
+        items.add(chip("Polish", small = true, description = "Fix spacing and sentence capitalization on-device") { polishEditorText() })
         items.add(chip("Aa", small = true, description = "Change case") { cycleCase() })
         items.add(chip("• List", small = true, description = "Toggle bullet list") { toggleBullets() })
         items.add(chip("Find", small = true, description = "Find and replace") { openFind() })
@@ -454,6 +455,26 @@ class TextEditorActivity : Activity() {
             }
         }
         return out.toString()
+    }
+
+    private fun polishEditorText() {
+        val text = editor.text
+        val start = selStart()
+        val end = selEnd()
+        val whole = start == end
+        val targetStart = if (whole) 0 else start
+        val targetEnd = if (whole) text.length else end
+        if (targetStart == targetEnd) return
+        val source = text.substring(targetStart, targetEnd)
+        val polished = LocalTextPolisher.polish(source)
+        if (polished == source) {
+            Toast.makeText(this, "Text already looks clean", Toast.LENGTH_SHORT).show()
+            return
+        }
+        text.replace(targetStart, targetEnd, polished)
+        if (whole) editor.setSelection(polished.length.coerceAtMost(editor.text.length))
+        else editor.setSelection(targetStart, (targetStart + polished.length).coerceAtMost(editor.text.length))
+        Toast.makeText(this, "Polished on-device", Toast.LENGTH_SHORT).show()
     }
 
     /** UPPERCASE -> lowercase -> Title Case on the selection, or on the whole text when nothing is selected. */

@@ -11,9 +11,11 @@ import java.util.concurrent.ConcurrentHashMap
 internal object DownloadedVocabularyIndex {
     private data class Index(val buffer: ByteBuffer, val offsets: IntArray)
     private val indexes = ConcurrentHashMap<String, Index>()
-    private const val MAX_SCAN = 6000
+    private const val MAX_SCAN = 4000
     private const val POOL = 16
+    private const val FIRST_LETTER_POOL = 500
     private const val CACHE_SIZE = 256
+    private val firstLetterCache = ConcurrentHashMap<String, List<String>>()
     private val suggestCache = object : LinkedHashMap<String, List<String>>(64, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<String>>?): Boolean =
             size > CACHE_SIZE
@@ -21,6 +23,8 @@ internal object DownloadedVocabularyIndex {
 
     private fun file(context: Context, language: String) =
         File(File(context.filesDir, "language_packs"), "$language.words")
+
+    fun isLoaded(language: String): Boolean = indexes.containsKey(language.lowercase().substringBefore('-'))
 
     fun loadInstalledAsync(context: Context) {
         val app = context.applicationContext
@@ -32,6 +36,7 @@ internal object DownloadedVocabularyIndex {
 
     fun reload(context: Context, language: String) {
         indexes.remove(language)
+        firstLetterCache.keys.filter { it.startsWith("$language|") }.forEach { firstLetterCache.remove(it) }
         synchronized(suggestCache) { suggestCache.clear() }
         open(context.applicationContext, language)
     }
@@ -44,7 +49,7 @@ internal object DownloadedVocabularyIndex {
             val buffer = RandomAccessFile(sourceFile, "r").use { raf ->
                 raf.channel.map(FileChannel.MapMode.READ_ONLY, 0, raf.length()).asReadOnlyBuffer()
             }
-            val found = ArrayList<Int>(100_000)
+            val found = ArrayList<Int>(40_000)
             found.add(0)
             for (i in 0 until buffer.limit()) {
                 if (buffer.get(i) == 10.toByte() && i + 1 < buffer.limit()) found.add(i + 1)
@@ -85,23 +90,31 @@ internal object DownloadedVocabularyIndex {
         return position < index.offsets.size && wordAt(index, position) == value
     }
 
-    /**
-     * Completions of [prefix]. The packs are plain word lists, so alphabetical order would offer
-     * the rarest words first. English packs are ranked with the frequency data of [VocabularyIndex];
-     * other languages prefer the shortest completions, which are on average the most common.
-     */
+    fun byFirstLetter(language: String, first: Char, limit: Int = FIRST_LETTER_POOL): List<String> {
+        val code = language.lowercase().substringBefore('-')
+        val index = indexes[code] ?: return emptyList()
+        val ch = first.lowercaseChar()
+        val cached = firstLetterCache.computeIfAbsent("$code|$ch") {
+            val prefix = ch.toString()
+            var position = lowerBound(index, prefix)
+            val list = ArrayList<String>(limit)
+            while (position < index.offsets.size && list.size < FIRST_LETTER_POOL) {
+                val w = wordAt(index, position++)
+                if (!w.startsWith(prefix)) break
+                list.add(w)
+            }
+            if (code == "en") list.sortedByDescending { Words.dictBonus(it) } else list
+        }
+        return cached.take(limit)
+    }
+
     fun suggest(language: String, prefix: String, limit: Int = 3): List<String> {
         if (prefix.isBlank() || limit <= 0) return emptyList()
         val code = language.lowercase().substringBefore('-')
         val index = indexes[code] ?: return emptyList()
         val needle = prefix.lowercase()
-        val english = code == "en"
-        // English ranking depends on the frequency lexicon, so it is only cached once that is loaded.
-        val cacheable = !english || VocabularyIndex.isLoaded()
         val cacheKey = "$code|$needle"
-        if (cacheable) {
-            synchronized(suggestCache) { suggestCache[cacheKey] }?.let { return it.take(limit) }
-        }
+        synchronized(suggestCache) { suggestCache[cacheKey] }?.let { return it.take(limit) }
 
         var position = lowerBound(index, needle)
         val matches = ArrayList<String>(64)
@@ -114,15 +127,13 @@ internal object DownloadedVocabularyIndex {
         }
         if (matches.isEmpty()) return emptyList()
 
-        val ranked: List<String> = if (english && VocabularyIndex.isLoaded()) {
-            matches.map { it to VocabularyIndex.rankScore(it) - 0.08 * (it.length - needle.length) }
-                .sortedByDescending { it.second }
-                .map { it.first }
+        val ranked: List<String> = if (code == "en") {
+            matches.sortedByDescending { Words.dictBonus(it) - 0.08 * (it.length - needle.length) }
         } else {
             matches.sortedWith(compareBy<String>({ it.length }, { it }))
         }
         val pool = ranked.take(POOL)
-        if (cacheable) synchronized(suggestCache) { suggestCache[cacheKey] = pool }
+        synchronized(suggestCache) { suggestCache[cacheKey] = pool }
         return pool.take(limit)
     }
 }
