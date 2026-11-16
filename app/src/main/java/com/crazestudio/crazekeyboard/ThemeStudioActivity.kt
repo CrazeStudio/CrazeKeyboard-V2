@@ -252,6 +252,10 @@ class ThemeStudioActivity : Activity() {
         uiMuted = Color.argb(175, Color.red(uiInk), Color.green(uiInk), Color.blue(uiInk))
         window.statusBarColor = uiPage
         window.navigationBarColor = uiPage
+        val luminance = (0.2126 * Color.red(uiPage) + 0.7152 * Color.green(uiPage) +
+            0.0722 * Color.blue(uiPage)) / 255.0
+        window.decorView.systemUiVisibility = if (luminance < 0.34) 0 else
+            View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
 
         val shell = FrameLayout(this).apply { setBackgroundColor(uiPage); fitsSystemWindows = true }
         val root = LinearLayout(this).apply {
