@@ -1649,7 +1649,7 @@ class CrazeKeyboardService : InputMethodService() {
     private fun buildMenu(): View {
         val col = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(6), dp(4), dp(6), dp(2))
+            setPadding(dp(8), dp(6), dp(8), dp(4))
         }
         val userTools = Prefs.toolbarTools(ctx).filter { it != "settings" && it != "fulleditor" }
         val available = (userTools + "fulleditor" + "settings").distinct()
@@ -1659,16 +1659,17 @@ class CrazeKeyboardService : InputMethodService() {
         val scroll = ScrollView(ctx).apply {
             isVerticalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
+            clipToPadding = false
         }
         val grid = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        scroll.addView(grid)
+        scroll.addView(grid, FrameLayout.LayoutParams(MATCH, WRAP))
 
         fun updateTabs() {
             tabViews.forEach { (name, view) ->
                 val active = name == menuCategory
-                view.background = rounded(if (active) t.accent else t.special, 16)
+                view.background = rounded(if (active) t.accent else t.special, 18)
                 view.setTextColor(if (active) t.accentText else t.text)
-                view.alpha = if (active) 1f else 0.78f
+                view.alpha = if (active) 1f else 0.8f
                 view.isSelected = active
             }
         }
@@ -1680,10 +1681,10 @@ class CrazeKeyboardService : InputMethodService() {
                 "Layout" -> listOf("onehand", "floating", "resize", "hide", "settings")
                 else -> available
             }.filter { it in available }.distinct()
-            grouped.chunked(4).forEach { ids ->
-                val row = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
+            grouped.chunked(3).forEach { ids ->
+                val row = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(3), 0, dp(3)) }
                 ids.forEach { id -> row.addView(tile(toolIcon(id), toolLabel(id), isToolActive(id)) { runTool(id) }) }
-                repeat(4 - ids.size) { row.addView(View(ctx), lp(0, 1, 1f)) }
+                repeat(3 - ids.size) { row.addView(View(ctx), lp(0, 1, 1f)) }
                 grid.addView(row, lp(MATCH, WRAP))
             }
             scroll.scrollTo(0, 0)
@@ -1691,20 +1692,20 @@ class CrazeKeyboardService : InputMethodService() {
         categories.forEach { label ->
             val tab = TextView(ctx).apply {
                 text = label
-                textSize = 11.5f
+                textSize = 12f
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 gravity = Gravity.CENTER
-                setPadding(dp(6), 0, dp(6), 0)
-                foreground = rippleFg(16)
+                setPadding(dp(12), 0, dp(12), 0)
+                foreground = rippleFg(18)
                 isClickable = true
                 isFocusable = true
-                contentDescription = "$label tools"
+                contentDescription = "$label tools category"
                 setOnClickListener { menuCategory = label; updateTabs(); renderTools() }
             }
             tabViews[label] = tab
-            tabs.addView(tab, lp(0, dp(32), 1f).apply { if (label != "All") leftMargin = dp(5) })
+            tabs.addView(tab, lp(0, dp(36), 1f).apply { if (label != "All") leftMargin = dp(6) })
         }
-        col.addView(tabs, lp(MATCH, dp(36)).apply { bottomMargin = dp(4) })
+        col.addView(tabs, lp(MATCH, dp(40)).apply { bottomMargin = dp(6) })
         col.addView(scroll, lp(MATCH, 0, 1f))
         updateTabs()
         renderTools()
@@ -1947,7 +1948,7 @@ class CrazeKeyboardService : InputMethodService() {
     private fun buildEditor(): View {
         val col = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(6), dp(4), dp(6), dp(2))
+            setPadding(dp(8), dp(6), dp(8), dp(4))
         }
         fun connection(): InputConnection? = currentInputConnection ?: targetInputConnection
 
@@ -1960,8 +1961,8 @@ class CrazeKeyboardService : InputMethodService() {
             background = rounded(t.special, 10)
         }, lp(dp(36), dp(34)).apply { rightMargin = dp(8) })
         val status = TextView(ctx).apply {
-            text = if (editorSelecting) "Selection ON · tap arrows to select" else "Text & Cursor Tools"
-            textSize = 12f
+            text = if (editorSelecting) "Selection ON · tap arrows to select" else "Text & Cursor Precision"
+            textSize = 13f
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setTextColor(if (editorSelecting) t.accent else t.text)
             gravity = Gravity.CENTER_VERTICAL
@@ -1978,14 +1979,14 @@ class CrazeKeyboardService : InputMethodService() {
             syncContextAsync()
         }
         header.addView(done.cell)
-        col.addView(header, lp(MATCH, dp(38)).apply { bottomMargin = dp(4) })
+        col.addView(header, lp(MATCH, dp(38)).apply { bottomMargin = dp(6) })
 
         var selectionKey: K? = null
         fun setSelectionMode(enabled: Boolean) {
             editorSelecting = enabled
             selectionKey?.tv?.background = keyBg(if (enabled) t.accent else t.special)
             selectionKey?.iv?.setColorFilter(if (enabled) t.accentText else t.text)
-            status.text = if (enabled) "Selection ON · arrows extend selection" else "Text & Cursor Tools"
+            status.text = if (enabled) "Selection ON · arrows extend selection" else "Text & Cursor Precision"
             status.setTextColor(if (enabled) t.accent else t.text)
         }
         fun moveCursor(keyCode: Int) {
@@ -2117,28 +2118,30 @@ class CrazeKeyboardService : InputMethodService() {
             }
         }
 
+        // Row 1: Directional D-pad & cursor jumps
         val cursorRow = hrow()
         fun addArrowKey(icon: Int, keyCode: Int, desc: String) {
-            val k = mk("", 1f, t.key, t.text, 15f, icon)
+            val k = mk("", 1.1f, t.key, t.text, 15f, icon)
             k.cell.contentDescription = desc
             attach(k, repeat = true, onLong = { setSelectionMode(true) }) { moveCursor(keyCode) }
             cursorRow.addView(k.cell)
         }
         fun addTextCursorKey(label: String, keyCode: Int, desc: String) {
-            val k = mk(label, 1f, t.special, t.text, 12.5f)
+            val k = mk(label, 1.1f, t.special, t.text, 12f)
             k.cell.contentDescription = desc
             attach(k, onLong = { setSelectionMode(true) }) { moveCursor(keyCode) }
             cursorRow.addView(k.cell)
         }
-        addTextCursorKey("Start", KeyEvent.KEYCODE_MOVE_HOME, "Move to line start")
+        addTextCursorKey("Home", KeyEvent.KEYCODE_MOVE_HOME, "Move to line start")
         addArrowKey(R.drawable.ic_arrow_left, KeyEvent.KEYCODE_DPAD_LEFT, "Move cursor left")
         addArrowKey(R.drawable.ic_arrow_up, KeyEvent.KEYCODE_DPAD_UP, "Move cursor up")
         addArrowKey(R.drawable.ic_arrow_down, KeyEvent.KEYCODE_DPAD_DOWN, "Move cursor down")
         addArrowKey(R.drawable.ic_arrow_right, KeyEvent.KEYCODE_DPAD_RIGHT, "Move cursor right")
         addTextCursorKey("End", KeyEvent.KEYCODE_MOVE_END, "Move to line end")
-        col.addView(cursorRow, lp(MATCH, 0, 1f))
+        col.addView(cursorRow, lp(MATCH, dp(44)).apply { bottomMargin = dp(4) })
 
-        val actionsRow1 = hrow()
+        // Row 2: Action tools with vector icons
+        val actionsRow = hrow()
         fun iconAction(row: LinearLayout, icon: Int, label: String, action: () -> Unit): K {
             val key = mk("", 1f, t.special, t.text, 12f, icon)
             key.cell.contentDescription = label
@@ -2146,16 +2149,16 @@ class CrazeKeyboardService : InputMethodService() {
             row.addView(key.cell)
             return key
         }
-        selectionKey = iconAction(actionsRow1, R.drawable.ic_editor_select, "Toggle selection mode") {
+        selectionKey = iconAction(actionsRow, R.drawable.ic_editor_select, "Toggle selection mode") {
             setSelectionMode(!editorSelecting)
         }
-        iconAction(actionsRow1, R.drawable.ic_editor_select_all, "Select all") { selectAllText() }
-        iconAction(actionsRow1, R.drawable.ic_editor_cut, "Cut selected text") { copyOrCut(true) }
-        iconAction(actionsRow1, R.drawable.ic_editor_copy, "Copy selected text") { copyOrCut(false) }
-        iconAction(actionsRow1, R.drawable.ic_editor_paste, "Paste text") { pasteText() }
-        iconAction(actionsRow1, R.drawable.ic_editor_undo, "Undo") { sendCtrlZ(false) }
-        iconAction(actionsRow1, R.drawable.ic_editor_redo, "Redo") { sendCtrlZ(true) }
-        iconAction(actionsRow1, R.drawable.ic_trash, "Delete selection or previous character") {
+        iconAction(actionsRow, R.drawable.ic_editor_select_all, "Select all") { selectAllText() }
+        iconAction(actionsRow, R.drawable.ic_editor_cut, "Cut selected text") { copyOrCut(true) }
+        iconAction(actionsRow, R.drawable.ic_editor_copy, "Copy selected text") { copyOrCut(false) }
+        iconAction(actionsRow, R.drawable.ic_editor_paste, "Paste text") { pasteText() }
+        iconAction(actionsRow, R.drawable.ic_editor_undo, "Undo") { sendCtrlZ(false) }
+        iconAction(actionsRow, R.drawable.ic_editor_redo, "Redo") { sendCtrlZ(true) }
+        iconAction(actionsRow, R.drawable.ic_trash, "Delete selection or previous character") {
             val ic = connection() ?: return@iconAction
             try {
                 val selected = ic.getSelectedText(0)
@@ -2164,31 +2167,32 @@ class CrazeKeyboardService : InputMethodService() {
                 syncContextAsync()
             } catch (_: Exception) { }
         }
-        col.addView(actionsRow1, lp(MATCH, 0, 1f))
+        col.addView(actionsRow, lp(MATCH, dp(44)).apply { bottomMargin = dp(4) })
 
+        // Row 3: Quick Polish & Full Editor
         val footer = hrow()
-        val polish = mk("Quick Polish", 1.2f, t.accent, t.accentText, 12f)
+        val polish = mk("✦ Quick Polish", 1.2f, t.accent, t.accentText, 13f)
         polish.cell.contentDescription = "Apply on-device punctuation, spacing and capitalization polish"
         attach(polish) { quickPolish() }
         footer.addView(polish.cell)
-        val fullEditor = mk("Full Editor", 1.2f, t.special, t.text, 12f)
-        fullEditor.cell.contentDescription = "Open full-screen text editor"
+        val fullEditor = mk("Expand Full Editor ↗", 1.2f, t.special, t.text, 13f)
+        fullEditor.cell.contentDescription = "Open full-screen text editor companion"
         attach(fullEditor) { editorSelecting = false; launchTextEditor() }
         footer.addView(fullEditor.cell)
-        col.addView(footer, lp(MATCH, 0, 1f))
+        col.addView(footer, lp(MATCH, dp(44)))
         return col
     }
 
     private fun buildResize(): View {
         val col = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(8), dp(6), dp(8), dp(4))
+            setPadding(dp(10), dp(8), dp(10), dp(6))
         }
         var heightValue = Prefs.keyH(ctx)
         val header = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
         val value = TextView(ctx).apply {
-            text = "Key height · $heightValue dp"
-            textSize = 13.5f
+            text = "Keyboard Height · $heightValue dp"
+            textSize = 14f
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setTextColor(t.text)
         }
@@ -2200,7 +2204,7 @@ class CrazeKeyboardService : InputMethodService() {
             Prefs.setI(ctx, "keyh", clamped)
             kh = if (floating) (clamped * 0.84f).toInt() else clamped
             cellH = baseCellH()
-            value.text = "Key height · $clamped dp"
+            value.text = "Keyboard Height · $clamped dp"
             panel.layoutParams = panel.layoutParams.apply { height = panelH() }
             panel.getChildAt(0)?.let { child -> child.layoutParams = child.layoutParams.apply { height = panelH() } }
             panel.requestLayout()
@@ -2209,36 +2213,36 @@ class CrazeKeyboardService : InputMethodService() {
 
         val minusBtn = TextView(ctx).apply {
             text = "−"
-            textSize = 18f
+            textSize = 20f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             setTextColor(t.text)
-            background = rounded(t.special, 10)
-            foreground = rippleFg(10)
+            background = rounded(t.special, 12)
+            foreground = rippleFg(12)
             setOnClickListener { applyHeight(heightValue - 2) }
         }
         val plusBtn = TextView(ctx).apply {
             text = "+"
-            textSize = 18f
+            textSize = 20f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             setTextColor(t.text)
-            background = rounded(t.special, 10)
-            foreground = rippleFg(10)
+            background = rounded(t.special, 12)
+            foreground = rippleFg(12)
             setOnClickListener { applyHeight(heightValue + 2) }
         }
-        header.addView(minusBtn, lp(dp(38), dp(32)).apply { rightMargin = dp(6) })
-        header.addView(plusBtn, lp(dp(38), dp(32)))
-        col.addView(header, lp(MATCH, dp(36)).apply { bottomMargin = dp(6) })
+        header.addView(minusBtn, lp(dp(42), dp(36)).apply { rightMargin = dp(8) })
+        header.addView(plusBtn, lp(dp(42), dp(36)))
+        col.addView(header, lp(MATCH, dp(40)).apply { bottomMargin = dp(8) })
 
         val handle = TextView(ctx).apply {
-            text = "↕   Drag up or down to resize   ↕"
+            text = "↕   Drag anywhere here to resize live   ↕"
             textSize = 13f
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             gravity = Gravity.CENTER
-            setTextColor(t.text)
-            background = rounded(t.key, 14, blend(t.accent, t.special, 0.5f))
-            contentDescription = "Drag to resize keyboard height"
+            setTextColor(t.accentText)
+            background = rounded(t.accent, 16)
+            contentDescription = "Drag vertically to resize keyboard height"
         }
         var lastY = 0f
         val persistHeight = Runnable { Prefs.setI(ctx, "keyh", heightValue) }
@@ -2254,7 +2258,7 @@ class CrazeKeyboardService : InputMethodService() {
                         hd.postDelayed(persistHeight, 180L)
                         kh = if (floating) (next * 0.84f).toInt() else next
                         cellH = baseCellH()
-                        value.text = "Key height · $next dp"
+                        value.text = "Keyboard Height · $next dp"
                         panel.layoutParams = panel.layoutParams.apply { height = panelH() }
                         panel.getChildAt(0)?.let { child -> child.layoutParams = child.layoutParams.apply { height = panelH() } }
                         panel.requestLayout()
@@ -2271,22 +2275,22 @@ class CrazeKeyboardService : InputMethodService() {
                 else -> true
             }
         }
-        col.addView(handle, LinearLayout.LayoutParams(MATCH, 0, 1f).apply { bottomMargin = dp(6) })
+        col.addView(handle, LinearLayout.LayoutParams(MATCH, dp(54)).apply { bottomMargin = dp(8) })
 
         val presets = hrow()
-        listOf("Compact" to 40, "Standard" to 46, "Tall" to 54).forEach { (label, target) ->
+        listOf("Compact (40dp)" to 40, "Standard (46dp)" to 46, "Tall (54dp)" to 54).forEach { (label, target) ->
             val pKey = mk(label, 1f, t.special, t.text, 12f)
             attach(pKey) { applyHeight(target) }
             presets.addView(pKey.cell)
         }
-        col.addView(presets, lp(MATCH, dp(42)).apply { bottomMargin = dp(4) })
+        col.addView(presets, lp(MATCH, dp(44)).apply { bottomMargin = dp(6) })
 
         val row = hrow()
-        val floatToggle = mk(if (floating) "Dock" else "Float", 1f, if (floating) t.accent else t.special, if (floating) t.accentText else t.text, 12f)
+        val floatToggle = mk(if (floating) "Dock Keyboard" else "Float Keyboard", 1f, if (floating) t.accent else t.special, if (floating) t.accentText else t.text, 12.5f)
         attach(floatToggle) { Prefs.setB(ctx, "float", !floating); rebuild() }
         row.addView(floatToggle.cell)
 
-        val reset = mk("Reset", 1f, t.special, t.text, 12f)
+        val reset = mk("Reset Default", 1f, t.special, t.text, 12.5f)
         attach(reset) {
             hd.removeCallbacks(persistHeight)
             Prefs.setI(ctx, "kbdwidth", 100)
@@ -2296,10 +2300,10 @@ class CrazeKeyboardService : InputMethodService() {
         }
         row.addView(reset.cell)
 
-        val done = mk("Done", 1f, t.accent, t.accentText, 12f)
+        val done = mk("Done ✕", 1f, t.accent, t.accentText, 12.5f)
         attach(done) { showPanel("letters") }
         row.addView(done.cell)
-        col.addView(row, lp(MATCH, dp(42)))
+        col.addView(row, lp(MATCH, dp(44)))
         return col
     }
 
