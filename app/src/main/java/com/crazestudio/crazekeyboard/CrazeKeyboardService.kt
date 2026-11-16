@@ -968,6 +968,11 @@ class CrazeKeyboardService : InputMethodService() {
             k.iv?.setImageResource(when (shift) { 2 -> R.drawable.ic_caps; 1 -> R.drawable.ic_shift_on; else -> R.drawable.ic_shift })
             k.iv?.setColorFilter(fg)
             k.tv.background = keyBg(if (shift > 0) t.accent else t.special)
+            k.cell.contentDescription = when (shift) {
+                2 -> "Caps lock on"
+                1 -> "Shift on"
+                else -> "Shift"
+            }
         }
     }
 
@@ -1122,10 +1127,23 @@ class CrazeKeyboardService : InputMethodService() {
         else -> R.drawable.ic_enter
     }
 
+    private fun enterDescription() = when (actionId()) {
+        EditorInfo.IME_ACTION_SEARCH -> "Search"
+        EditorInfo.IME_ACTION_SEND -> "Send"
+        EditorInfo.IME_ACTION_GO -> "Go"
+        EditorInfo.IME_ACTION_NEXT -> "Next"
+        EditorInfo.IME_ACTION_DONE -> "Done"
+        else -> "Enter"
+    }
+
     private fun refreshEnter() {
         if (enterKeys.isEmpty()) return
         val icon = enterIcon()
-        enterKeys.forEach { it.iv?.setImageResource(icon) }
+        val description = enterDescription()
+        enterKeys.forEach {
+            it.iv?.setImageResource(icon)
+            it.cell.contentDescription = description
+        }
     }
 
     private fun launchTextEditor() {
@@ -1284,6 +1302,9 @@ class CrazeKeyboardService : InputMethodService() {
             onLong?.invoke()
         }
         val repR = object : Runnable { override fun run() { tap(); hd.postDelayed(this, 45) } }
+        k.cell.isClickable = true
+        k.cell.isFocusable = true
+        k.cell.setOnClickListener { tap() }
         k.cell.setOnTouchListener { _, e ->
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -1424,6 +1445,9 @@ class CrazeKeyboardService : InputMethodService() {
         var cursorDrag = false
         var cursorStartX = 0f
         var cursorLastStep = 0
+        sp.cell.isClickable = true
+        sp.cell.isFocusable = true
+        sp.cell.setOnClickListener { type(" ") }
         sp.cell.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -1479,6 +1503,9 @@ class CrazeKeyboardService : InputMethodService() {
     private fun backKey(w: Float): View {
         val b = mk("", w, t.special, t.text, 18f, R.drawable.ic_backspace)
         b.cell.contentDescription = "Backspace. Swipe left to delete word"
+        b.cell.isClickable = true
+        b.cell.isFocusable = true
+        b.cell.setOnClickListener { del() }
         var startX = 0f
         var swipingWord = false
         var lastStep = 0
@@ -1530,6 +1557,7 @@ class CrazeKeyboardService : InputMethodService() {
         col.addView(charRow("asdfghjkl", 0.5f))
         col.addView(hrow().apply {
             val s = mk("", 1.4f, t.special, t.text, 18f, R.drawable.ic_shift); shiftKey = s
+            s.cell.contentDescription = "Shift"
             attach(s) {
                 val now = SystemClock.uptimeMillis()
                 shift = if (shift == 2) 0 else if (shift == 1 && now - lastShiftTap < 350) 2 else if (shift == 1) 0 else 1
