@@ -1388,7 +1388,7 @@ class CrazeKeyboardService : InputMethodService() {
     private fun hrow() = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        baselineAligned = false
+        setBaselineAligned(false)
         layoutDirection = View.LAYOUT_DIRECTION_LTR
         clipChildren = false
         clipToPadding = false
