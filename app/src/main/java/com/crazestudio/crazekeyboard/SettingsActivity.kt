@@ -64,22 +64,36 @@ class SettingsActivity : Activity() {
     private var setupAction: TextView? = null
     private var voicePermissionButton: TextView? = null
 
+    private fun blend(foreground: Int, background: Int, amount: Float): Int {
+        val weight = amount.coerceIn(0f, 1f)
+        return Color.rgb(
+            (Color.red(foreground) * weight + Color.red(background) * (1f - weight)).toInt(),
+            (Color.green(foreground) * weight + Color.green(background) * (1f - weight)).toInt(),
+            (Color.blue(foreground) * weight + Color.blue(background) * (1f - weight)).toInt()
+        )
+    }
+
+    private fun isDark(color: Int): Boolean {
+        val luminance = (0.2126 * Color.red(color) + 0.7152 * Color.green(color) +
+            0.0722 * Color.blue(color)) / 255.0
+        return luminance < 0.34
+    }
+
     private fun initPalette() {
-        night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-        accent = Prefs.theme(this).accent
-        if (night) {
-            ink = Color.rgb(238, 240, 247); muted = Color.rgb(154, 161, 178)
-            page = Color.rgb(18, 19, 26); card = Color.rgb(30, 32, 42)
-            dividerColor = Color.rgb(46, 49, 62); fieldBg = Color.rgb(24, 26, 35); actionBg = Color.rgb(44, 47, 61)
-            pillPosBg = Color.rgb(28, 62, 46); pillPosFg = Color.rgb(142, 224, 180)
-            pillNegBg = Color.rgb(44, 47, 61); pillNegFg = Color.rgb(154, 161, 178)
-        } else {
-            ink = Color.rgb(31, 37, 51); muted = Color.rgb(111, 119, 137)
-            page = Color.rgb(243, 245, 250); card = Color.WHITE
-            dividerColor = Color.rgb(238, 240, 245); fieldBg = Color.rgb(246, 247, 251); actionBg = Color.rgb(237, 239, 246)
-            pillPosBg = Color.rgb(229, 246, 237); pillPosFg = Color.rgb(37, 112, 78)
-            pillNegBg = Color.rgb(240, 242, 247); pillNegFg = Color.rgb(105, 111, 126)
-        }
+        val theme = Prefs.theme(this)
+        page = theme.bg
+        card = theme.key
+        fieldBg = theme.special
+        ink = theme.text
+        accent = theme.accent
+        night = isDark(page)
+        muted = blend(ink, page, 0.58f)
+        dividerColor = blend(ink, page, if (night) 0.20f else 0.12f)
+        actionBg = blend(theme.special, page, 0.58f)
+        pillPosBg = if (night) Color.rgb(28, 62, 46) else Color.rgb(229, 246, 237)
+        pillPosFg = if (night) Color.rgb(142, 224, 180) else Color.rgb(37, 112, 78)
+        pillNegBg = if (night) Color.rgb(44, 47, 61) else Color.rgb(240, 242, 247)
+        pillNegFg = if (night) Color.rgb(154, 161, 178) else Color.rgb(105, 111, 126)
     }
 
     private fun shape(color: Int, radius: Int = 18) = GradientDrawable().apply {
@@ -720,7 +734,7 @@ class SettingsActivity : Activity() {
         )
         privacy.addView(settingSwitch("Private typing mode", "Pause all learning and clipboard capture across apps.", "manualIncognito", false))
         privacy.addView(divider())
-        privacy.addView(settingSwitch("Clipboard history", "Save copied text locally for quick pasting.", "clipboardHistory", true))
+        privacy.addView(settingSwitch("Clipboard history", "Off by default. Save copied text locally when you enable it.", "clipboardHistory", false))
         privacy.addView(divider())
         privacy.addView(action("Clear clipboard history") {
             Prefs.clearClips(this)
